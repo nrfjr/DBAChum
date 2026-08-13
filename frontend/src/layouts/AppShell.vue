@@ -1,0 +1,151 @@
+<script setup lang="ts">
+import { computed } from 'vue'
+import { useRoute } from 'vue-router'
+
+import { useUiStore } from '@/stores/ui'
+
+const route = useRoute()
+const uiStore = useUiStore()
+
+const pageTitle = computed(() => String(route.meta.title ?? 'DBAChum'))
+
+const pageSubtitle = computed(() =>
+  String(route.meta.subtitle ?? 'Database administration workspace.'),
+)
+
+const navigation = [
+  {
+    label: 'Dashboard',
+    path: '/',
+    icon: 'gauge-high',
+  },
+  {
+    label: 'Databases',
+    path: '/databases',
+    icon: 'database',
+  },
+  {
+    label: 'Servers',
+    path: '/servers',
+    icon: 'server',
+  },
+  {
+    label: 'Assets',
+    path: '/assets',
+    icon: 'boxes-stacked',
+  },
+  {
+    label: 'Alerts',
+    path: '/alerts',
+    icon: 'bell',
+  },
+  {
+    label: 'Settings',
+    path: '/settings',
+    icon: 'gear',
+  },
+]
+</script>
+
+<template>
+  <div class="app-shell">
+    <div
+      v-if="uiStore.sidebarOpen"
+      class="sidebar-overlay"
+      @click="uiStore.closeSidebar"
+    />
+
+    <aside
+      class="sidebar"
+      :class="{ 'sidebar--open': uiStore.sidebarOpen }"
+    >
+      <div class="brand">
+        <div class="brand__logo">
+          D
+        </div>
+
+        <div class="brand__text">
+          <strong>DBAChum</strong>
+          <span>Database workspace</span>
+        </div>
+      </div>
+
+      <nav class="navigation">
+        <RouterLink
+          v-for="item in navigation"
+          :key="item.path"
+          :to="item.path"
+          class="navigation__item"
+          @click="uiStore.closeSidebar"
+        >
+          <span class="navigation__icon">
+  		<FontAwesomeIcon :icon="item.icon" />
+	</span>
+
+          <span>
+            {{ item.label }}
+          </span>
+        </RouterLink>
+      </nav>
+
+      <div class="sidebar__footer">
+        <span class="status-dot status-dot--online" />
+
+        <div>
+          <strong>DBAChum v2</strong>
+          <span>Development build</span>
+        </div>
+      </div>
+    </aside>
+
+    <section class="workspace">
+      <header class="topbar">
+        <div class="topbar__left">
+          <button
+  class="icon-button mobile-menu"
+  type="button"
+  aria-label="Open navigation"
+  @click="uiStore.toggleSidebar"
+>
+  <FontAwesomeIcon icon="bars" />
+</button>
+
+          <div class="page-heading">
+            <h1>{{ pageTitle }}</h1>
+            <p>{{ pageSubtitle }}</p>
+          </div>
+        </div>
+
+        <div class="topbar__actions">
+<div
+  v-if="!uiStore.isOnline"
+  class="offline-badge"
+>
+  Offline
+</div>
+          <button
+  class="theme-button"
+  type="button"
+  @click="uiStore.toggleTheme"
+>
+  <FontAwesomeIcon
+    :icon="uiStore.isDark ? 'sun' : 'moon'"
+  />
+
+  <span>
+    {{ uiStore.isDark ? 'Light' : 'Dark' }}
+  </span>
+</button>
+
+          <div class="avatar">
+            DB
+          </div>
+        </div>
+      </header>
+
+      <main class="content">
+        <RouterView />
+      </main>
+    </section>
+  </div>
+</template>
