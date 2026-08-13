@@ -4,10 +4,16 @@ import { useRoute } from 'vue-router'
 
 import { useUiStore } from '@/stores/ui'
 
+import { useRouter } from 'vue-router'
+import { useAuthStore } from '@/stores/auth'
+
 const route = useRoute()
 const uiStore = useUiStore()
 
 const pageTitle = computed(() => String(route.meta.title ?? 'DBAChum'))
+
+const router = useRouter()
+const authStore = useAuthStore()
 
 const pageSubtitle = computed(() =>
   String(route.meta.subtitle ?? 'Database administration workspace.'),
@@ -45,20 +51,22 @@ const navigation = [
     icon: 'gear',
   },
 ]
+
+async function logout() {
+  await authStore.logout()
+
+  await router.push({
+    name: 'login',
+  })
+}
+
 </script>
 
 <template>
   <div class="app-shell">
-    <div
-      v-if="uiStore.sidebarOpen"
-      class="sidebar-overlay"
-      @click="uiStore.closeSidebar"
-    />
+    <div v-if="uiStore.sidebarOpen" class="sidebar-overlay" @click="uiStore.closeSidebar" />
 
-    <aside
-      class="sidebar"
-      :class="{ 'sidebar--open': uiStore.sidebarOpen }"
-    >
+    <aside class="sidebar" :class="{ 'sidebar--open': uiStore.sidebarOpen }">
       <div class="brand">
         <div class="brand__logo">
           D
@@ -71,16 +79,11 @@ const navigation = [
       </div>
 
       <nav class="navigation">
-        <RouterLink
-          v-for="item in navigation"
-          :key="item.path"
-          :to="item.path"
-          class="navigation__item"
-          @click="uiStore.closeSidebar"
-        >
+        <RouterLink v-for="item in navigation" :key="item.path" :to="item.path" class="navigation__item"
+          @click="uiStore.closeSidebar">
           <span class="navigation__icon">
-  		<FontAwesomeIcon :icon="item.icon" />
-	</span>
+            <FontAwesomeIcon :icon="item.icon" />
+          </span>
 
           <span>
             {{ item.label }}
@@ -101,14 +104,10 @@ const navigation = [
     <section class="workspace">
       <header class="topbar">
         <div class="topbar__left">
-          <button
-  class="icon-button mobile-menu"
-  type="button"
-  aria-label="Open navigation"
-  @click="uiStore.toggleSidebar"
->
-  <FontAwesomeIcon icon="bars" />
-</button>
+          <button class="icon-button mobile-menu" type="button" aria-label="Open navigation"
+            @click="uiStore.toggleSidebar">
+            <FontAwesomeIcon icon="bars" />
+          </button>
 
           <div class="page-heading">
             <h1>{{ pageTitle }}</h1>
@@ -117,29 +116,27 @@ const navigation = [
         </div>
 
         <div class="topbar__actions">
-<div
-  v-if="!uiStore.isOnline"
-  class="offline-badge"
->
-  Offline
-</div>
-          <button
-  class="theme-button"
-  type="button"
-  @click="uiStore.toggleTheme"
->
-  <FontAwesomeIcon
-    :icon="uiStore.isDark ? 'sun' : 'moon'"
-  />
+          <div v-if="!uiStore.isOnline" class="offline-badge">
+            Offline
+          </div>
+          <button class="theme-button" type="button" @click="uiStore.toggleTheme">
+            <FontAwesomeIcon :icon="uiStore.isDark ? 'sun' : 'moon'" />
 
-  <span>
-    {{ uiStore.isDark ? 'Light' : 'Dark' }}
-  </span>
-</button>
+            <span>
+              {{ uiStore.isDark ? 'Light' : 'Dark' }}
+            </span>
+          </button>
 
           <div class="avatar">
             DB
           </div>
+          <span class="current-user">
+            {{ authStore.user?.display_name }}
+          </span>
+
+          <button type="button" class="secondary-button" @click="logout">
+            Logout
+          </button>
         </div>
       </header>
 

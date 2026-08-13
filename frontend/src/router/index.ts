@@ -3,10 +3,24 @@ import { createRouter, createWebHistory } from 'vue-router'
 import DashboardView from '@/views/DashboardView.vue'
 import PlaceholderView from '@/views/PlaceholderView.vue'
 
+import LoginView from '@/views/LoginView.vue'
+
+import { useAuthStore } from '@/stores/auth'
+
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
 
   routes: [
+    {
+      path: '/login',
+      name: 'login',
+      component: LoginView,
+
+      meta: {
+        public: true,
+        title: 'Sign in',
+      },
+    },
     {
       path: '/',
       name: 'dashboard',
@@ -72,6 +86,35 @@ const router = createRouter({
       redirect: '/',
     },
   ],
+})
+
+router.beforeEach(async (to) => {
+  const authStore = useAuthStore()
+
+  await authStore.initialize()
+
+  if (
+    to.meta.public
+    && authStore.isAuthenticated
+    && to.name === 'login'
+  ) {
+    return {
+      name: 'dashboard',
+    }
+  }
+
+  if (
+    !to.meta.public
+    && !authStore.isAuthenticated
+  ) {
+    return {
+      name: 'login',
+
+      query: {
+        redirect: to.fullPath,
+      },
+    }
+  }
 })
 
 router.afterEach((to) => {

@@ -13,6 +13,11 @@ class Settings(BaseSettings):
 
     mongodb_uri: str = "mongodb://localhost:27017"
     mongodb_database: str = "dbachum"
+    
+    session_cookie_name: str = "dbachum_session"
+    session_hours: int = 12
+
+    cookie_secure: bool = False
 
     cors_origins: str = (
         "http://localhost:5173,"
