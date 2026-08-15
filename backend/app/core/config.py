@@ -18,6 +18,8 @@ class Settings(BaseSettings):
     session_hours: int = 12
 
     cookie_secure: bool = False
+    
+    connection_encryption_key: str
 
     cors_origins: str = (
         "http://localhost:5173,"

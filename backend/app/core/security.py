@@ -3,6 +3,12 @@ import secrets
 
 from pwdlib import PasswordHash
 
+from functools import lru_cache
+
+from cryptography.fernet import Fernet
+
+from app.core.config import settings
+
 
 password_hash = PasswordHash.recommended()
 
@@ -33,3 +39,17 @@ def hash_session_token(
     return hashlib.sha256(
         token.encode("utf-8")
     ).hexdigest()
+    
+@lru_cache
+def get_connection_cipher() -> Fernet:
+    return Fernet(settings.connection_encryption_key.encode("utf-8"))
+
+
+def encrypt_secret(value: str) -> str:
+    cipher = get_connection_cipher()
+    return cipher.encrypt(value.encode("utf-8")).decode("utf-8")
+
+
+def decrypt_secret(value: str) -> str:
+    cipher = get_connection_cipher()
+    return cipher.decrypt(value.encode("utf-8")).decode("utf-8")

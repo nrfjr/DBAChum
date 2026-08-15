@@ -28,3 +28,15 @@ async def create_indexes(
     logger.info(
         "MongoDB indexes verified"
     )
+    
+    await database.database_connections.create_index(
+        "name_key",
+        unique=True,
+        name="uq_database_connections_name_key",
+    )
+
+    await database.database_connections.create_index(
+        "engine",
+        name="ix_database_connections_engine",
+    )
+    

@@ -7,6 +7,8 @@ import LoginView from '@/views/LoginView.vue'
 
 import { useAuthStore } from '@/stores/auth'
 
+import DatabaseConnectionsView from '@/views/DatabaseConnectionsView.vue'
+
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
 
@@ -34,7 +36,7 @@ const router = createRouter({
     {
       path: '/databases',
       name: 'databases',
-      component: PlaceholderView,
+      component: DatabaseConnectionsView,
       meta: {
         title: 'Databases',
         subtitle: 'Connections, health, sessions, storage and performance.',
