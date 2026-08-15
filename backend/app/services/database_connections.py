@@ -12,6 +12,8 @@ from app.schemas.database_connection import (
 )
 
 from app.connectors.oracle import test_oracle_connection
+from app.connectors.mysql import test_mysql_connection
+from app.connectors.sqlserver import test_sqlserver_connection
 
 def normalize_connection_name(name: str) -> str:
     return name.strip().lower()
@@ -188,8 +190,28 @@ async def test_database_connection(
             **result,
         }
 
+    if engine == "sqlserver":
+        result = await test_sqlserver_connection(connection)
+
+        return {
+            "success": True,
+            "engine": "sqlserver",
+            "message": "SQL Server connection successful.",
+            **result,
+        }
+
+    if engine == "mysql":
+        result = await test_mysql_connection(connection)
+
+        return {
+            "success": True,
+            "engine": "mysql",
+            "message": "MySQL connection successful.",
+            **result,
+        }
+
     raise AppError(
-        f"The {engine} connector is not available yet.",
-        code="CONNECTOR_NOT_AVAILABLE",
+        f"The {engine} connector is not supported.",
+        code="CONNECTOR_NOT_SUPPORTED",
         status_code=400,
     )
