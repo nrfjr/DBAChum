@@ -13,6 +13,18 @@ const connectionsStore = useConnectionsStore()
 const editingId = ref<string | null>(null)
 const formError = ref<string | null>(null)
 
+const testingId = ref<string | null>(null)
+
+const testResults = reactive<
+  Record<
+    string,
+    {
+      success: boolean
+      message: string
+    }
+  >
+>({})
+
 interface ConnectionForm {
   name: string
   engine: DatabaseEngine
@@ -167,6 +179,43 @@ async function removeConnection(
   }
 }
 
+async function testConnection(
+  connection: DatabaseConnection,
+) {
+  testingId.value = connection.id
+
+  delete testResults[connection.id]
+
+  try {
+    const result =
+      await connectionsStore.test(connection.id)
+
+    const details = [
+      result.database_name,
+      result.database_version,
+    ]
+      .filter(Boolean)
+      .join(' · ')
+
+    testResults[connection.id] = {
+      success: true,
+      message: details
+        ? `${result.message} ${details}`
+        : result.message,
+    }
+  } catch (error) {
+    testResults[connection.id] = {
+      success: false,
+      message:
+        error instanceof Error
+          ? error.message
+          : 'Connection test failed.',
+    }
+  } finally {
+    testingId.value = null
+  }
+}
+
 function engineLabel(engine: DatabaseEngine) {
   switch (engine) {
     case 'oracle':
@@ -202,45 +251,29 @@ onMounted(() => {
         </div>
       </div>
 
-      <p
-        v-if="connectionsStore.loading"
-        class="empty-state"
-      >
+      <p v-if="connectionsStore.loading" class="empty-state">
         Loading connections...
       </p>
 
-      <p
-        v-else-if="connectionsStore.error"
-        class="login-error"
-      >
+      <p v-else-if="connectionsStore.error" class="login-error">
         {{ connectionsStore.error }}
       </p>
 
-      <div
-        v-else-if="
-          connectionsStore.connections.length === 0
-        "
-        class="empty-state"
-      >
+      <div v-else-if="
+        connectionsStore.connections.length === 0
+      " class="empty-state">
         No database connections have been added yet.
       </div>
 
       <div v-else class="connection-list">
-        <article
-          v-for="connection in connectionsStore.connections"
-          :key="connection.id"
-          class="connection-item"
-        >
+        <article v-for="connection in connectionsStore.connections" :key="connection.id" class="connection-item">
           <div>
             <div class="connection-title">
               <strong>{{ connection.name }}</strong>
 
-              <span
-                class="status-pill"
-                :class="{
-                  disabled: !connection.enabled,
-                }"
-              >
+              <span class="status-pill" :class="{
+                disabled: !connection.enabled,
+              }">
                 {{
                   connection.enabled
                     ? 'Enabled'
@@ -258,22 +291,30 @@ onMounted(() => {
             <small>
               {{ connection.username }}
             </small>
+            <p v-if="testResults[connection.id]" class="connection-test-result" :class="{
+              success:
+                testResults[connection.id]?.success,
+              error:
+                !testResults[connection.id]?.success,
+            }">
+              {{ testResults[connection.id]?.message }}
+            </p>
           </div>
 
           <div class="connection-actions">
-            <button
-              type="button"
-              class="secondary-button"
-              @click="editConnection(connection)"
-            >
+            <button type="button" class="secondary-button" :disabled="testingId === connection.id"
+              @click="testConnection(connection)">
+              {{
+                testingId === connection.id
+                  ? 'Testing...'
+                  : 'Test'
+              }}
+            </button>
+            <button type="button" class="secondary-button" @click="editConnection(connection)">
               Edit
             </button>
 
-            <button
-              type="button"
-              class="secondary-button"
-              @click="removeConnection(connection)"
-            >
+            <button type="button" class="secondary-button" @click="removeConnection(connection)">
               Delete
             </button>
           </div>
@@ -298,28 +339,17 @@ onMounted(() => {
         </div>
       </div>
 
-      <form
-        class="connection-form"
-        @submit.prevent="saveConnection"
-      >
+      <form class="connection-form" @submit.prevent="saveConnection">
         <label>
           Connection name
 
-          <input
-            v-model="form.name"
-            required
-            maxlength="100"
-            placeholder="ERP Production"
-          />
+          <input v-model="form.name" required maxlength="100" placeholder="ERP Production" />
         </label>
 
         <label>
           Database engine
 
-          <select
-            v-model="form.engine"
-            @change="changeEngine"
-          >
+          <select v-model="form.engine" @change="changeEngine">
             <option value="oracle">Oracle</option>
             <option value="sqlserver">
               SQL Server
@@ -332,23 +362,13 @@ onMounted(() => {
           <label>
             Host
 
-            <input
-              v-model="form.host"
-              required
-              placeholder="db01.example.local"
-            />
+            <input v-model="form.host" required placeholder="db01.example.local" />
           </label>
 
           <label>
             Port
 
-            <input
-              v-model.number="form.port"
-              required
-              type="number"
-              min="1"
-              max="65535"
-            />
+            <input v-model.number="form.port" required type="number" min="1" max="65535" />
           </label>
         </div>
 
@@ -356,9 +376,7 @@ onMounted(() => {
           <label>
             Oracle identifier type
 
-            <select
-              v-model="form.oracle_identifier_type"
-            >
+            <select v-model="form.oracle_identifier_type">
               <option value="service_name">
                 Service name
               </option>
@@ -369,16 +387,12 @@ onMounted(() => {
           <label>
             {{
               form.oracle_identifier_type ===
-              'service_name'
+                'service_name'
                 ? 'Service name'
                 : 'SID'
             }}
 
-            <input
-              v-model="form.oracle_identifier"
-              required
-              placeholder="ORCLPDB1"
-            />
+            <input v-model="form.oracle_identifier" required placeholder="ORCLPDB1" />
           </label>
         </template>
 
@@ -388,43 +402,27 @@ onMounted(() => {
             Optional
           </span>
 
-          <input
-            v-model="form.database"
-            placeholder="Database name"
-          />
+          <input v-model="form.database" placeholder="Database name" />
         </label>
 
         <label>
           Username
 
-          <input
-            v-model="form.username"
-            required
-            autocomplete="off"
-          />
+          <input v-model="form.username" required autocomplete="off" />
         </label>
 
         <label>
           Password
 
-          <input
-            v-model="form.password"
-            :required="!isEditing"
-            type="password"
-            autocomplete="new-password"
-            :placeholder="
-              isEditing
-                ? 'Leave blank to keep current password'
-                : 'Database password'
-            "
-          />
+          <input v-model="form.password" :required="!isEditing" type="password" autocomplete="new-password"
+            :placeholder="isEditing
+              ? 'Leave blank to keep current password'
+              : 'Database password'
+              " />
         </label>
 
         <label class="connection-checkbox">
-          <input
-            v-model="form.enabled"
-            type="checkbox"
-          />
+          <input v-model="form.enabled" type="checkbox" />
 
           Monitor this connection
         </label>
@@ -434,11 +432,7 @@ onMounted(() => {
         </p>
 
         <div class="connection-form-actions">
-          <button
-            type="submit"
-            class="primary-button"
-            :disabled="connectionsStore.saving"
-          >
+          <button type="submit" class="primary-button" :disabled="connectionsStore.saving">
             {{
               connectionsStore.saving
                 ? 'Saving...'
@@ -448,12 +442,7 @@ onMounted(() => {
             }}
           </button>
 
-          <button
-            v-if="isEditing"
-            type="button"
-            class="secondary-button"
-            @click="resetForm"
-          >
+          <button v-if="isEditing" type="button" class="secondary-button" @click="resetForm">
             Cancel
           </button>
         </div>

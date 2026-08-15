@@ -1098,3 +1098,16 @@ button {
     grid-template-columns: 1fr;
   }
 }
+
+.connection-test-result {
+  margin-top: 0.6rem !important;
+  font-size: 0.85rem;
+}
+
+.connection-test-result.success {
+  color: var(--success);
+}
+
+.connection-test-result.error {
+  color: var(--danger);
+}

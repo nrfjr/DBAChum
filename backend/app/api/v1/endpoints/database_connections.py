@@ -5,6 +5,7 @@ from app.schemas.database_connection import (
     DatabaseConnectionCreate,
     DatabaseConnectionResponse,
     DatabaseConnectionUpdate,
+    DatabaseConnectionTestResponse,
 )
 from app.schemas.user import UserResponse
 from app.services.database_connections import (
@@ -14,6 +15,7 @@ from app.services.database_connections import (
     get_database_connection,
     list_database_connections,
     update_database_connection,
+    test_database_connection,
 )
 
 
@@ -33,6 +35,20 @@ async def get_connections(
 ):
     return await list_database_connections(
         request.app.state.database
+    )
+
+@router.post(
+    "/{connection_id}/test",
+    response_model=DatabaseConnectionTestResponse,
+)
+async def test_connection(
+    connection_id: str,
+    request: Request,
+    current_user: UserResponse = Depends(get_current_user),
+):
+    return await test_database_connection(
+        request.app.state.database,
+        connection_id,
     )
 
 
@@ -101,3 +117,4 @@ async def delete_connection(
     )
 
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+

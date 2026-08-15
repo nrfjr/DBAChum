@@ -73,3 +73,13 @@ class DatabaseConnectionResponse(DatabaseConnectionBase):
     has_password: bool
     created_at: datetime
     updated_at: datetime
+
+class DatabaseConnectionTestResponse(BaseModel):
+    success: bool
+    engine: DatabaseEngine
+    message: str
+
+    database_name: str | None = None
+    service_name: str | None = None
+    connected_user: str | None = None
+    database_version: str | None = None

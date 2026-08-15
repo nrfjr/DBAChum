@@ -31,6 +31,16 @@ export interface DatabaseConnectionInput {
   enabled: boolean
 }
 
+export interface DatabaseConnectionTestResult {
+  success: boolean
+  engine: DatabaseEngine
+  message: string
+  database_name: string | null
+  service_name: string | null
+  connected_user: string | null
+  database_version: string | null
+}
+
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL
 
 async function apiRequest<T>(
@@ -151,6 +161,15 @@ export const useConnectionsStore = defineStore('connections', {
 
       this.connections = this.connections.filter(
         (connection) => connection.id !== id,
+      )
+    },
+
+    async test(id: string) {
+      return apiRequest<DatabaseConnectionTestResult>(
+        `/connections/${id}/test`,
+        {
+          method: 'POST',
+        },
       )
     },
   },

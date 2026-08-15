@@ -11,6 +11,7 @@ from app.schemas.database_connection import (
     DatabaseConnectionUpdate,
 )
 
+from app.connectors.oracle import test_oracle_connection
 
 def normalize_connection_name(name: str) -> str:
     return name.strip().lower()
@@ -165,3 +166,30 @@ async def delete_database_connection(
             code="CONNECTION_NOT_FOUND",
             status_code=404,
         )
+
+async def test_database_connection(
+    database,
+    connection_id: str,
+):
+    connection = await get_database_connection(
+        database,
+        connection_id,
+    )
+
+    engine = connection["engine"]
+
+    if engine == "oracle":
+        result = await test_oracle_connection(connection)
+
+        return {
+            "success": True,
+            "engine": "oracle",
+            "message": "Oracle connection successful.",
+            **result,
+        }
+
+    raise AppError(
+        f"The {engine} connector is not available yet.",
+        code="CONNECTOR_NOT_AVAILABLE",
+        status_code=400,
+    )
