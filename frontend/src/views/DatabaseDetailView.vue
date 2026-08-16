@@ -3,9 +3,9 @@ import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useDatabasesStore } from '@/stores/databases'
 
-import OracleSessionsPanel from '@/components/databases/oracle/OracleSessionsPanel.vue'
-import OracleStoragePanel from '@/components/databases/oracle/OracleStoragePanel.vue'
-import OracleActivityPanel from '@/components/databases/oracle/OracleActivityPanel.vue'
+import DatabaseSessionsPanel from '@/components/databases/DatabaseSessionsPanel.vue'
+import DatabaseStoragePanel from '@/components/databases/DatabaseStoragePanel.vue'
+import DatabaseActivityPanel from '@/components/databases/DatabaseActivityPanel.vue'
 
 import {
   useConnectionsStore,
@@ -41,8 +41,10 @@ type DatabaseTab =
 
 const activeTab = ref<DatabaseTab>('overview')
 
-const isOracle = computed(
-  () => connection.value?.engine === 'oracle'
+const supportsDbaUtilities = computed(() =>
+  ['oracle', 'sqlserver', 'mysql'].includes(
+    connection.value?.engine ?? '',
+  ),
 )
 
 function engineLabel(engine: DatabaseEngine) {
@@ -71,182 +73,176 @@ onMounted(async () => {
 
 <template>
   <div class="database-workspace">
-  <div v-if="connectionsStore.loading" class="empty-state">
-    Loading database...
-  </div>
+    <div v-if="connectionsStore.loading" class="empty-state">
+      Loading database...
+    </div>
 
-  <div v-else-if="!connection" class="database-empty-state">
-    <h1>Database not found</h1>
+    <div v-else-if="!connection" class="database-empty-state">
+      <h1>Database not found</h1>
 
-    <button type="button" class="secondary-button" @click="router.push('/databases')">
-      Back to databases
-    </button>
-  </div>
-
-  <template v-else>
-    <section class="database-detail-header">
-      <div>
-        <button type="button" class="database-back-button" @click="router.push('/databases')">
-          ← Databases
-        </button>
-
-        <h1>{{ connection.name }}</h1>
-
-        <p>
-          {{ engineLabel(connection.engine) }}
-          ·
-          {{ connection.host }}:{{ connection.port }}
-        </p>
-      </div>
-
-      <span class="database-state unknown">
-        Not checked
-      </span>
-    </section>
-
-    <nav class="database-tabs">
-      <button :class="{
-        active: activeTab === 'overview',
-      }" @click="activeTab = 'overview'">
-        Overview
+      <button type="button" class="secondary-button" @click="router.push('/databases')">
+        Back to databases
       </button>
+    </div>
 
-      <button :disabled="!isOracle" :class="{
-        active: activeTab === 'sessions',
-      }" @click="activeTab = 'sessions'">
-        Sessions
-      </button>
-
-      <button :disabled="!isOracle" :class="{
-        active: activeTab === 'storage',
-      }" @click="activeTab = 'storage'">
-        Storage
-      </button>
-
-      <button :disabled="!isOracle" :class="{
-        active: activeTab === 'activity',
-      }" @click="activeTab = 'activity'">
-        Activity
-      </button>
-    </nav>
-
-    <section class="database-preview-grid database-detail-metrics">
-      <div v-if="activeTab === 'overview'">
+    <template v-else>
+      <section class="database-detail-header">
         <div>
-          <span>Active</span>
-          <strong>—</strong>
-        </div>
+          <button type="button" class="database-back-button" @click="router.push('/databases')">
+            ← Databases
+          </button>
 
-        <div>
-          <span>Connections</span>
-          <strong>—</strong>
-        </div>
-
-        <div>
-          <span>Blocked</span>
-          <strong>—</strong>
-        </div>
-
-        <div>
-          <span>Size</span>
-          <strong>—</strong>
-        </div>
-      </div>
-      <OracleSessionsPanel v-else-if="
-        activeTab === 'sessions' &&
-        isOracle
-      " :connection-id="connection.id" />
-
-      <OracleStoragePanel v-else-if="
-        activeTab === 'storage' &&
-        isOracle
-      " :connection-id="connection.id" />
-
-      <OracleActivityPanel v-else-if="
-        activeTab === 'activity' &&
-        isOracle
-      " :connection-id="connection.id" />
-    </section>
-
-    <section class="panel database-overview-panel">
-      <div class="panel-header">
-        <div>
-          <h2>Database information</h2>
+          <h1>{{ connection.name }}</h1>
 
           <p>
-            Connection identity and monitoring context.
+            {{ engineLabel(connection.engine) }}
+            ·
+            {{ connection.host }}:{{ connection.port }}
           </p>
         </div>
-      </div>
 
-      <dl class="database-info-grid">
-        <div>
-          <dt>Engine</dt>
-          <dd>{{ engineLabel(connection.engine) }}</dd>
+        <span class="database-state unknown">
+          Not checked
+        </span>
+      </section>
+
+      <nav class="database-tabs">
+        <button :class="{
+          active: activeTab === 'overview',
+        }" @click="activeTab = 'overview'">
+          Overview
+        </button>
+
+        <button :disabled="!supportsDbaUtilities" :class="{
+          active: activeTab === 'sessions',
+        }" @click="activeTab = 'sessions'">
+          Sessions
+        </button>
+
+        <button :disabled="!supportsDbaUtilities" :class="{
+          active: activeTab === 'storage',
+        }" @click="activeTab = 'storage'">
+          Storage
+        </button>
+
+        <button :disabled="!supportsDbaUtilities" :class="{
+          active: activeTab === 'activity',
+        }" @click="activeTab = 'activity'">
+          Activity
+        </button>
+      </nav>
+
+      <section class="database-preview-grid database-detail-metrics">
+        <div v-if="activeTab === 'overview'">
+          <div>
+            <span>Active</span>
+            <strong>—</strong>
+          </div>
+
+          <div>
+            <span>Connections</span>
+            <strong>—</strong>
+          </div>
+
+          <div>
+            <span>Blocked</span>
+            <strong>—</strong>
+          </div>
+
+          <div>
+            <span>Size</span>
+            <strong>—</strong>
+          </div>
+        </div>
+        <DatabaseSessionsPanel v-else-if="activeTab === 'sessions'" :connection-id="connection.id"
+          :engine="connection.engine" />
+
+        <DatabaseStoragePanel v-else-if="activeTab === 'storage'" :connection-id="connection.id"
+          :engine="connection.engine" />
+
+        <DatabaseActivityPanel v-else-if="activeTab === 'activity'" :connection-id="connection.id"
+          :engine="connection.engine" />
+      </section>
+
+      <section class="panel database-overview-panel">
+        <div class="panel-header">
+          <div>
+            <h2>Database information</h2>
+
+            <p>
+              Connection identity and monitoring context.
+            </p>
+          </div>
         </div>
 
-        <div>
-          <dt>Host</dt>
-          <dd>{{ connection.host }}</dd>
-        </div>
+        <dl class="database-info-grid">
+          <div>
+            <dt>Engine</dt>
+            <dd>{{ engineLabel(connection.engine) }}</dd>
+          </div>
 
-        <div>
-          <dt>Port</dt>
-          <dd>{{ connection.port }}</dd>
-        </div>
+          <div>
+            <dt>Host</dt>
+            <dd>{{ connection.host }}</dd>
+          </div>
 
-        <div>
-          <dt>Username</dt>
-          <dd>{{ connection.username }}</dd>
-        </div>
+          <div>
+            <dt>Port</dt>
+            <dd>{{ connection.port }}</dd>
+          </div>
 
-        <div v-if="connection.engine === 'oracle'">
-          <dt>
-            {{
-              connection.oracle_identifier_type === 'sid'
-                ? 'SID'
-                : 'Service name'
-            }}
-          </dt>
+          <div>
+            <dt>Username</dt>
+            <dd>{{ connection.username }}</dd>
+          </div>
 
-          <dd>
-            {{ connection.oracle_identifier }}
-          </dd>
-        </div>
+          <div v-if="connection.engine === 'oracle'">
+            <dt>
+              {{
+                connection.oracle_identifier_type === 'sid'
+                  ? 'SID'
+                  : 'Service name'
+              }}
+            </dt>
 
-        <div v-else>
-          <dt>Database</dt>
+            <dd>
+              {{ connection.oracle_identifier }}
+            </dd>
+          </div>
 
-          <dd>
-            {{ connection.database ?? 'Default' }}
-          </dd>
-        </div>
-        <div v-if="overview?.version">
-          <dt>Version</dt>
-          <dd>{{ overview.version }}</dd>
-        </div>
+          <div v-else>
+            <dt>Database</dt>
 
-        <div v-if="overview?.database_name">
-          <dt>Database</dt>
-          <dd>{{ overview.database_name }}</dd>
-        </div>
+            <dd>
+              {{ connection.database ?? 'Default' }}
+            </dd>
+          </div>
+          <div v-if="overview?.version">
+            <dt>Version</dt>
+            <dd>{{ overview.version }}</dd>
+          </div>
 
-        <div v-if="overview?.container_name">
-          <dt>Container</dt>
-          <dd>{{ overview.container_name }}</dd>
-        </div>
+          <div v-if="overview?.database_name">
+            <dt>Database</dt>
+            <dd>{{ overview.database_name }}</dd>
+          </div>
 
-        <div v-if="overview?.service_name">
-          <dt>Service</dt>
-          <dd>{{ overview.service_name }}</dd>
-        </div>
+          <div v-if="overview?.container_name">
+            <dt>Container</dt>
+            <dd>{{ overview.container_name }}</dd>
+          </div>
 
-        <div v-if="overview?.instance_name">
-          <dt>Instance</dt>
-          <dd>{{ overview.instance_name }}</dd>
-        </div>
-      </dl>
-    </section>
-  </template>
+          <div v-if="overview?.service_name">
+            <dt>Service</dt>
+            <dd>{{ overview.service_name }}</dd>
+          </div>
+
+          <div v-if="overview?.instance_name">
+            <dt>Instance</dt>
+            <dd>{{ overview.instance_name }}</dd>
+          </div>
+        </dl>
+      </section>
+    </template>
   </div>
 </template>
