@@ -1571,3 +1571,25 @@ button {
 .database-info-grid dd {
   margin: 0;
 }
+
+.database-state.online {
+  color: var(--success);
+}
+
+.database-state.limited {
+  color: var(--warning);
+}
+
+.database-state.unreachable {
+  color: var(--danger);
+}
+
+.database-state.disabled,
+.database-state.unknown {
+  color: var(--text-muted);
+}
+
+.database-latency {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+}

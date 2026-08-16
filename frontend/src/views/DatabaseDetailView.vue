@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { useDatabasesStore } from '@/stores/databases'
 
 import {
   useConnectionsStore,
@@ -10,6 +11,7 @@ import {
 const route = useRoute()
 const router = useRouter()
 const connectionsStore = useConnectionsStore()
+const databasesStore = useDatabasesStore()
 
 const connectionId = computed(
   () => route.params.id as string,
@@ -19,6 +21,12 @@ const connection = computed(() =>
   connectionsStore.connections.find(
     (item) => item.id === connectionId.value,
   ),
+)
+
+const overview = computed(() =>
+  databasesStore.overviews[
+  connectionId.value
+  ],
 )
 
 function engineLabel(engine: DatabaseEngine) {
@@ -33,31 +41,27 @@ function engineLabel(engine: DatabaseEngine) {
 }
 
 onMounted(async () => {
-  if (connectionsStore.connections.length === 0) {
+  if (
+    connectionsStore.connections.length === 0
+  ) {
     await connectionsStore.load()
   }
+
+  await databasesStore.loadOne(
+    connectionId.value
+  )
 })
 </script>
 
 <template>
-  <div
-    v-if="connectionsStore.loading"
-    class="empty-state"
-  >
+  <div v-if="connectionsStore.loading" class="empty-state">
     Loading database...
   </div>
 
-  <div
-    v-else-if="!connection"
-    class="database-empty-state"
-  >
+  <div v-else-if="!connection" class="database-empty-state">
     <h1>Database not found</h1>
 
-    <button
-      type="button"
-      class="secondary-button"
-      @click="router.push('/databases')"
-    >
+    <button type="button" class="secondary-button" @click="router.push('/databases')">
       Back to databases
     </button>
   </div>
@@ -65,11 +69,7 @@ onMounted(async () => {
   <template v-else>
     <section class="database-detail-header">
       <div>
-        <button
-          type="button"
-          class="database-back-button"
-          @click="router.push('/databases')"
-        >
+        <button type="button" class="database-back-button" @click="router.push('/databases')">
           ← Databases
         </button>
 
@@ -105,9 +105,7 @@ onMounted(async () => {
       </button>
     </nav>
 
-    <section
-      class="database-preview-grid database-detail-metrics"
-    >
+    <section class="database-preview-grid database-detail-metrics">
       <div>
         <span>Active</span>
         <strong>—</strong>
@@ -181,6 +179,30 @@ onMounted(async () => {
           <dd>
             {{ connection.database ?? 'Default' }}
           </dd>
+        </div>
+        <div v-if="overview?.version">
+          <dt>Version</dt>
+          <dd>{{ overview.version }}</dd>
+        </div>
+
+        <div v-if="overview?.database_name">
+          <dt>Database</dt>
+          <dd>{{ overview.database_name }}</dd>
+        </div>
+
+        <div v-if="overview?.container_name">
+          <dt>Container</dt>
+          <dd>{{ overview.container_name }}</dd>
+        </div>
+
+        <div v-if="overview?.service_name">
+          <dt>Service</dt>
+          <dd>{{ overview.service_name }}</dd>
+        </div>
+
+        <div v-if="overview?.instance_name">
+          <dt>Instance</dt>
+          <dd>{{ overview.instance_name }}</dd>
         </div>
       </dl>
     </section>
