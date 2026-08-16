@@ -3,6 +3,8 @@ import oracledb
 import logging
 import time
 
+from contextlib import asynccontextmanager
+
 from app.core.exceptions import AppError
 from app.core.security import decrypt_secret
 
@@ -268,3 +270,47 @@ async def get_oracle_overview(
             code="ORACLE_MONITORING_FAILED",
             status_code=400,
         ) from exc
+
+def oracle_error_message(exc: oracledb.Error) -> str:
+    error = exc.args[0]
+
+    return getattr(
+        error,
+        "message",
+        str(exc),
+    ).strip()
+
+
+@asynccontextmanager
+async def open_oracle_connection(connection: dict):
+    encrypted_password = connection.get(
+        "password_encrypted"
+    )
+
+    if not encrypted_password:
+        raise AppError(
+            "No password is stored for this connection.",
+            code="CONNECTION_PASSWORD_MISSING",
+            status_code=400,
+        )
+
+    password = decrypt_secret(encrypted_password)
+    params = build_oracle_params(connection)
+
+    try:
+        oracle_connection = await oracledb.connect_async(
+            user=connection["username"],
+            password=password,
+            params=params,
+        )
+    except oracledb.Error as exc:
+        raise AppError(
+            oracle_error_message(exc),
+            code="ORACLE_CONNECTION_FAILED",
+            status_code=400,
+        ) from exc
+
+    try:
+        yield oracle_connection
+    finally:
+        await oracle_connection.close()

@@ -172,7 +172,7 @@ onMounted(async () => {
           {{
             statusLabel(
               overviewFor(connection.id)?.status,
-            )
+          )
           }}
         </span>
         <small v-if="
@@ -195,56 +195,56 @@ onMounted(async () => {
       </div>
 
       <div class="database-preview-grid">
-        <div>
-          <span>Active</span>
+  <div>
+    <span>Active</span>
 
-          <strong>
-            {{
-              metricValue(
-                overviewFor(connection.id)?.active,
-              )
-            }}
-          </strong>
-        </div>
+    <strong>
+      {{
+        metricValue(
+          overviewFor(connection.id)?.active,
+        )
+      }}
+    </strong>
+  </div>
 
-        <div>
-          <span>Connections</span>
+  <div>
+    <span>Connections</span>
 
-          <strong>
-            {{
-              metricValue(
-                overviewFor(connection.id)
-                  ?.connections,
-              )
-            }}
-          </strong>
-        </div>
+    <strong>
+      {{
+        metricValue(
+          overviewFor(connection.id)
+            ?.connections,
+        )
+      }}
+    </strong>
+  </div>
 
-        <div>
-          <span>Blocked</span>
+  <div>
+    <span>Blocked</span>
 
-          <strong>
-            {{
-              metricValue(
-                overviewFor(connection.id)?.blocked,
-              )
-            }}
-          </strong>
-        </div>
+    <strong>
+      {{
+        metricValue(
+          overviewFor(connection.id)?.blocked,
+        )
+      }}
+    </strong>
+  </div>
 
-        <div>
-          <span>Uptime</span>
+  <div>
+    <span>Uptime</span>
 
-          <strong>
-            {{
-              formatUptime(
-                overviewFor(connection.id)
-                  ?.uptime_seconds,
-              )
-            }}
-          </strong>
-        </div>
-      </div>
+    <strong>
+      {{
+        formatUptime(
+          overviewFor(connection.id)
+            ?.uptime_seconds,
+        )
+      }}
+    </strong>
+  </div>
+</div>
     </button>
   </div>
 </template>

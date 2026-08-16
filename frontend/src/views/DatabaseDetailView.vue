@@ -1,7 +1,11 @@
 <script setup lang="ts">
-import { computed, onMounted } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useDatabasesStore } from '@/stores/databases'
+
+import OracleSessionsPanel from '@/components/databases/oracle/OracleSessionsPanel.vue'
+import OracleStoragePanel from '@/components/databases/oracle/OracleStoragePanel.vue'
+import OracleActivityPanel from '@/components/databases/oracle/OracleActivityPanel.vue'
 
 import {
   useConnectionsStore,
@@ -29,6 +33,18 @@ const overview = computed(() =>
   ],
 )
 
+type DatabaseTab =
+  | 'overview'
+  | 'sessions'
+  | 'storage'
+  | 'activity'
+
+const activeTab = ref<DatabaseTab>('overview')
+
+const isOracle = computed(
+  () => connection.value?.engine === 'oracle'
+)
+
 function engineLabel(engine: DatabaseEngine) {
   switch (engine) {
     case 'oracle':
@@ -54,6 +70,7 @@ onMounted(async () => {
 </script>
 
 <template>
+  <div class="database-workspace">
   <div v-if="connectionsStore.loading" class="empty-state">
     Loading database...
   </div>
@@ -88,43 +105,67 @@ onMounted(async () => {
     </section>
 
     <nav class="database-tabs">
-      <button class="active">
+      <button :class="{
+        active: activeTab === 'overview',
+      }" @click="activeTab = 'overview'">
         Overview
       </button>
 
-      <button disabled>
+      <button :disabled="!isOracle" :class="{
+        active: activeTab === 'sessions',
+      }" @click="activeTab = 'sessions'">
         Sessions
       </button>
 
-      <button disabled>
+      <button :disabled="!isOracle" :class="{
+        active: activeTab === 'storage',
+      }" @click="activeTab = 'storage'">
         Storage
       </button>
 
-      <button disabled>
-        Performance
+      <button :disabled="!isOracle" :class="{
+        active: activeTab === 'activity',
+      }" @click="activeTab = 'activity'">
+        Activity
       </button>
     </nav>
 
     <section class="database-preview-grid database-detail-metrics">
-      <div>
-        <span>Active</span>
-        <strong>—</strong>
-      </div>
+      <div v-if="activeTab === 'overview'">
+        <div>
+          <span>Active</span>
+          <strong>—</strong>
+        </div>
 
-      <div>
-        <span>Connections</span>
-        <strong>—</strong>
-      </div>
+        <div>
+          <span>Connections</span>
+          <strong>—</strong>
+        </div>
 
-      <div>
-        <span>Blocked</span>
-        <strong>—</strong>
-      </div>
+        <div>
+          <span>Blocked</span>
+          <strong>—</strong>
+        </div>
 
-      <div>
-        <span>Size</span>
-        <strong>—</strong>
+        <div>
+          <span>Size</span>
+          <strong>—</strong>
+        </div>
       </div>
+      <OracleSessionsPanel v-else-if="
+        activeTab === 'sessions' &&
+        isOracle
+      " :connection-id="connection.id" />
+
+      <OracleStoragePanel v-else-if="
+        activeTab === 'storage' &&
+        isOracle
+      " :connection-id="connection.id" />
+
+      <OracleActivityPanel v-else-if="
+        activeTab === 'activity' &&
+        isOracle
+      " :connection-id="connection.id" />
     </section>
 
     <section class="panel database-overview-panel">
@@ -207,4 +248,5 @@ onMounted(async () => {
       </dl>
     </section>
   </template>
+  </div>
 </template>
