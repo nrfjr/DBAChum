@@ -7,7 +7,11 @@ import LoginView from '@/views/LoginView.vue'
 
 import { useAuthStore } from '@/stores/auth'
 
-import DatabaseConnectionsView from '@/views/DatabaseConnectionsView.vue'
+import DatabaseWorkspaceView from '@/views/DatabaseWorkspaceView.vue'
+import DatabaseDetailView from '@/views/DatabaseDetailView.vue'
+import SettingsView from '@/views/SettingsView.vue'
+import SettingsConnectionsView from '@/views/SettingsConnectionsView.vue'
+
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -36,10 +40,17 @@ const router = createRouter({
     {
       path: '/databases',
       name: 'databases',
-      component: DatabaseConnectionsView,
+      component: DatabaseWorkspaceView,
       meta: {
         title: 'Databases',
-        subtitle: 'Connections, health, sessions, storage and performance.',
+      },
+    },
+    {
+      path: '/databases/:id',
+      name: 'database-detail',
+      component: DatabaseDetailView,
+      meta: {
+        title: 'Database',
       },
     },
 
@@ -75,12 +86,24 @@ const router = createRouter({
 
     {
       path: '/settings',
-      name: 'settings',
-      component: PlaceholderView,
+      component: SettingsView,
       meta: {
         title: 'Settings',
-        subtitle: 'DBAChum configuration and preferences.',
       },
+      children: [
+        {
+          path: '',
+          redirect: '/settings/connections',
+        },
+        {
+          path: 'connections',
+          name: 'settings-connections',
+          component: SettingsConnectionsView,
+          meta: {
+            title: 'Connections',
+          },
+        },
+      ],
     },
 
     {

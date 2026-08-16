@@ -15,6 +15,8 @@ const formError = ref<string | null>(null)
 
 const testingId = ref<string | null>(null)
 
+const formOpen = ref(false)
+
 const testResults = reactive<
   Record<
     string,
@@ -63,6 +65,16 @@ function resetForm() {
   formError.value = null
 }
 
+function openAddConnection() {
+  resetForm()
+  formOpen.value = true
+}
+
+function closeForm() {
+  formOpen.value = false
+  resetForm()
+}
+
 function changeEngine() {
   const ports: Record<DatabaseEngine, number> = {
     oracle: 1521,
@@ -98,6 +110,8 @@ function editConnection(connection: DatabaseConnection) {
       connection.oracle_identifier ?? '',
     enabled: connection.enabled,
   })
+
+  formOpen.value = true
 }
 
 function buildPayload(): DatabaseConnectionInput {
@@ -145,7 +159,7 @@ async function saveConnection() {
       await connectionsStore.create(payload)
     }
 
-    resetForm()
+    closeForm()
   } catch (error) {
     formError.value =
       error instanceof Error
@@ -233,22 +247,19 @@ onMounted(() => {
 </script>
 
 <template>
-  <section class="page-header">
-    <div>
-      <h1>Database Connections</h1>
-      <p>
-        Manage the database targets monitored by DBAChum.
-      </p>
-    </div>
-  </section>
-
-  <div class="connections-layout">
+  <div class="settings-connections">
     <section class="panel">
       <div class="panel-header">
         <div>
-          <h2>Connections</h2>
-          <p>Configured database targets.</p>
+          <h2>Database connections</h2>
+          <p>
+            Configure the database targets available to DBAChum.
+          </p>
         </div>
+
+        <button type="button" class="primary-button" @click="openAddConnection">
+          Add connection
+        </button>
       </div>
 
       <p v-if="connectionsStore.loading" class="empty-state">
@@ -322,131 +333,140 @@ onMounted(() => {
       </div>
     </section>
 
-    <section class="panel">
-      <div class="panel-header">
-        <div>
-          <h2>
-            {{
-              isEditing
-                ? 'Edit connection'
-                : 'Add connection'
-            }}
-          </h2>
+    <div v-if="formOpen" class="modal-backdrop" @click.self="closeForm">
+      <section class="modal-panel" role="dialog" aria-modal="true" :aria-label="isEditing
+        ? 'Edit database connection'
+        : 'Add database connection'
+        ">
+        <div class="modal-header">
+          <div>
+            <h2>
+              {{
+                isEditing
+                  ? 'Edit connection'
+                  : 'Add connection'
+              }}
+            </h2>
 
-          <p>
-            Connection credentials are stored encrypted.
-          </p>
+            <p>
+              Connection credentials are stored encrypted.
+            </p>
+          </div>
+
+          <button type="button" class="modal-close" aria-label="Close" @click="closeForm">
+            ×
+          </button>
         </div>
-      </div>
 
-      <form class="connection-form" @submit.prevent="saveConnection">
-        <label>
-          Connection name
-
-          <input v-model="form.name" required maxlength="100" placeholder="ERP Production" />
-        </label>
-
-        <label>
-          Database engine
-
-          <select v-model="form.engine" @change="changeEngine">
-            <option value="oracle">Oracle</option>
-            <option value="sqlserver">
-              SQL Server
-            </option>
-            <option value="mysql">MySQL</option>
-          </select>
-        </label>
-
-        <div class="connection-form-row">
+        <form class="connection-form" @submit.prevent="saveConnection">
           <label>
-            Host
+            Connection name
 
-            <input v-model="form.host" required placeholder="db01.example.local" />
+            <input v-model="form.name" required maxlength="100" placeholder="ERP Production" />
           </label>
 
           <label>
-            Port
+            Database engine
 
-            <input v-model.number="form.port" required type="number" min="1" max="65535" />
-          </label>
-        </div>
-
-        <template v-if="form.engine === 'oracle'">
-          <label>
-            Oracle identifier type
-
-            <select v-model="form.oracle_identifier_type">
-              <option value="service_name">
-                Service name
+            <select v-model="form.engine" @change="changeEngine">
+              <option value="oracle">Oracle</option>
+              <option value="sqlserver">
+                SQL Server
               </option>
-              <option value="sid">SID</option>
+              <option value="mysql">MySQL</option>
             </select>
           </label>
 
-          <label>
-            {{
-              form.oracle_identifier_type ===
-                'service_name'
-                ? 'Service name'
-                : 'SID'
-            }}
+          <div class="connection-form-row">
+            <label>
+              Host
 
-            <input v-model="form.oracle_identifier" required placeholder="ORCLPDB1" />
+              <input v-model="form.host" required placeholder="db01.example.local" />
+            </label>
+
+            <label>
+              Port
+
+              <input v-model.number="form.port" required type="number" min="1" max="65535" />
+            </label>
+          </div>
+
+          <template v-if="form.engine === 'oracle'">
+            <label>
+              Oracle identifier type
+
+              <select v-model="form.oracle_identifier_type">
+                <option value="service_name">
+                  Service name
+                </option>
+                <option value="sid">SID</option>
+              </select>
+            </label>
+
+            <label>
+              {{
+                form.oracle_identifier_type ===
+                  'service_name'
+                  ? 'Service name'
+                  : 'SID'
+              }}
+
+              <input v-model="form.oracle_identifier" required placeholder="ORCLPDB1" />
+            </label>
+          </template>
+
+          <label v-else>
+            Database
+            <span class="optional-label">
+              Optional
+            </span>
+
+            <input v-model="form.database" placeholder="Database name" />
           </label>
-        </template>
 
-        <label v-else>
-          Database
-          <span class="optional-label">
-            Optional
-          </span>
+          <label>
+            Username
 
-          <input v-model="form.database" placeholder="Database name" />
-        </label>
+            <input v-model="form.username" required autocomplete="off" />
+          </label>
 
-        <label>
-          Username
+          <label>
+            Password
 
-          <input v-model="form.username" required autocomplete="off" />
-        </label>
+            <input v-model="form.password" :required="!isEditing" type="password" autocomplete="new-password"
+              :placeholder="isEditing
+                ? 'Leave blank to keep current password'
+                : 'Database password'
+                " />
+          </label>
 
-        <label>
-          Password
+          <label class="connection-checkbox">
+            <input v-model="form.enabled" type="checkbox" />
 
-          <input v-model="form.password" :required="!isEditing" type="password" autocomplete="new-password"
-            :placeholder="isEditing
-              ? 'Leave blank to keep current password'
-              : 'Database password'
-              " />
-        </label>
+            Monitor this connection
+          </label>
 
-        <label class="connection-checkbox">
-          <input v-model="form.enabled" type="checkbox" />
+          <p v-if="formError" class="login-error">
+            {{ formError }}
+          </p>
 
-          Monitor this connection
-        </label>
+          <div class="connection-form-actions">
+            <button type="submit" class="primary-button" :disabled="connectionsStore.saving">
+              {{
+                connectionsStore.saving
+                  ? 'Saving...'
+                  : isEditing
+                    ? 'Save changes'
+                    : 'Add connection'
+              }}
+            </button>
 
-        <p v-if="formError" class="login-error">
-          {{ formError }}
-        </p>
-
-        <div class="connection-form-actions">
-          <button type="submit" class="primary-button" :disabled="connectionsStore.saving">
-            {{
-              connectionsStore.saving
-                ? 'Saving...'
-                : isEditing
-                  ? 'Save changes'
-                  : 'Add connection'
-            }}
-          </button>
-
-          <button v-if="isEditing" type="button" class="secondary-button" @click="resetForm">
-            Cancel
-          </button>
-        </div>
-      </form>
-    </section>
+            <button type="button" class="secondary-button" @click="closeForm">
+              Cancel
+            </button>
+          </div>
+        </form>
+      </section>
+    </div>
   </div>
 </template>

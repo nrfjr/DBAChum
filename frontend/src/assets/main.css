@@ -1111,3 +1111,463 @@ button {
 .connection-test-result.error {
   color: var(--danger);
 }
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  padding: 1.5rem;
+  background: rgb(0 0 0 / 0.45);
+}
+
+.modal-panel {
+  width: min(100%, 560px);
+  max-height: calc(100vh - 3rem);
+  overflow-y: auto;
+  padding: 1.5rem;
+
+  border: 1px solid #38383f;
+  border-radius: 1rem;
+  background: #18181d;
+}
+
+.modal-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+}
+
+.modal-header h2 {
+  margin: 0;
+}
+
+.modal-header p {
+  margin: 0.3rem 0 0;
+  color: var(--text-muted);
+}
+
+.modal-close {
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  font-size: 1.5rem;
+}
+
+.settings-layout {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  gap: 1.5rem;
+}
+
+.settings-nav {
+  display: grid;
+  align-content: start;
+  gap: 0.4rem;
+}
+
+.settings-nav-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.7rem 0.85rem;
+  border-radius: 0.7rem;
+  color: var(--text-muted);
+  text-decoration: none;
+}
+
+.settings-nav-item.router-link-active {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.settings-nav-item.disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.settings-nav-item span {
+  font-size: 0.75rem;
+}
+
+.settings-section-header {
+  margin-bottom: 1rem;
+}
+
+.settings-section-header h2 {
+  margin: 0;
+}
+
+@media (max-width: 800px) {
+  .settings-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .settings-nav {
+    display: flex;
+    flex-wrap: wrap;
+  }
+}
+
+.database-grid {
+  display: grid;
+  grid-template-columns: repeat(
+    auto-fill,
+    minmax(320px, 1fr)
+  );
+  gap: 1rem;
+}
+
+.database-card {
+  display: grid;
+  gap: 1rem;
+  padding: 1.2rem;
+  border: 1px solid var(--border);
+  border-radius: 1rem;
+  background: var(--surface);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.database-card:hover {
+  border-color: var(--accent);
+}
+
+.database-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.database-card-header > div {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.database-card-header strong {
+  font-size: 1.05rem;
+}
+
+.database-card-header span,
+.database-endpoint,
+.database-identity {
+  color: var(--text-muted);
+}
+
+.database-state {
+  flex-shrink: 0;
+  padding: 0.25rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+}
+
+.database-state.unknown {
+  background: var(--surface-muted);
+  color: var(--text-muted);
+}
+
+.database-preview-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.75rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+}
+
+.database-preview-grid > div {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.database-preview-grid span {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+}
+
+.database-preview-grid strong {
+  font-size: 1.15rem;
+}
+
+.database-empty-state {
+  display: grid;
+  justify-items: start;
+  gap: 0.75rem;
+}
+
+.database-empty-state h2,
+.database-empty-state p {
+  margin: 0;
+}
+
+@media (max-width: 600px) {
+  .database-preview-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+.database-detail-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+}
+
+.database-detail-header h1 {
+  margin: 0.5rem 0 0.25rem;
+}
+
+.database-detail-header p {
+  margin: 0;
+  color: var(--text-muted);
+}
+
+.database-back-button {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  cursor: pointer;
+}
+
+.database-tabs {
+  display: flex;
+  gap: 0.4rem;
+  margin-bottom: 1.25rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.database-tabs button {
+  padding: 0.65rem 0.8rem;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--text-muted);
+}
+
+.database-tabs button.active {
+  border-bottom-color: var(--accent);
+  color: var(--accent);
+}
+
+.database-tabs button:disabled {
+  opacity: 0.45;
+}
+
+.database-detail-metrics {
+  margin-bottom: 1.25rem;
+  padding: 1rem;
+  border: 1px solid var(--border);
+  border-radius: 1rem;
+  background: var(--surface);
+}
+
+.database-info-grid {
+  display: grid;
+  grid-template-columns: repeat(
+    auto-fit,
+    minmax(180px, 1fr)
+  );
+  gap: 1rem;
+  margin: 0;
+}
+
+.database-info-grid div {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.database-info-grid dt {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+}
+
+.database-info-grid dd {
+  margin: 0;
+}
+
+.database-next-step {
+  margin-top: 1rem;
+  color: var(--text-muted);
+}
+
+.database-grid {
+  display: grid;
+  grid-template-columns: repeat(
+    auto-fill,
+    minmax(320px, 1fr)
+  );
+  gap: 1rem;
+}
+
+.database-card {
+  display: grid;
+  gap: 1rem;
+  padding: 1.2rem;
+  border: 1px solid var(--border);
+  border-radius: 1rem;
+  background: var(--surface);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.database-card:hover {
+  border-color: var(--accent);
+}
+
+.database-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.database-card-header > div {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.database-card-header span,
+.database-endpoint,
+.database-identity {
+  color: var(--text-muted);
+}
+
+.database-state {
+  flex-shrink: 0;
+  padding: 0.25rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+}
+
+.database-state.unknown {
+  background: var(--surface-muted);
+  color: var(--text-muted);
+}
+
+.database-preview-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.75rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+}
+
+.database-preview-grid > div {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.database-preview-grid span {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+}
+
+.database-preview-grid strong {
+  font-size: 1.15rem;
+}
+
+.database-empty-state {
+  display: grid;
+  justify-items: start;
+  gap: 0.75rem;
+}
+
+.database-empty-state h2,
+.database-empty-state p {
+  margin: 0;
+}
+
+@media (max-width: 600px) {
+  .database-preview-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+.database-detail-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+}
+
+.database-detail-header h1 {
+  margin: 0.5rem 0 0.25rem;
+}
+
+.database-detail-header p {
+  margin: 0;
+  color: var(--text-muted);
+}
+
+.database-back-button {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  cursor: pointer;
+}
+
+.database-tabs {
+  display: flex;
+  gap: 0.4rem;
+  margin-bottom: 1.25rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.database-tabs button {
+  padding: 0.65rem 0.8rem;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--text-muted);
+}
+
+.database-tabs button.active {
+  border-bottom-color: var(--accent);
+  color: var(--accent);
+}
+
+.database-tabs button:disabled {
+  opacity: 0.45;
+}
+
+.database-detail-metrics {
+  margin-bottom: 1.25rem;
+  padding: 1rem;
+  border: 1px solid var(--border);
+  border-radius: 1rem;
+  background: var(--surface);
+}
+
+.database-info-grid {
+  display: grid;
+  grid-template-columns: repeat(
+    auto-fit,
+    minmax(180px, 1fr)
+  );
+  gap: 1rem;
+  margin: 0;
+}
+
+.database-info-grid div {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.database-info-grid dt {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+}
+
+.database-info-grid dd {
+  margin: 0;
+}
