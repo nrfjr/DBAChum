@@ -11,6 +11,7 @@ import DatabaseWorkspaceView from '@/views/DatabaseWorkspaceView.vue'
 import DatabaseDetailView from '@/views/DatabaseDetailView.vue'
 import SettingsView from '@/views/SettingsView.vue'
 import SettingsConnectionsView from '@/views/SettingsConnectionsView.vue'
+import ServersView from '@/views/ServersView.vue'
 
 
 const router = createRouter({
@@ -57,10 +58,9 @@ const router = createRouter({
     {
       path: '/servers',
       name: 'servers',
-      component: PlaceholderView,
+      component: ServersView,
       meta: {
         title: 'Servers',
-        subtitle: 'Server inventory and infrastructure health.',
       },
     },
 

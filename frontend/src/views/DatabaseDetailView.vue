@@ -6,6 +6,7 @@ import { useDatabasesStore } from '@/stores/databases'
 import DatabaseSessionsPanel from '@/components/databases/DatabaseSessionsPanel.vue'
 import DatabaseStoragePanel from '@/components/databases/DatabaseStoragePanel.vue'
 import DatabaseActivityPanel from '@/components/databases/DatabaseActivityPanel.vue'
+import { useServersStore } from '@/stores/servers'
 
 import {
   useConnectionsStore,
@@ -16,6 +17,7 @@ const route = useRoute()
 const router = useRouter()
 const connectionsStore = useConnectionsStore()
 const databasesStore = useDatabasesStore()
+const serversStore = useServersStore()
 
 const connectionId = computed(
   () => route.params.id as string,
@@ -47,6 +49,20 @@ const supportsDbaUtilities = computed(() =>
   ),
 )
 
+const relatedServers = computed(() => {
+  if (!connection.value) {
+    return []
+  }
+
+  const ids =
+    connection.value.server_ids ?? []
+
+  return serversStore.servers.filter(
+    (server) =>
+      ids.includes(server.id),
+  )
+})
+
 function engineLabel(engine: DatabaseEngine) {
   switch (engine) {
     case 'oracle':
@@ -63,6 +79,12 @@ onMounted(async () => {
     connectionsStore.connections.length === 0
   ) {
     await connectionsStore.load()
+  }
+
+  if (
+    serversStore.servers.length === 0
+  ) {
+    await serversStore.load()
   }
 
   await databasesStore.loadOne(
@@ -168,6 +190,17 @@ onMounted(async () => {
         <div class="panel-header">
           <div>
             <h2>Database information</h2>
+            <div v-if="relatedServers.length">
+              <dt>Servers</dt>
+
+              <dd>
+                {{
+                  relatedServers
+                    .map((server) => server.name)
+                .join(', ')
+                }}
+              </dd>
+            </div>
 
             <p>
               Connection identity and monitoring context.

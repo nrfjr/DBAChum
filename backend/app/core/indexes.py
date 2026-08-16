@@ -40,3 +40,18 @@ async def create_indexes(
         name="ix_database_connections_engine",
     )
     
+    await database.servers.create_index(
+        "name_key",
+        unique=True,
+        name="uq_servers_name_key",
+    )
+
+    await database.servers.create_index(
+        "environment",
+        name="ix_servers_environment",
+    )
+
+    await database.database_connections.create_index(
+        "server_ids",
+        name="ix_database_connections_server_ids",
+    )

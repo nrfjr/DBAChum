@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
+import { useServersStore } from '@/stores/servers'
 
 import {
   useConnectionsStore,
@@ -16,6 +17,8 @@ const formError = ref<string | null>(null)
 const testingId = ref<string | null>(null)
 
 const formOpen = ref(false)
+
+const serversStore = useServersStore()
 
 const testResults = reactive<
   Record<
@@ -38,6 +41,7 @@ interface ConnectionForm {
   oracle_identifier_type: 'service_name' | 'sid'
   oracle_identifier: string
   enabled: boolean
+  server_ids: string[]
 }
 
 function emptyForm(): ConnectionForm {
@@ -52,6 +56,7 @@ function emptyForm(): ConnectionForm {
     oracle_identifier_type: 'service_name',
     oracle_identifier: '',
     enabled: true,
+    server_ids: [],
   }
 }
 
@@ -109,6 +114,7 @@ function editConnection(connection: DatabaseConnection) {
     oracle_identifier:
       connection.oracle_identifier ?? '',
     enabled: connection.enabled,
+    server_ids: [...(connection.server_ids ?? []),],
   })
 
   formOpen.value = true
@@ -135,6 +141,7 @@ function buildPayload(): DatabaseConnectionInput {
         ? form.oracle_identifier.trim() || null
         : null,
     enabled: form.enabled,
+    server_ids: [...form.server_ids],
   }
 }
 
@@ -243,6 +250,7 @@ function engineLabel(engine: DatabaseEngine) {
 
 onMounted(() => {
   connectionsStore.load()
+  serversStore.load()
 })
 </script>
 
@@ -422,6 +430,26 @@ onMounted(() => {
             </span>
 
             <input v-model="form.database" placeholder="Database name" />
+          </label>
+          <label>
+            Servers
+            <span class="optional-label">
+              Optional
+            </span>
+
+            <select v-model="form.server_ids" multiple size="4">
+              <option v-for="server in serversStore.servers" :key="server.id" :value="server.id">
+                {{ server.name }}
+                ·
+                {{ server.hostname }}
+              </option>
+            </select>
+
+            <small>
+              Database endpoints may represent
+              listeners, VIPs or clusters, so
+              server relationships are optional.
+            </small>
           </label>
 
           <label>

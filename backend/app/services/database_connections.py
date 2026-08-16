@@ -45,6 +45,7 @@ def connection_to_response(connection: dict) -> DatabaseConnectionResponse:
         has_password=bool(connection.get("password_encrypted")),
         created_at=connection["created_at"],
         updated_at=connection["updated_at"],
+        server_ids=connection.get("server_ids",[],),
     )
 
 
@@ -95,6 +96,7 @@ async def create_database_connection(
     )
 
     try:
+        await validate_server_ids(database,data.server_ids,)
         result = await database.database_connections.insert_one(document)
     except DuplicateKeyError:
         raise AppError(
@@ -127,6 +129,7 @@ async def update_database_connection(
         document["password_encrypted"] = encrypt_secret(password)
 
     try:
+        await validate_server_ids(database,data.server_ids,)
         result = await database.database_connections.update_one(
             {"_id": object_id},
             {"$set": document},
@@ -215,3 +218,48 @@ async def test_database_connection(
         code="CONNECTOR_NOT_SUPPORTED",
         status_code=400,
     )
+
+async def validate_server_ids(
+    database,
+    server_ids: list[str],
+) -> None:
+    if not server_ids:
+        return
+
+    unique_ids = list(dict.fromkeys(server_ids))
+
+    if len(unique_ids) != len(server_ids):
+        raise AppError(
+            "Duplicate server relationships are not allowed.",
+            code="DUPLICATE_SERVER_RELATIONSHIP",
+            status_code=400,
+        )
+
+    object_ids = []
+
+    for server_id in unique_ids:
+        try:
+            object_ids.append(
+                ObjectId(server_id)
+            )
+        except Exception:
+            raise AppError(
+                "One or more selected servers are invalid.",
+                code="INVALID_SERVER_RELATIONSHIP",
+                status_code=400,
+            )
+
+    count = await database.servers.count_documents(
+        {
+            "_id": {
+                "$in": object_ids,
+            }
+        }
+    )
+
+    if count != len(object_ids):
+        raise AppError(
+            "One or more selected servers do not exist.",
+            code="SERVER_RELATIONSHIP_NOT_FOUND",
+            status_code=400,
+        )

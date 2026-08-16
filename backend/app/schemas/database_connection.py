@@ -24,6 +24,8 @@ class DatabaseConnectionBase(BaseModel):
 
     oracle_identifier_type: Literal["service_name", "sid"] | None = None
     oracle_identifier: str | None = Field(default=None, max_length=128)
+    
+    server_ids: list[str] = Field(default_factory=list,max_length=16,)
 
     enabled: bool = True
 
@@ -58,6 +60,7 @@ class DatabaseConnectionBase(BaseModel):
             self.oracle_identifier = None
 
         return self
+    
 
 
 class DatabaseConnectionCreate(DatabaseConnectionBase):
@@ -83,3 +86,4 @@ class DatabaseConnectionTestResponse(BaseModel):
     service_name: str | None = None
     connected_user: str | None = None
     database_version: str | None = None
+

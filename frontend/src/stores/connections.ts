@@ -16,6 +16,7 @@ export interface DatabaseConnection {
   has_password: boolean
   created_at: string
   updated_at: string
+  server_ids: string[]
 }
 
 export interface DatabaseConnectionInput {
@@ -29,6 +30,7 @@ export interface DatabaseConnectionInput {
   oracle_identifier_type: 'service_name' | 'sid' | null
   oracle_identifier: string | null
   enabled: boolean
+  server_ids: string[]
 }
 
 export interface DatabaseConnectionTestResult {
