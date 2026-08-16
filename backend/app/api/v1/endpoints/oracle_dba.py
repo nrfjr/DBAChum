@@ -18,6 +18,8 @@ from app.services.oracle_dba import (
     load_oracle_sessions,
     load_oracle_storage,
 )
+from app.core.permissions import Permission
+from app.dependencies.permissions import require_permission
 
 
 router = APIRouter(
@@ -33,9 +35,7 @@ router = APIRouter(
 async def get_sessions(
     connection_id: str,
     request: Request,
-    current_user: UserResponse = Depends(
-        get_current_user
-    ),
+    current_user: UserResponse = Depends(require_permission(Permission.MONITOR_READ)),
 ):
     return await load_oracle_sessions(
         request.app.state.database,
@@ -50,9 +50,7 @@ async def get_sessions(
 async def get_storage(
     connection_id: str,
     request: Request,
-    current_user: UserResponse = Depends(
-        get_current_user
-    ),
+    current_user: UserResponse = Depends(require_permission(Permission.MONITOR_READ)),
 ):
     return await load_oracle_storage(
         request.app.state.database,
@@ -67,9 +65,7 @@ async def get_storage(
 async def get_activity(
     connection_id: str,
     request: Request,
-    current_user: UserResponse = Depends(
-        get_current_user
-    ),
+    current_user: UserResponse = Depends(require_permission(Permission.MONITOR_READ)),
 ):
     return await load_oracle_activity(
         request.app.state.database,

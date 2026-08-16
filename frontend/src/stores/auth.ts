@@ -1,11 +1,23 @@
 import { defineStore } from 'pinia'
 
+import type {
+  UserRole,
+} from '@/core/permissions'
+
+
+export interface AuthUser {
+  id: string
+  username: string
+  role: UserRole
+  enabled: boolean
+}
+
 
 interface User {
   id: string
   username: string
   display_name: string
-  role: string
+  role: UserRole
   is_active: boolean
   created_at: string
 }

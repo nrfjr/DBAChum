@@ -1,8 +1,8 @@
 
 <script setup lang="ts">
 import OracleStoragePanel from '@/components/databases/oracle/OracleStoragePanel.vue'
-import SqlServerStoragePanel from '@/components/databases/sqlserver/SqlServerStoragePanel.vue'
-import MySqlStoragePanel from '@/components/databases/mysql/MySqlStoragePanel.vue'
+// import SqlServerStoragePanel from '@/components/databases/sqlserver/SqlServerStoragePanel.vue'
+// import MySqlStoragePanel from '@/components/databases/mysql/MySqlStoragePanel.vue'
 
 import type { DatabaseEngine } from '@/stores/connections'
 

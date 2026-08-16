@@ -13,6 +13,14 @@ import {
   type ServerOsFamily,
 } from '@/stores/servers'
 
+import {
+  useAuthStore,
+} from '@/stores/auth'
+
+import {
+  hasPermission,
+} from '@/core/permissions'
+
 
 const serversStore = useServersStore()
 
@@ -65,6 +73,17 @@ const form = reactive<ServerForm>(
 
 const isEditing = computed(
   () => editingId.value !== null
+)
+
+const authStore = useAuthStore()
+
+
+const canManageServers = computed(
+  () =>
+    hasPermission(
+      authStore.user?.role,
+      'servers:manage',
+    ),
 )
 
 
@@ -240,13 +259,14 @@ onMounted(() => {
       </p>
     </div>
 
-    <button
-      type="button"
-      class="primary-button"
-      @click="openAddServer"
-    >
-      Add server
-    </button>
+<button
+  v-if="canManageServers"
+  type="button"
+  class="primary-button"
+  @click="openAddServer"
+>
+  Add server
+</button>
   </section>
 
   <p
@@ -348,20 +368,22 @@ onMounted(() => {
 
       <div class="connection-actions">
         <button
-          type="button"
-          class="secondary-button"
-          @click="editServer(server)"
-        >
-          Edit
-        </button>
+  v-if="canManageServers"
+  type="button"
+  class="secondary-button"
+  @click="editServer(server)"
+>
+  Edit
+</button>
 
         <button
-          type="button"
-          class="secondary-button"
-          @click="removeServer(server)"
-        >
-          Delete
-        </button>
+  v-if="canManageServers"
+  type="button"
+  class="secondary-button"
+  @click="removeServer(server)"
+>
+  Delete
+</button>
       </div>
     </article>
   </div>

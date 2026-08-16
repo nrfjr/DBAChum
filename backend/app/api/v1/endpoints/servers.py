@@ -28,6 +28,8 @@ from app.services.servers import (
     server_to_response,
     update_server,
 )
+from app.core.permissions import Permission
+from app.dependencies.permissions import require_permission
 
 
 router = APIRouter(
@@ -42,9 +44,7 @@ router = APIRouter(
 )
 async def get_servers(
     request: Request,
-    current_user: UserResponse = Depends(
-        get_current_user
-    ),
+    current_user: UserResponse = Depends(require_permission(Permission.MONITOR_READ)),
 ):
     return await list_servers(
         request.app.state.database
@@ -58,9 +58,7 @@ async def get_servers(
 async def get_server_detail(
     server_id: str,
     request: Request,
-    current_user: UserResponse = Depends(
-        get_current_user
-    ),
+    current_user: UserResponse = Depends(require_permission(Permission.MONITOR_READ)),
 ):
     server = await get_server(
         request.app.state.database,
@@ -80,9 +78,7 @@ async def get_server_detail(
 async def get_server_database_list(
     server_id: str,
     request: Request,
-    current_user: UserResponse = Depends(
-        get_current_user
-    ),
+    current_user: UserResponse = Depends(require_permission(Permission.MONITOR_READ)),
 ):
     connections = await list_server_databases(
         request.app.state.database,
@@ -103,9 +99,7 @@ async def get_server_database_list(
 async def create_server_endpoint(
     data: ServerCreate,
     request: Request,
-    current_user: UserResponse = Depends(
-        get_current_user
-    ),
+    current_user: UserResponse = Depends(require_permission(Permission.SERVER_MANAGE)),
 ):
     return await create_server(
         request.app.state.database,
@@ -121,9 +115,7 @@ async def update_server_endpoint(
     server_id: str,
     data: ServerUpdate,
     request: Request,
-    current_user: UserResponse = Depends(
-        get_current_user
-    ),
+    current_user: UserResponse = Depends(require_permission(Permission.SERVER_MANAGE)),
 ):
     return await update_server(
         request.app.state.database,
@@ -139,9 +131,7 @@ async def update_server_endpoint(
 async def delete_server_endpoint(
     server_id: str,
     request: Request,
-    current_user: UserResponse = Depends(
-        get_current_user
-    ),
+    current_user: UserResponse = Depends(require_permission(Permission.SERVER_MANAGE)),
 ):
     await delete_server(
         request.app.state.database,

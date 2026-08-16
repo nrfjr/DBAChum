@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 
 import { useUiStore } from '@/stores/ui'
 
-import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
+import { hasPermission } from '@/core/permissions'
 
 const route = useRoute()
 const uiStore = useUiStore()
@@ -19,38 +19,57 @@ const pageSubtitle = computed(() =>
   String(route.meta.subtitle ?? 'Database administration workspace.'),
 )
 
-const navigation = [
-  {
-    label: 'Dashboard',
-    path: '/',
-    icon: 'gauge-high',
-  },
-  {
-    label: 'Databases',
-    path: '/databases',
-    icon: 'database',
-  },
-  {
-    label: 'Servers',
-    path: '/servers',
-    icon: 'server',
-  },
-  {
-    label: 'Assets',
-    path: '/assets',
-    icon: 'boxes-stacked',
-  },
-  {
-    label: 'Alerts',
-    path: '/alerts',
-    icon: 'bell',
-  },
-  {
-    label: 'Settings',
-    path: '/settings',
-    icon: 'gear',
-  },
-]
+const canAccessSettings = computed(() =>
+  hasPermission(
+    authStore.user?.role,
+    'connections:test',
+  ) ||
+  hasPermission(
+    authStore.user?.role,
+    'users:manage',
+  ),
+)
+
+const navigation = computed(() => {
+  const items = [
+    {
+      label: 'Dashboard',
+      path: '/',
+      icon: 'gauge-high',
+    },
+    {
+      label: 'Databases',
+      path: '/databases',
+      icon: 'database',
+    },
+    {
+      label: 'Servers',
+      path: '/servers',
+      icon: 'server',
+    },
+    {
+      label: 'Assets',
+      path: '/assets',
+      icon: 'boxes-stacked',
+    },
+    {
+      label: 'Alerts',
+      path: '/alerts',
+      icon: 'bell',
+    },
+    {
+      label: 'Settings',
+      path: '/settings',
+      icon: 'gear',
+    },
+  ]
+
+  return items.filter(
+    (item) =>
+      item.path !== '/settings' ||
+      canAccessSettings.value,
+  )
+})
 
 async function logout() {
   await authStore.logout()

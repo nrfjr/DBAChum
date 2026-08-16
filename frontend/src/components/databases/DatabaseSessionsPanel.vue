@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import OracleSessionsPanel from '@/components/databases/oracle/OracleSessionsPanel.vue'
-import SqlServerSessionsPanel from '@/components/databases/sqlserver/SqlServerSessionsPanel.vue'
-import MySqlSessionsPanel from '@/components/databases/mysql/MySqlSessionsPanel.vue'
+// import SqlServerSessionsPanel from '@/components/databases/sqlserver/SqlServerSessionsPanel.vue'
+// import MySqlSessionsPanel from '@/components/databases/mysql/MySqlSessionsPanel.vue'
 
 import type { DatabaseEngine } from '@/stores/connections'
 

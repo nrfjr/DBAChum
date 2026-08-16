@@ -3,6 +3,14 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { useServersStore } from '@/stores/servers'
 
 import {
+  useAuthStore,
+} from '@/stores/auth'
+
+import {
+  hasPermission,
+} from '@/core/permissions'
+
+import {
   useConnectionsStore,
   type DatabaseConnection,
   type DatabaseConnectionInput,
@@ -19,6 +27,26 @@ const testingId = ref<string | null>(null)
 const formOpen = ref(false)
 
 const serversStore = useServersStore()
+
+const authStore = useAuthStore()
+
+
+const canTestConnections = computed(
+  () =>
+    hasPermission(
+      authStore.user?.role,
+      'connections:test',
+    ),
+)
+
+
+const canManageConnections = computed(
+  () =>
+    hasPermission(
+      authStore.user?.role,
+      'connections:manage',
+    ),
+)
 
 const testResults = reactive<
   Record<
@@ -321,19 +349,15 @@ onMounted(() => {
           </div>
 
           <div class="connection-actions">
-            <button type="button" class="secondary-button" :disabled="testingId === connection.id"
+            <button v-if="canTestConnections" type="button" class="secondary-button"
               @click="testConnection(connection)">
-              {{
-                testingId === connection.id
-                  ? 'Testing...'
-                  : 'Test'
-              }}
+              Test
             </button>
-            <button type="button" class="secondary-button" @click="editConnection(connection)">
+            <button v-if="canManageConnections" type="button" class="secondary-button" @click="editConnection(connection)">
               Edit
             </button>
 
-            <button type="button" class="secondary-button" @click="removeConnection(connection)">
+            <button v-if="canManageConnections" type="button" class="secondary-button" @click="removeConnection(connection)">
               Delete
             </button>
           </div>

@@ -12,6 +12,8 @@ from app.services.sqlserver_dba import (
     load_sqlserver_sessions,
     load_sqlserver_storage,
 )
+from app.core.permissions import Permission
+from app.dependencies.permissions import require_permission
 
 
 router = APIRouter(
@@ -27,9 +29,7 @@ router = APIRouter(
 async def sessions(
     connection_id: str,
     request: Request,
-    current_user: UserResponse = Depends(
-        get_current_user
-    ),
+    current_user: UserResponse = Depends(require_permission(Permission.MONITOR_READ)),
 ):
     return await load_sqlserver_sessions(
         request.app.state.database,
@@ -44,9 +44,7 @@ async def sessions(
 async def storage(
     connection_id: str,
     request: Request,
-    current_user: UserResponse = Depends(
-        get_current_user
-    ),
+    current_user: UserResponse = Depends(require_permission(Permission.MONITOR_READ)),
 ):
     return await load_sqlserver_storage(
         request.app.state.database,
@@ -61,11 +59,10 @@ async def storage(
 async def activity(
     connection_id: str,
     request: Request,
-    current_user: UserResponse = Depends(
-        get_current_user
-    ),
+    current_user: UserResponse = Depends(require_permission(Permission.MONITOR_READ)),
 ):
     return await load_sqlserver_activity(
         request.app.state.database,
         connection_id,
     )
+    

@@ -2,6 +2,21 @@ from bson import ObjectId
 
 from app.schemas.user import UserResponse
 
+from datetime import datetime, timezone
+
+from bson import ObjectId
+from pymongo.errors import DuplicateKeyError
+
+from app.core.exceptions import AppError
+from app.core.security import hash_password
+from app.schemas.user import (
+    UserCreate,
+    UserPasswordUpdate,
+    UserResponse,
+    UserRole,
+    UserUpdate,
+)
+
 
 def normalize_username(
     username: str,
@@ -48,15 +63,264 @@ def user_to_response(
 ) -> UserResponse:
     return UserResponse(
         id=str(user["_id"]),
+
         username=user["username"],
-        display_name=user["display_name"],
+
+        display_name=user.get(
+            "display_name",
+            user["username"],
+        ),
+
         role=user.get(
             "role",
-            "user",
+            "viewer",
         ),
+
         is_active=user.get(
             "is_active",
             True,
         ),
-        created_at=user["created_at"],
+
+        created_at=user.get(
+            "created_at"
+        ),
+
+        updated_at=user.get(
+            "updated_at"
+        ),
+    )
+
+def parse_user_id(user_id: str) -> ObjectId:
+    try:
+        return ObjectId(user_id)
+    except Exception:
+        raise AppError(
+            "User not found.",
+            code="USER_NOT_FOUND",
+            status_code=404,
+        )
+
+async def list_users(
+    database,
+) -> list[UserResponse]:
+    cursor = database.users.find().sort(
+        "username",
+        1,
+    )
+
+    users = await cursor.to_list(None)
+
+    return [
+        user_to_response(user)
+        for user in users
+    ]
+
+async def create_managed_user(
+    database,
+    data: UserCreate,
+) -> UserResponse:
+    now = datetime.now(timezone.utc)
+
+    username = data.username.strip()
+
+    document = {
+        "username": username,
+        "username_key": username.lower(),
+        "password_hash": hash_password(
+            data.password
+        ),
+        "role": data.role.value,
+        "is_active": data.is_active,
+        "created_at": now,
+        "updated_at": now,
+    }
+
+    try:
+        result = await database.users.insert_one(
+            document
+        )
+
+    except DuplicateKeyError:
+        raise AppError(
+            "A user with this username "
+            "already exists.",
+            code="USERNAME_EXISTS",
+            status_code=409,
+        )
+
+    user = await database.users.find_one(
+        {
+            "_id": result.inserted_id,
+        }
+    )
+
+    return user_to_response(user)
+
+async def update_managed_user(
+    database,
+    user_id: str,
+    data: UserUpdate,
+    current_user_id: str,
+) -> UserResponse:
+    object_id = parse_user_id(user_id)
+
+    user = await database.users.find_one(
+        {
+            "_id": object_id,
+        }
+    )
+
+    if user is None:
+        raise AppError(
+            "User not found.",
+            code="USER_NOT_FOUND",
+            status_code=404,
+        )
+
+    if str(object_id) == current_user_id:
+        if not data.is_active:
+            raise AppError(
+                "You cannot disable your own account.",
+                code="CANNOT_DISABLE_SELF",
+                status_code=400,
+            )
+
+        if data.role != UserRole.ADMIN:
+            raise AppError(
+                "You cannot remove your own "
+                "administrator role.",
+                code="CANNOT_DEMOTE_SELF",
+                status_code=400,
+            )
+    await database.users.update_one(
+        {
+            "_id": object_id,
+        },
+        {
+            "$set": {
+                "role": data.role.value,
+                "is_active": data.is_active,
+                "updated_at": datetime.now(
+                    timezone.utc
+                ),
+            }
+        },
+    )
+
+    updated = await database.users.find_one(
+        {
+            "_id": object_id,
+        }
+    )
+    
+    if not data.is_active:
+        await database.auth_sessions.delete_many(
+            {
+                "user_id": object_id,
+            }
+        )
+
+    return user_to_response(updated)
+
+async def reset_managed_user_password(
+    database,
+    user_id: str,
+    data: UserPasswordUpdate,
+) -> None:
+    object_id = parse_user_id(user_id)
+
+    result = await database.users.update_one(
+        {
+            "_id": object_id,
+        },
+        {
+            "$set": {
+                "password_hash":
+                    hash_password(
+                        data.password
+                    ),
+
+                "updated_at":
+                    datetime.now(timezone.utc),
+            }
+        },
+    )
+    
+    await database.auth_sessions.delete_many(
+        {
+            "user_id": {
+                "$in": [
+                    user_id,
+                    object_id,
+                ]
+            }
+        }
+    )
+
+    if result.matched_count == 0:
+        raise AppError(
+            "User not found.",
+            code="USER_NOT_FOUND",
+            status_code=404,
+        )
+
+async def delete_managed_user(
+    database,
+    user_id: str,
+    current_user_id: str,
+) -> None:
+    object_id = parse_user_id(user_id)
+
+    if str(object_id) == current_user_id:
+        raise AppError(
+            "You cannot delete your own account.",
+            code="CANNOT_DELETE_SELF",
+            status_code=400,
+        )
+
+    user = await database.users.find_one(
+        {
+            "_id": object_id,
+        }
+    )
+
+    if user is None:
+        raise AppError(
+            "User not found.",
+            code="USER_NOT_FOUND",
+            status_code=404,
+        )
+
+    if user.get("role") == UserRole.ADMIN.value:
+        admin_count = await database.users.count_documents(
+            {
+                "role": UserRole.ADMIN.value,
+                "is_active": True,
+            }
+        )
+
+        if admin_count <= 1:
+            raise AppError(
+                "The last enabled administrator "
+                "cannot be deleted.",
+                code="LAST_ADMIN_REQUIRED",
+                status_code=400,
+            )
+
+    await database.users.delete_one(
+        {
+            "_id": object_id,
+        }
+    )
+
+    # Remove their active sessions too.
+    await database.auth_sessions.delete_many(
+        {
+            "user_id": {
+                "$in": [
+                    user_id,
+                    object_id,
+                ]
+            }
+        }
     )

@@ -28,7 +28,7 @@ async def authenticate_user(
 
     if user is None:
         return None
-
+    
     if not user.get(
         "is_active",
         True,
@@ -126,7 +126,7 @@ async def get_user_from_session(
         True,
     ):
         return None
-
+    
     return user
 
 

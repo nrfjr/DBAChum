@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import OracleActivityPanel from '@/components/databases/oracle/OracleActivityPanel.vue'
-import SqlServerActivityPanel from '@/components/databases/sqlserver/SqlServerActivityPanel.vue'
-import MySqlActivityPanel from '@/components/databases/mysql/MySqlActivityPanel.vue'
+// import SqlServerActivityPanel from '@/components/databases/sqlserver/SqlServerActivityPanel.vue'
+// import MySqlActivityPanel from '@/components/databases/mysql/MySqlActivityPanel.vue'
 
 import type { DatabaseEngine } from '@/stores/connections'
 

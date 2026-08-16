@@ -2,7 +2,16 @@
 import { computed } from 'vue'
 import { RouterLink, RouterView, useRoute } from 'vue-router'
 
+import {
+  useAuthStore,
+} from '@/stores/auth'
+
+import {
+  hasPermission,
+} from '@/core/permissions'
+
 const route = useRoute()
+const authStore = useAuthStore()
 
 const sectionTitle = computed(() => {
   switch (route.name) {
@@ -12,6 +21,23 @@ const sectionTitle = computed(() => {
       return 'Settings'
   }
 })
+
+const canManageUsers = computed(
+  () =>
+    hasPermission(
+      authStore.user?.role,
+      'users:manage',
+    ),
+)
+
+
+const canAccessConnections = computed(() =>
+  hasPermission(
+    authStore.user?.role,
+    'connections:test',
+  ),
+)
+
 </script>
 
 <template>
@@ -24,11 +50,11 @@ const sectionTitle = computed(() => {
 
   <div class="settings-layout">
     <aside class="settings-nav">
-      <RouterLink
-        to="/settings/connections"
-        class="settings-nav-item"
-      >
+      <RouterLink v-if="canAccessConnections" to="/settings/connections">
         Connections
+      </RouterLink>
+      <RouterLink v-if="canManageUsers" to="/settings/users">
+        Users
       </RouterLink>
 
       <div class="settings-nav-item disabled">

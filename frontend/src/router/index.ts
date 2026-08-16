@@ -12,6 +12,8 @@ import DatabaseDetailView from '@/views/DatabaseDetailView.vue'
 import SettingsView from '@/views/SettingsView.vue'
 import SettingsConnectionsView from '@/views/SettingsConnectionsView.vue'
 import ServersView from '@/views/ServersView.vue'
+import SettingsUsersView from '@/views/SettingsUsersView.vue'
+import { hasPermission, } from '@/core/permissions'
 
 
 const router = createRouter({
@@ -99,8 +101,18 @@ const router = createRouter({
           path: 'connections',
           name: 'settings-connections',
           component: SettingsConnectionsView,
+
           meta: {
-            title: 'Connections',
+            permission: 'connections:test',
+          },
+        },
+        {
+          path: 'users',
+          name: 'settings-users',
+          component: SettingsUsersView,
+
+          meta: {
+            permission: 'users:manage',
           },
         },
       ],
@@ -123,8 +135,19 @@ router.beforeEach(async (to) => {
     && authStore.isAuthenticated
     && to.name === 'login'
   ) {
-    return {
-      name: 'dashboard',
+    const requiredPermission =
+      to.meta.permission
+
+    if (
+      requiredPermission &&
+      !hasPermission(
+        authStore.user?.role,
+        requiredPermission,
+      )
+    ) {
+      return {
+        name: 'dashboard',
+      }
     }
   }
 

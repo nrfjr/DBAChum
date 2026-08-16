@@ -17,6 +17,8 @@ from app.services.database_connections import (
     update_database_connection,
     test_database_connection,
 )
+from app.core.permissions import Permission
+from app.dependencies.permissions import require_permission
 
 
 router = APIRouter(
@@ -31,7 +33,7 @@ router = APIRouter(
 )
 async def get_connections(
     request: Request,
-    current_user: UserResponse = Depends(get_current_user),
+    current_user: UserResponse = Depends(require_permission(Permission.MONITOR_READ)),
 ):
     return await list_database_connections(
         request.app.state.database
@@ -44,7 +46,7 @@ async def get_connections(
 async def test_connection(
     connection_id: str,
     request: Request,
-    current_user: UserResponse = Depends(get_current_user),
+    current_user: UserResponse = Depends(require_permission(Permission.CONNECTION_TEST)),
 ):
     return await test_database_connection(
         request.app.state.database,
@@ -59,7 +61,7 @@ async def test_connection(
 async def get_connection(
     connection_id: str,
     request: Request,
-    current_user: UserResponse = Depends(get_current_user),
+    current_user: UserResponse = Depends(require_permission(Permission.MONITOR_READ)),
 ):
     connection = await get_database_connection(
         request.app.state.database,
@@ -77,7 +79,7 @@ async def get_connection(
 async def create_connection(
     data: DatabaseConnectionCreate,
     request: Request,
-    current_user: UserResponse = Depends(get_current_user),
+    current_user: UserResponse = Depends(require_permission(Permission.CONNECTION_MANAGE)),
 ):
     return await create_database_connection(
         request.app.state.database,
@@ -93,7 +95,7 @@ async def update_connection(
     connection_id: str,
     data: DatabaseConnectionUpdate,
     request: Request,
-    current_user: UserResponse = Depends(get_current_user),
+    current_user: UserResponse = Depends(require_permission(Permission.CONNECTION_MANAGE)),
 ):
     return await update_database_connection(
         request.app.state.database,
@@ -109,7 +111,7 @@ async def update_connection(
 async def delete_connection(
     connection_id: str,
     request: Request,
-    current_user: UserResponse = Depends(get_current_user),
+    current_user: UserResponse = Depends(require_permission(Permission.CONNECTION_MANAGE)),
 ):
     await delete_database_connection(
         request.app.state.database,
