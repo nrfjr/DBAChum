@@ -13,13 +13,17 @@ class Settings(BaseSettings):
 
     mongodb_uri: str = "mongodb://localhost:27017"
     mongodb_database: str = "dbachum"
-    
+
     session_cookie_name: str = "dbachum_session"
     session_hours: int = 12
 
     cookie_secure: bool = False
-    
+
     connection_encryption_key: str
+
+    metrics_collector_enabled: bool = True
+    metrics_collector_interval_seconds: int = 60
+    metrics_retention_days: int = 30
 
     cors_origins: str = (
         "http://localhost:5173,"
@@ -37,9 +41,7 @@ class Settings(BaseSettings):
     @property
     def cors_origin_list(self) -> list[str]:
         return [
-            origin.strip()
-            for origin in self.cors_origins.split(",")
-            if origin.strip()
+            origin.strip() for origin in self.cors_origins.split(",") if origin.strip()
         ]
 
 

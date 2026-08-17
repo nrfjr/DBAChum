@@ -3,8 +3,10 @@ import logging
 from fastapi import FastAPI
 from pymongo import AsyncMongoClient
 
+from app.core.collections import (
+    ensure_metrics_collection,
+)
 from app.core.config import settings
-
 from app.core.indexes import create_indexes
 
 
@@ -24,8 +26,12 @@ async def connect_to_mongodb(app: FastAPI) -> None:
 
     try:
         await database.command("ping")
-        
+
         await create_indexes(database)
+
+        await ensure_metrics_collection(
+            database
+        )
 
         logger.info(
             "MongoDB connection established database=%s",

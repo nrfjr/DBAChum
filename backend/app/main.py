@@ -1,3 +1,4 @@
+import asyncio
 from contextlib import asynccontextmanager
 import logging
 
@@ -16,11 +17,11 @@ from app.core.exceptions import (
     unhandled_exception_handler,
 )
 from app.core.logging import configure_logging
-
-
-configure_logging(
-    settings.log_level
+from app.services.metrics_collector import (
+    run_metrics_collector,
 )
+
+configure_logging(settings.log_level)
 
 logger = logging.getLogger(__name__)
 
@@ -38,13 +39,32 @@ async def lifespan(
 
     await connect_to_mongodb(app)
 
-    yield
+    collector_task = None
 
-    await close_mongodb(app)
+    if settings.metrics_collector_enabled:
+        collector_task = asyncio.create_task(
+            run_metrics_collector(app.state.database),
+            name="database-metrics-collector",
+        )
 
-    logger.info(
-        "DBAChum API stopped"
-    )
+        app.state.metrics_collector_task = collector_task
+
+    try:
+        yield
+
+    finally:
+        if collector_task is not None:
+            collector_task.cancel()
+
+            try:
+                await collector_task
+
+            except asyncio.CancelledError:
+                pass
+
+        await close_mongodb(app)
+
+        logger.info("DBAChum API stopped")
 
 
 def create_app() -> FastAPI:
@@ -52,8 +72,7 @@ def create_app() -> FastAPI:
         title=settings.app_name,
         version=settings.app_version,
         description=(
-            "Backend API for the DBAChum "
-            "database administration platform."
+            "Backend API for the DBAChum " "database administration platform."
         ),
         lifespan=lifespan,
     )
