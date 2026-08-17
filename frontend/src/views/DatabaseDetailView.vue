@@ -6,6 +6,7 @@ import { useDatabasesStore } from '@/stores/databases'
 import DatabaseSessionsPanel from '@/components/databases/DatabaseSessionsPanel.vue'
 import DatabaseStoragePanel from '@/components/databases/DatabaseStoragePanel.vue'
 import DatabaseActivityPanel from '@/components/databases/DatabaseActivityPanel.vue'
+import DatabaseHistoryPanel from '@/components/databases/DatabaseHistoryPanel.vue'
 import { useServersStore } from '@/stores/servers'
 
 import {
@@ -37,6 +38,7 @@ const overview = computed(() =>
 
 type DatabaseTab =
   | 'overview'
+  | 'history'
   | 'sessions'
   | 'storage'
   | 'activity'
@@ -135,6 +137,12 @@ onMounted(async () => {
           Overview
         </button>
 
+        <button :class="{
+          active: activeTab === 'history',
+        }" @click="activeTab = 'history'">
+          History
+        </button>
+
         <button :disabled="!supportsDbaUtilities" :class="{
           active: activeTab === 'sessions',
         }" @click="activeTab = 'sessions'">
@@ -154,39 +162,55 @@ onMounted(async () => {
         </button>
       </nav>
 
-      <section class="database-preview-grid database-detail-metrics">
-        <div v-if="activeTab === 'overview'">
-          <div>
-            <span>Active</span>
-            <strong>—</strong>
-          </div>
+      <section v-if="activeTab === 'overview'" class="database-preview-grid database-detail-metrics">
+        <div>
+          <span>Active</span>
 
-          <div>
-            <span>Connections</span>
-            <strong>—</strong>
-          </div>
-
-          <div>
-            <span>Blocked</span>
-            <strong>—</strong>
-          </div>
-
-          <div>
-            <span>Size</span>
-            <strong>—</strong>
-          </div>
+          <strong>
+            {{ overview?.active ?? '—' }}
+          </strong>
         </div>
-        <DatabaseSessionsPanel v-else-if="activeTab === 'sessions'" :connection-id="connection.id"
-          :engine="connection.engine" />
 
-        <DatabaseStoragePanel v-else-if="activeTab === 'storage'" :connection-id="connection.id"
-          :engine="connection.engine" />
+        <div>
+          <span>Connections</span>
 
-        <DatabaseActivityPanel v-else-if="activeTab === 'activity'" :connection-id="connection.id"
-          :engine="connection.engine" />
+          <strong>
+            {{ overview?.connections ?? '—' }}
+          </strong>
+        </div>
+
+        <div>
+          <span>Blocked</span>
+
+          <strong>
+            {{ overview?.blocked ?? '—' }}
+          </strong>
+        </div>
+
+        <div>
+          <span>Uptime</span>
+
+          <strong>
+            {{
+              overview?.uptime_seconds
+              ?? '—'
+            }}
+          </strong>
+        </div>
       </section>
 
-      <section class="panel database-overview-panel">
+      <DatabaseHistoryPanel v-else-if="activeTab === 'history'" :connection-id="connection.id" />
+
+      <DatabaseSessionsPanel v-else-if="activeTab === 'sessions'" :connection-id="connection.id"
+        :engine="connection.engine" />
+
+      <DatabaseStoragePanel v-else-if="activeTab === 'storage'" :connection-id="connection.id"
+        :engine="connection.engine" />
+
+      <DatabaseActivityPanel v-else-if="activeTab === 'activity'" :connection-id="connection.id"
+        :engine="connection.engine" />
+
+      <section v-if="activeTab === 'overview'" class="panel database-overview-panel">
         <div class="panel-header">
           <div>
             <h2>Database information</h2>
@@ -197,7 +221,7 @@ onMounted(async () => {
                 {{
                   relatedServers
                     .map((server) => server.name)
-                .join(', ')
+                    .join(', ')
                 }}
               </dd>
             </div>

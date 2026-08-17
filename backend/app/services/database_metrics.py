@@ -1,15 +1,8 @@
-from datetime import (
-    datetime,
-    timedelta,
-    timezone,
-)
+from datetime import datetime, timedelta, timezone
 
-from app.core.collections import (
-    METRICS_COLLECTION_NAME,
-)
-from app.services.database_connections import (
-    get_database_connection,
-)
+from app.core.collections import METRICS_COLLECTION_NAME
+from app.core.config import settings
+from app.services.database_connections import get_database_connection
 
 
 async def get_database_metric_history(
@@ -18,38 +11,22 @@ async def get_database_metric_history(
     hours: int,
     limit: int,
 ):
-    connection = (
-        await get_database_connection(
-            database,
-            connection_id,
-        )
+    connection = await get_database_connection(
+        database,
+        connection_id,
     )
 
-    to_at = datetime.now(
-        timezone.utc
-    )
+    to_at = datetime.now(timezone.utc)
 
-    from_at = (
-        to_at
-        - timedelta(
-            hours=hours
-        )
-    )
+    from_at = to_at - timedelta(hours=hours)
 
-    collection = database[
-        METRICS_COLLECTION_NAME
-    ]
+    collection = database[METRICS_COLLECTION_NAME]
 
     cursor = (
-        collection
-        .find(
+        collection.find(
             {
-                "meta.connection_id":
-                    connection_id,
-
-                "meta.engine":
-                    connection["engine"],
-
+                "meta.connection_id": connection_id,
+                "meta.engine": connection["engine"],
                 "collected_at": {
                     "$gte": from_at,
                     "$lte": to_at,
@@ -67,9 +44,7 @@ async def get_database_metric_history(
         .limit(limit)
     )
 
-    items = await cursor.to_list(
-        None
-    )
+    items = await cursor.to_list(None)
 
     # Mongo returned newest → oldest
     # because we want the newest N points.
@@ -79,21 +54,11 @@ async def get_database_metric_history(
     items.reverse()
 
     return {
-        "connection_id":
-            connection_id,
-
-        "engine":
-            connection["engine"],
-
-        "from_at":
-            from_at,
-
-        "to_at":
-            to_at,
-
-        "count":
-            len(items),
-
-        "items":
-            items,
+        "connection_id": connection_id,
+        "engine": connection["engine"],
+        "from_at": from_at,
+        "to_at": to_at,
+        "sample_interval_seconds": settings.metrics_collector_interval_seconds,
+        "count": len(items),
+        "items": items,
     }

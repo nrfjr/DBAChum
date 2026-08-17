@@ -1811,3 +1811,59 @@ button {
   border-radius: 999px;
   font-size: 0.75rem;
 }
+
+.database-history-panel {
+  width: 100%;
+}
+
+.database-history-ranges,
+.database-history-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-bottom: 1rem;
+}
+
+.database-history-ranges button,
+.database-history-metrics button {
+  padding: 0.45rem 0.7rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-small);
+
+  background: var(--color-surface);
+  color: var(--color-text-secondary);
+
+  cursor: pointer;
+}
+
+.database-history-ranges button.active,
+.database-history-metrics button.active {
+  border-color: var(--color-purple);
+
+  background: var(--color-purple-soft);
+  color: var(--color-purple);
+}
+
+.database-history-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.5rem;
+
+  margin-bottom: 0.75rem;
+
+  color: var(--color-text-secondary);
+}
+
+.database-history-summary span {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.database-history-summary strong {
+  color: var(--color-text);
+}
+
+.database-history-chart {
+  width: 100%;
+  height: 380px;
+}
