@@ -59,3 +59,11 @@ Initial support:
 
 
 Just a small project for making database administration a little less painful.
+
+---
+
+## Docker Deployment
+
+A production-style Docker Compose stack is included for DBAChum v2. It builds the Vue frontend behind Nginx, runs the FastAPI backend internally, and persists MongoDB data in a named volume.
+
+See [`docs/docker-deployment.md`](docs/docker-deployment.md) for first-time setup, administrator bootstrap, health checks, logs, upgrades, HTTPS notes, and persistence guidance.
