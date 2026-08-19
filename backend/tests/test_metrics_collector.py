@@ -266,3 +266,115 @@ async def test_collect_metrics_once():
         "one",
         "two",
     }
+
+@pytest.mark.asyncio
+async def test_collect_metrics_once_skips_failed_connection(
+    monkeypatch,
+):
+    database = FakeDatabase(
+        [
+            {
+                "_id": "healthy",
+                "engine": "oracle",
+            },
+            {
+                "_id": "broken",
+                "engine": "mysql",
+            },
+        ]
+    )
+
+    async def fake_collect(connection):
+        if connection["_id"] == "broken":
+            raise RuntimeError("connector failure")
+
+        return {
+            "connection_id": "healthy",
+            "engine": "oracle",
+            "status": "online",
+            "active": 1,
+            "connections": 2,
+            "blocked": 0,
+            "warnings": [],
+            "error": None,
+        }
+
+    monkeypatch.setattr(
+        metrics_collector,
+        "collect_database_overview",
+        fake_collect,
+    )
+
+    count = await (
+        metrics_collector
+        .collect_metrics_once(database)
+    )
+
+    assert count == 1
+    assert len(database.metric_samples.inserted) == 1
+    assert (
+        database.metric_samples.inserted[0]
+        ["meta"]["connection_id"]
+        == "healthy"
+    )
+
+
+@pytest.mark.asyncio
+async def test_collect_metrics_once_with_no_connections(
+    monkeypatch,
+):
+    database = FakeDatabase([])
+
+    async def should_not_run(_connection):
+        raise AssertionError(
+            "No connector should run when there are no enabled connections."
+        )
+
+    monkeypatch.setattr(
+        metrics_collector,
+        "collect_database_overview",
+        should_not_run,
+    )
+
+    count = await (
+        metrics_collector
+        .collect_metrics_once(database)
+    )
+
+    assert count == 0
+    assert database.metric_samples.inserted == []
+
+
+@pytest.mark.asyncio
+async def test_collect_metrics_once_when_all_connections_fail(
+    monkeypatch,
+):
+    database = FakeDatabase(
+        [
+            {
+                "_id": "broken-1",
+                "engine": "oracle",
+            },
+            {
+                "_id": "broken-2",
+                "engine": "mysql",
+            },
+        ]
+    )
+
+    async def always_fail(_connection):
+        raise RuntimeError("connector failure")
+
+    monkeypatch.setattr(
+        metrics_collector,
+        "collect_database_overview",
+        always_fail,
+    )
+
+    count = await (
+        metrics_collector
+        .collect_metrics_once(database)
+    )
+
+    assert count == 0
+    assert database.metric_samples.inserted == []

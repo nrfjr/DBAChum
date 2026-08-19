@@ -243,3 +243,71 @@ async def test_history_is_returned_oldest_to_newest(
         .limit_value
         == 2000
     )
+
+    assert (
+        database
+        .history
+        .cursor
+        .sort_args
+        == (
+            "collected_at",
+            -1,
+        )
+    )
+
+    assert (
+        database
+        .history
+        .last_projection
+        == {
+            "_id": 0,
+            "meta": 0,
+        }
+    )
+
+    assert (
+        query["collected_at"]["$gte"]
+        < query["collected_at"]["$lte"]
+    )
+
+
+@pytest.mark.asyncio
+async def test_history_can_return_empty_window(
+    monkeypatch,
+):
+    database = FakeDatabase([])
+
+    async def fake_get_connection(
+        _database,
+        _requested_id,
+    ):
+        return {
+            "engine": "mysql",
+        }
+
+    monkeypatch.setattr(
+        database_metrics,
+        "get_database_connection",
+        fake_get_connection,
+    )
+
+    result = await (
+        database_metrics
+        .get_database_metric_history(
+            database,
+            "connection-empty",
+            hours=1,
+            limit=50,
+        )
+    )
+
+    assert result["count"] == 0
+    assert result["items"] == []
+    assert result["engine"] == "mysql"
+    assert (
+        database
+        .history
+        .cursor
+        .limit_value
+        == 50
+    )

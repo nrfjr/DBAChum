@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from datetime import datetime, timezone
 
 from app.connectors.mysql import get_mysql_overview
@@ -10,6 +11,9 @@ from app.core.exceptions import AppError
 from app.services.database_connections import (
     get_database_connection,
 )
+
+
+logger = logging.getLogger(__name__)
 
 
 async def collect_database_overview(
@@ -64,6 +68,21 @@ async def collect_database_overview(
             "status": "unreachable",
             "warnings": [],
             "error": exc.message,
+        }
+
+    except Exception:
+        logger.exception(
+            "Unexpected database monitoring failure "
+            "connection_id=%s engine=%s",
+            base["connection_id"],
+            engine,
+        )
+
+        return {
+            **base,
+            "status": "unreachable",
+            "warnings": [],
+            "error": "Monitoring failed unexpectedly.",
         }
 
     warnings = result.get("warnings", [])
