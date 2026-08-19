@@ -76,6 +76,21 @@ function engineLabel(engine: DatabaseEngine) {
   }
 }
 
+function statusLabel(status?: string) {
+  switch (status) {
+    case 'online':
+      return 'Online'
+    case 'limited':
+      return 'Limited'
+    case 'unreachable':
+      return 'Unreachable'
+    case 'disabled':
+      return 'Disabled'
+    default:
+      return 'Not checked'
+  }
+}
+
 onMounted(async () => {
   if (
     connectionsStore.connections.length === 0
@@ -125,8 +140,11 @@ onMounted(async () => {
           </p>
         </div>
 
-        <span class="database-state unknown">
-          Not checked
+        <span
+          class="database-state"
+          :class="overview?.status ?? 'unknown'"
+        >
+          {{ statusLabel(overview?.status) }}
         </span>
       </section>
 

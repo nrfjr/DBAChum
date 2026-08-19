@@ -46,3 +46,19 @@ npm run build
 ```sh
 npm run lint
 ```
+
+### Frontend end-to-end tests
+
+The frontend includes Playwright smoke coverage for authentication, route permissions,
+database overview/detail monitoring, historical metrics, and connection management.
+The suite mocks the API at the browser network layer, so it does not require a running
+backend or database servers.
+
+```bash
+cd frontend
+npm install
+npm run e2e:install
+npm run e2e
+```
+
+Use `npm run e2e:ui` for Playwright UI mode while developing tests.

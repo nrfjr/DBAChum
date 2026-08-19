@@ -135,19 +135,8 @@ router.beforeEach(async (to) => {
     && authStore.isAuthenticated
     && to.name === 'login'
   ) {
-    const requiredPermission =
-      to.meta.permission
-
-    if (
-      requiredPermission &&
-      !hasPermission(
-        authStore.user?.role,
-        requiredPermission,
-      )
-    ) {
-      return {
-        name: 'dashboard',
-      }
+    return {
+      name: 'dashboard',
     }
   }
 
@@ -161,6 +150,21 @@ router.beforeEach(async (to) => {
       query: {
         redirect: to.fullPath,
       },
+    }
+  }
+
+  const requiredPermission =
+    to.meta.permission
+
+  if (
+    requiredPermission &&
+    !hasPermission(
+      authStore.user?.role,
+      requiredPermission,
+    )
+  ) {
+    return {
+      name: 'dashboard',
     }
   }
 })

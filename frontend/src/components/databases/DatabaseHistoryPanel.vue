@@ -391,10 +391,14 @@ async function loadHistory(
   hours.value =
     selectedHours
 
-  await metricsStore.loadHistory(
-    props.connectionId,
-    selectedHours,
-  )
+  try {
+    await metricsStore.loadHistory(
+      props.connectionId,
+      selectedHours,
+    )
+  } catch {
+    // The store exposes the request error for the panel to render.
+  }
 }
 
 
@@ -405,8 +409,7 @@ onMounted(async () => {
 
   refreshTimer = setInterval(
     () => {
-      void metricsStore.loadHistory(
-        props.connectionId,
+      void loadHistory(
         hours.value,
       )
     },
