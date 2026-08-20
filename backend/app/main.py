@@ -1,8 +1,10 @@
 import asyncio
 from contextlib import asynccontextmanager
 import logging
+from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.v1.router import api_router
@@ -99,6 +101,59 @@ def create_app() -> FastAPI:
         api_router,
         prefix=settings.api_v1_prefix,
     )
+
+    frontend_dist = (
+        Path(__file__).resolve().parents[2]
+        / "frontend"
+        / "dist"
+    )
+
+    if frontend_dist.is_dir():
+        frontend_dist = frontend_dist.resolve()
+        index_file = frontend_dist / "index.html"
+        api_prefix = settings.api_v1_prefix.strip("/")
+
+        @application.get(
+            "/{full_path:path}",
+            include_in_schema=False,
+        )
+        async def serve_frontend(full_path: str):
+            normalized_path = full_path.strip("/")
+
+            if (
+                normalized_path == api_prefix
+                or normalized_path.startswith(
+                    f"{api_prefix}/"
+                )
+            ):
+                raise HTTPException(status_code=404)
+
+            requested_file = (
+                frontend_dist / normalized_path
+            ).resolve()
+
+            if (
+                requested_file == frontend_dist
+                or frontend_dist
+                not in requested_file.parents
+            ):
+                requested_file = index_file
+
+            if requested_file.is_file():
+                return FileResponse(requested_file)
+
+            return FileResponse(index_file)
+
+        logger.info(
+            "Serving production frontend from %s",
+            frontend_dist,
+        )
+    else:
+        logger.info(
+            "Frontend build directory not found at %s; "
+            "API-only mode enabled",
+            frontend_dist,
+        )
 
     return application
 

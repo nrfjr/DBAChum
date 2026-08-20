@@ -44,3 +44,6 @@ database/data/
 # Temporary files
 *.tmp
 *.temp
+
+# Native deployment backups
+backups/
