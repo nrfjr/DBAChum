@@ -16,9 +16,24 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+Set-StrictMode -Version Latest
 
 $ProjectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $ReleaseName = "DBAChum-v$Version-windows"
+
+$ProductionEnv = Join-Path $ProjectRoot 'frontend\.env.production'
+
+if (-not (Test-Path $ProductionEnv)) {
+    throw 'frontend/.env.production is missing.'
+}
+
+$ProductionApiBase = Select-String `
+    -Path $ProductionEnv `
+    -Pattern '^VITE_API_BASE_URL=/api/v1$'
+
+if (-not $ProductionApiBase) {
+    throw 'frontend/.env.production must contain VITE_API_BASE_URL=/api/v1.'
+}
 
 if ([System.IO.Path]::IsPathRooted($OutputDirectory)) {
     $ReleaseRoot = $OutputDirectory
@@ -285,6 +300,28 @@ if (-not (Test-Path $frontendIndex)) {
     throw 'frontend/dist/index.html is missing. Build the production frontend before packaging.'
 }
 
+$FrontendAssets = Join-Path $ProjectRoot 'frontend\dist\assets'
+
+if (-not (Test-Path $FrontendAssets)) {
+    throw 'frontend/dist/assets is missing. Build the production frontend before packaging.'
+}
+
+$BadApiReference = Get-ChildItem `
+    -Path $FrontendAssets `
+    -Filter '*.js' `
+    -File |
+    Select-String 'localhost:8000' |
+    Select-Object -First 1
+
+if ($BadApiReference) {
+    throw @'
+Production frontend contains localhost:8000.
+
+Rebuild the frontend with:
+    VITE_API_BASE_URL=/api/v1
+before creating a release package.
+'@
+}
 Write-Step "Stage $ReleaseName"
 
 New-Item -ItemType Directory -Force -Path $ReleaseRoot | Out-Null
