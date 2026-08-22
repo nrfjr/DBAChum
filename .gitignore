@@ -47,3 +47,6 @@ database/data/
 
 # Native deployment backups
 backups/
+
+# Generated production packages
+release/

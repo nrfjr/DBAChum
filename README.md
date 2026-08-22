@@ -65,3 +65,13 @@ Just a small project for making database administration a little less painful.
 For Windows Server environments where Docker/WSL is unavailable, DBAChum supports a native Windows deployment. The production Vue build is served by FastAPI, MongoDB runs as its Windows service, and Task Scheduler keeps the application process running.
 
 See [`docs/windows-deployment.md`](docs/windows-deployment.md), [`docs/windows-operations.md`](docs/windows-operations.md), and [`docs/security.md`](docs/security.md).
+
+## Production runtime packaging
+
+The source checkout includes a Windows release builder. It creates a minimal native-Windows runtime archive rather than copying the full development repository to production.
+
+```powershell
+.\scripts\windows\build_release.ps1 -Version 2.0.0-dev -Port 8080
+```
+
+See `docs/release-package.md` for package contents, installation, update, rollback, and integrity details.
