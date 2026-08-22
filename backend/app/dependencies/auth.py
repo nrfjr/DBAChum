@@ -32,18 +32,18 @@ async def get_current_user(
         request.app.state.database,
         session_token,
     )
-    
-    if not user.get("enabled", True):
-        raise AppError(
-            "Authentication required.",
-            code="AUTH_REQUIRED",
-            status_code=401,
-        )
 
     if user is None:
         raise AppError(
             "Session is invalid or expired.",
             code="INVALID_SESSION",
+            status_code=401,
+        )
+
+    if not user.get("is_active", True):
+        raise AppError(
+            "Authentication required.",
+            code="AUTH_REQUIRED",
             status_code=401,
         )
 

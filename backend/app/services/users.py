@@ -1,7 +1,3 @@
-from bson import ObjectId
-
-from app.schemas.user import UserResponse
-
 from datetime import datetime, timezone
 
 from bson import ObjectId
@@ -121,11 +117,13 @@ async def create_managed_user(
 ) -> UserResponse:
     now = datetime.now(timezone.utc)
 
-    username = data.username.strip()
+    username = normalize_username(
+        data.username
+    )
 
     document = {
         "username": username,
-        "username_key": username.lower(),
+        "username_key": username,
         "password_hash": hash_password(
             data.password
         ),
@@ -212,7 +210,7 @@ async def update_managed_user(
             "_id": object_id,
         }
     )
-    
+
     if not data.is_active:
         await database.auth_sessions.delete_many(
             {
@@ -245,7 +243,7 @@ async def reset_managed_user_password(
             }
         },
     )
-    
+
     await database.auth_sessions.delete_many(
         {
             "user_id": {

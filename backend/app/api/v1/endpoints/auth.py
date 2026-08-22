@@ -106,6 +106,9 @@ async def logout(
     response.delete_cookie(
         key=settings.session_cookie_name,
         path="/",
+        httponly=True,
+        secure=settings.cookie_secure,
+        samesite="lax",
     )
 
     return LogoutResponse(

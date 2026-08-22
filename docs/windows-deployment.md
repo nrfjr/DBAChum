@@ -142,3 +142,23 @@ This removes only the Scheduled Task, not DBAChum data or MongoDB:
 ```powershell
 .\scripts\windows\uninstall_startup_task.ps1
 ```
+
+## Production security configuration
+
+Before the final release check, convert an existing development `.env` to the production baseline without replacing its MongoDB URI or encryption key:
+
+```powershell
+.\scripts\windows\configure_production.ps1
+```
+
+Review `TRUSTED_HOSTS` afterward. The helper includes localhost, the Windows computer name, and detected local IPv4 addresses. Add any DNS alias/FQDN used by administrators.
+
+For an HTTPS deployment behind IIS or another trusted reverse proxy:
+
+```powershell
+.\scripts\windows\configure_production.ps1 -EnableSecureCookie
+```
+
+See `docs/security.md` for the full baseline.
+
+The optional firewall rule is restricted to Domain/Private profiles and `LocalSubnet` by default. A narrower management subnet can be supplied with `-FirewallRemoteAddress`.

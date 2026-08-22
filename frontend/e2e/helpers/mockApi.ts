@@ -11,6 +11,7 @@ interface MockApiOptions {
 export interface MockApiState {
   historyHours: number[]
   createdConnections: Record<string, unknown>[]
+  updatedUsers: Record<string, unknown>[]
 }
 
 const now = '2026-08-19T12:00:00Z'
@@ -22,6 +23,17 @@ const adminUser = {
   role: 'admin' as UserRole,
   is_active: true,
   created_at: now,
+  updated_at: now,
+}
+
+const operatorUser = {
+  id: 'user-operator',
+  username: 'operator',
+  display_name: 'DB Operator',
+  role: 'operator' as UserRole,
+  is_active: true,
+  created_at: now,
+  updated_at: now,
 }
 
 export const oracleConnection = {
@@ -181,11 +193,13 @@ export async function installMockApi(
   const state: MockApiState = {
     historyHours: [],
     createdConnections: [],
+    updatedUsers: [],
   }
 
   let authenticated = options.authenticated ?? true
   const role = options.role ?? 'admin'
   let connections = [oracleConnection, sqlServerConnection]
+  let users = [adminUser, operatorUser]
 
   await page.route('**/api/v1/**', async (route) => {
     const request = route.request()
@@ -218,6 +232,27 @@ export async function installMockApi(
     if (path === '/auth/logout' && method === 'POST') {
       authenticated = false
       return json(route, {})
+    }
+
+    if (path === '/users' && method === 'GET') {
+      return json(route, users)
+    }
+
+    if (path === '/users/user-operator' && method === 'PUT') {
+      const payload = request.postDataJSON() as Record<string, unknown>
+      state.updatedUsers.push(payload)
+
+      const updated = {
+        ...operatorUser,
+        ...payload,
+        updated_at: now,
+      }
+
+      users = users.map((user) =>
+        user.id === operatorUser.id ? updated : user,
+      )
+
+      return json(route, updated)
     }
 
     if (path === '/connections' && method === 'GET') {

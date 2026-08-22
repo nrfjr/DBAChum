@@ -6,6 +6,7 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from app.api.v1.router import api_router
 from app.core.config import settings
@@ -19,6 +20,7 @@ from app.core.exceptions import (
     unhandled_exception_handler,
 )
 from app.core.logging import configure_logging
+from app.core.http_security import SecurityHeadersMiddleware
 from app.services.metrics_collector import (
     run_metrics_collector,
 )
@@ -76,15 +78,52 @@ def create_app() -> FastAPI:
         description=(
             "Backend API for the DBAChum " "database administration platform."
         ),
+        docs_url=(
+            "/docs"
+            if settings.api_docs_enabled
+            else None
+        ),
+        redoc_url=(
+            "/redoc"
+            if settings.api_docs_enabled
+            else None
+        ),
+        openapi_url=(
+            "/openapi.json"
+            if settings.api_docs_enabled
+            else None
+        ),
         lifespan=lifespan,
     )
 
     application.add_middleware(
-        CORSMiddleware,
-        allow_origins=settings.cors_origin_list,
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
+        TrustedHostMiddleware,
+        allowed_hosts=settings.trusted_host_list,
+    )
+
+    if settings.cors_origin_list:
+        application.add_middleware(
+            CORSMiddleware,
+            allow_origins=settings.cors_origin_list,
+            allow_credentials=True,
+            allow_methods=[
+                "GET",
+                "POST",
+                "PUT",
+                "PATCH",
+                "DELETE",
+                "OPTIONS",
+            ],
+            allow_headers=[
+                "Accept",
+                "Content-Type",
+            ],
+        )
+
+    application.add_middleware(
+        SecurityHeadersMiddleware,
+        api_prefix=settings.api_v1_prefix,
+        hsts_enabled=settings.cookie_secure,
     )
 
     application.add_exception_handler(
@@ -124,6 +163,15 @@ def create_app() -> FastAPI:
                 normalized_path == api_prefix
                 or normalized_path.startswith(
                     f"{api_prefix}/"
+                )
+                or (
+                    not settings.api_docs_enabled
+                    and normalized_path
+                    in {
+                        "docs",
+                        "redoc",
+                        "openapi.json",
+                    }
                 )
             ):
                 raise HTTPException(status_code=404)

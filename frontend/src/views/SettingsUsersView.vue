@@ -332,7 +332,7 @@ onMounted(() => {
                 <label>
                     Password
 
-                    <input v-model="form.password" required minlength="8" type="password" autocomplete="new-password" />
+                    <input v-model="form.password" required minlength="12" type="password" autocomplete="new-password" />
                 </label>
 
                 <label>
@@ -420,7 +420,7 @@ onMounted(() => {
           v-model="newPassword"
           type="password"
           required
-          minlength="8"
+          minlength="12"
           autocomplete="new-password"
         />
       </label>

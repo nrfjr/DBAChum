@@ -1,9 +1,7 @@
 from datetime import datetime
 from enum import Enum
 
-from pydantic import BaseModel, Field
-
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 
 class UserRole(str, Enum):
     VIEWER = "viewer"
@@ -25,8 +23,20 @@ class UserCreate(BaseModel):
         max_length=64,
     )
 
+    @field_validator("username")
+    @classmethod
+    def normalize_username(cls, value: str) -> str:
+        normalized = value.strip().lower()
+
+        if len(normalized) < 3:
+            raise ValueError(
+                "Username must be at least 3 characters."
+            )
+
+        return normalized
+
     password: str = Field(
-        min_length=8,
+        min_length=12,
         max_length=128,
     )
 
@@ -37,11 +47,11 @@ class UserCreate(BaseModel):
 
 class UserUpdate(BaseModel):
     role: UserRole
-    enabled: bool
+    is_active: bool
 
 
 class UserPasswordUpdate(BaseModel):
     password: str = Field(
-        min_length=8,
+        min_length=12,
         max_length=128,
     )

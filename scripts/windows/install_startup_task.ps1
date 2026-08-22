@@ -4,7 +4,9 @@ param(
 
     [string]$TaskName = 'DBAChum',
 
-    [switch]$OpenFirewall
+    [switch]$OpenFirewall,
+
+    [string[]]$FirewallRemoteAddress = @('LocalSubnet')
 )
 
 $ErrorActionPreference = 'Stop'
@@ -52,15 +54,23 @@ Register-ScheduledTask `
 if ($OpenFirewall) {
     $ruleName = "DBAChum TCP $Port"
     $existingRule = Get-NetFirewallRule -DisplayName $ruleName -ErrorAction SilentlyContinue
-    if ($null -eq $existingRule) {
-        New-NetFirewallRule `
-            -DisplayName $ruleName `
-            -Direction Inbound `
-            -Action Allow `
-            -Protocol TCP `
-            -LocalPort $Port | Out-Null
+    if ($null -ne $existingRule) {
+        Remove-NetFirewallRule -DisplayName $ruleName
     }
-    Write-Host "Windows Firewall allows TCP $Port."
+
+    New-NetFirewallRule `
+        -DisplayName $ruleName `
+        -Direction Inbound `
+        -Action Allow `
+        -Protocol TCP `
+        -LocalPort $Port `
+        -Profile Domain,Private `
+        -RemoteAddress $FirewallRemoteAddress | Out-Null
+
+    Write-Host (
+        "Windows Firewall allows TCP $Port from: " +
+        ($FirewallRemoteAddress -join ', ')
+    )
 }
 
 Start-ScheduledTask -TaskName $TaskName

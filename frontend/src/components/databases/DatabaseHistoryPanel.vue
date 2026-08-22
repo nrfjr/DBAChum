@@ -162,6 +162,8 @@ const metricLabel = computed(() => {
     case 'latency':
       return 'Response latency'
   }
+
+  return 'Metric'
 })
 
 
@@ -285,7 +287,7 @@ function cssVariable(
 
 const chartOption = computed(() => {
   // Make theme changes reactive.
-  uiStore.theme
+  void uiStore.theme
 
   const textColor =
     cssVariable(

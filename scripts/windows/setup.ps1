@@ -19,6 +19,36 @@ function Assert-Command([string]$Name) {
     }
 }
 
+
+function Get-DefaultTrustedHosts {
+    $hosts = @(
+        'localhost'
+        '127.0.0.1'
+    )
+
+    if (-not [string]::IsNullOrWhiteSpace($env:COMPUTERNAME)) {
+        $hosts += $env:COMPUTERNAME
+    }
+
+    try {
+        $addresses = Get-NetIPAddress `
+            -AddressFamily IPv4 `
+            -ErrorAction Stop |
+            Where-Object {
+                $_.IPAddress -ne '127.0.0.1' -and
+                $_.IPAddress -notlike '169.254.*'
+            } |
+            Select-Object -ExpandProperty IPAddress
+
+        $hosts += $addresses
+    }
+    catch {
+        Write-Warning 'Unable to enumerate local IPv4 addresses for TRUSTED_HOSTS.'
+    }
+
+    return (($hosts | Where-Object { $_ } | Sort-Object -Unique) -join ',')
+}
+
 function New-FernetKey {
     $bytes = New-Object byte[] 32
     $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
@@ -38,6 +68,7 @@ Assert-Command $NpmCommand
 if (-not (Test-Path $EnvFile)) {
     $template = Get-Content $EnvTemplate -Raw
     $template = $template.Replace('CONNECTION_ENCRYPTION_KEY=replace-me', "CONNECTION_ENCRYPTION_KEY=$(New-FernetKey)")
+    $template = $template.Replace('TRUSTED_HOSTS=__TRUSTED_HOSTS__', "TRUSTED_HOSTS=$(Get-DefaultTrustedHosts)")
     $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
     [System.IO.File]::WriteAllText($EnvFile, $template, $utf8NoBom)
     Write-Host "Created $EnvFile with a generated encryption key."

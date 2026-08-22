@@ -10,6 +10,31 @@ $ErrorActionPreference = 'Stop'
 $ProjectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $EnvFile = Join-Path $ProjectRoot 'backend\.env'
 
+function Resolve-MongoTool([string]$Name) {
+    $command = Get-Command "$Name.exe" -ErrorAction SilentlyContinue
+    if ($null -ne $command) {
+        return $command.Source
+    }
+
+    $toolsRoot = Join-Path $env:ProgramFiles 'MongoDB\Tools'
+    if (Test-Path $toolsRoot) {
+        $candidate = Get-ChildItem `
+            -Path $toolsRoot `
+            -Recurse `
+            -Filter "$Name.exe" `
+            -File `
+            -ErrorAction SilentlyContinue |
+            Sort-Object FullName -Descending |
+            Select-Object -First 1
+
+        if ($null -ne $candidate) {
+            return $candidate.FullName
+        }
+    }
+
+    return $null
+}
+
 function Get-EnvValue([string]$Name) {
     if (-not (Test-Path $EnvFile)) { return $null }
     $line = Get-Content $EnvFile | Where-Object { $_ -match "^$([regex]::Escape($Name))=" } | Select-Object -First 1
@@ -29,9 +54,9 @@ if ([string]::IsNullOrWhiteSpace($BackupDirectory)) {
     $BackupDirectory = Join-Path $ProjectRoot 'backups'
 }
 
-$mongodump = Get-Command mongodump.exe -ErrorAction SilentlyContinue
+$mongodump = Resolve-MongoTool 'mongodump'
 if ($null -eq $mongodump) {
-    throw 'mongodump.exe was not found in PATH. Install MongoDB Database Tools first.'
+    throw 'mongodump.exe was not found. Install MongoDB Database Tools first.'
 }
 
 New-Item -ItemType Directory -Force -Path $BackupDirectory | Out-Null
@@ -49,7 +74,7 @@ try {
         }
     }
 
-    & $mongodump.Source `
+    & $mongodump `
         --uri=$MongoUri `
         --db=$Database `
         --archive=$archive `

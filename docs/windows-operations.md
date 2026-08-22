@@ -153,3 +153,15 @@ Rebuild the frontend and hard-refresh the browser/PWA:
 ### Database connections fail only after deployment
 
 Test reachability from the Windows Server itself. DBAChum connects from the server, not from the administrator's workstation. Verify DNS, firewall routes, database listener ports, and the saved DBAChum connection credentials.
+
+## Security configuration check
+
+After changing server names, IP addresses, DNS aliases, HTTPS termination, or firewall scope, review `backend\.env` and rerun:
+
+```powershell
+.\scripts\windows\preflight.ps1 -Port 8080 -RequireMongoTools -StrictProduction
+```
+
+If a new hostname/FQDN is used to access DBAChum, add it to `TRUSTED_HOSTS` before restarting the Scheduled Task.
+
+Do not copy `backend\.env`, `backups\`, or `logs\` into production release archives or source-control commits.

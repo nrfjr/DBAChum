@@ -43,8 +43,7 @@ Get-ChildItem $LogDir -Filter 'dbachum-server-*.log' -File |
 
 Set-Location $BackendDir
 
-"[$(Get-Date -Format o)] Starting DBAChum on port $Port" |
-    Out-File -FilePath $LogFile -Append -Encoding utf8
+"[$(Get-Date -Format o)] Starting DBAChum on port $Port" | Out-File -FilePath $LogFile -Append -Encoding utf8
 
 $UvicornArgs = @(
     '-m'
@@ -57,18 +56,26 @@ $UvicornArgs = @(
     '--workers'
     '1'
     '--no-access-log'
+    '--no-server-header'
 )
 
+# Windows PowerShell 5.1 can surface a native program's normal stderr
+# logging as NativeCommandError when ErrorActionPreference is Stop.
+# Uvicorn legitimately writes log records to stderr, so temporarily allow
+# native stderr while still failing on a non-zero process exit code.
 $PreviousErrorActionPreference = $ErrorActionPreference
 $ErrorActionPreference = 'Continue'
 
 try {
-    & $PythonExe @UvicornArgs
-
-    if ($LASTEXITCODE -ne 0) {
-        throw "DBAChum exited with code $LASTEXITCODE."
-    }
+    & $PythonExe @UvicornArgs *>> $LogFile
+    $ExitCode = $LASTEXITCODE
 }
 finally {
     $ErrorActionPreference = $PreviousErrorActionPreference
 }
+
+if ($ExitCode -ne 0) {
+    throw "DBAChum exited with code $ExitCode."
+}
+
+exit 0

@@ -118,15 +118,17 @@ async def get_user_from_session(
         session["user_id"],
     )
 
-    if user is None:
-        return None
-
-    if not user.get(
+    if user is None or not user.get(
         "is_active",
         True,
     ):
+        await database.auth_sessions.delete_one(
+            {
+                "_id": session["_id"]
+            }
+        )
         return None
-    
+
     return user
 
 
