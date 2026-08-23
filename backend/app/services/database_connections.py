@@ -41,6 +41,11 @@ def connection_to_response(connection: dict) -> DatabaseConnectionResponse:
         database=connection.get("database"),
         oracle_identifier_type=connection.get("oracle_identifier_type"),
         oracle_identifier=connection.get("oracle_identifier"),
+        oracle_auth_mode=(
+            connection.get("oracle_auth_mode", "normal")
+            if connection["engine"] == "oracle"
+            else None
+        ),
         enabled=connection.get("enabled", True),
         has_password=bool(connection.get("password_encrypted")),
         created_at=connection["created_at"],
@@ -119,8 +124,29 @@ async def update_database_connection(
 ):
     object_id = parse_connection_id(connection_id)
 
+    existing = await database.database_connections.find_one(
+        {"_id": object_id}
+    )
+
+    if existing is None:
+        raise AppError(
+            "Database connection not found.",
+            code="CONNECTION_NOT_FOUND",
+            status_code=404,
+        )
+
     document = data.model_dump(mode="json")
     password = document.pop("password", None)
+
+    if (
+        data.username != existing.get("username")
+        and not password
+    ):
+        raise AppError(
+            "Password is required when changing the connection username.",
+            code="CONNECTION_PASSWORD_REQUIRED",
+            status_code=400,
+        )
 
     document["name_key"] = normalize_connection_name(data.name)
     document["updated_at"] = datetime.now(timezone.utc)

@@ -15,6 +15,7 @@ import {
   type DatabaseConnection,
   type DatabaseConnectionInput,
   type DatabaseEngine,
+  type OracleAuthMode,
 } from '@/stores/connections'
 
 const connectionsStore = useConnectionsStore()
@@ -68,6 +69,7 @@ interface ConnectionForm {
   database: string
   oracle_identifier_type: 'service_name' | 'sid'
   oracle_identifier: string
+  oracle_auth_mode: OracleAuthMode
   enabled: boolean
   server_ids: string[]
 }
@@ -83,6 +85,7 @@ function emptyForm(): ConnectionForm {
     database: '',
     oracle_identifier_type: 'service_name',
     oracle_identifier: '',
+    oracle_auth_mode: 'normal',
     enabled: true,
     server_ids: [],
   }
@@ -119,9 +122,11 @@ function changeEngine() {
 
   if (form.engine === 'oracle') {
     form.database = ''
+    form.oracle_auth_mode = 'normal'
   } else {
     form.oracle_identifier_type = 'service_name'
     form.oracle_identifier = ''
+    form.oracle_auth_mode = 'normal'
   }
 }
 
@@ -141,6 +146,8 @@ function editConnection(connection: DatabaseConnection) {
       connection.oracle_identifier_type ?? 'service_name',
     oracle_identifier:
       connection.oracle_identifier ?? '',
+    oracle_auth_mode:
+      connection.oracle_auth_mode ?? 'normal',
     enabled: connection.enabled,
     server_ids: [...(connection.server_ids ?? []),],
   })
@@ -168,6 +175,10 @@ function buildPayload(): DatabaseConnectionInput {
       form.engine === 'oracle'
         ? form.oracle_identifier.trim() || null
         : null,
+    oracle_auth_mode:
+      form.engine === 'oracle'
+        ? form.oracle_auth_mode
+        : null,
     enabled: form.enabled,
     server_ids: [...form.server_ids],
   }
@@ -180,6 +191,21 @@ async function saveConnection() {
     formError.value =
       'Password is required for a new connection.'
     return
+  }
+
+  if (editingId.value && !form.password) {
+    const existing = connectionsStore.connections.find(
+      (connection) => connection.id === editingId.value,
+    )
+
+    if (
+      existing
+      && existing.username !== form.username.trim()
+    ) {
+      formError.value =
+        'Password is required when changing the connection username.'
+      return
+    }
   }
 
   try {
@@ -242,6 +268,9 @@ async function testConnection(
     const details = [
       result.database_name,
       result.database_version,
+      result.oracle_auth_mode === 'sysdba'
+        ? 'SYSDBA'
+        : null,
     ]
       .filter(Boolean)
       .join(' · ')
@@ -337,6 +366,11 @@ onMounted(() => {
 
             <small>
               {{ connection.username }}
+              <template
+                v-if="connection.engine === 'oracle' && connection.oracle_auth_mode === 'sysdba'"
+              >
+                · SYSDBA
+              </template>
             </small>
             <p v-if="testResults[connection.id]" class="connection-test-result" :class="{
               success:
@@ -444,6 +478,23 @@ onMounted(() => {
               }}
 
               <input v-model="form.oracle_identifier" required placeholder="ORCLPDB1" />
+            </label>
+
+            <label>
+              Oracle privilege mode
+
+              <select v-model="form.oracle_auth_mode">
+                <option value="normal">Normal</option>
+                <option value="sysdba">SYSDBA</option>
+              </select>
+
+              <small
+                v-if="form.oracle_auth_mode === 'sysdba'"
+                class="connection-danger-note"
+              >
+                SYSDBA grants unrestricted Oracle administrative access.
+                Use it only for connections that require privileged DBA operations.
+              </small>
             </label>
           </template>
 

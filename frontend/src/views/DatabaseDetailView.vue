@@ -314,6 +314,17 @@ onMounted(async () => {
             </dd>
           </div>
 
+          <div v-if="connection.engine === 'oracle'">
+            <dt>Privilege mode</dt>
+            <dd>
+              {{
+                connection.oracle_auth_mode === 'sysdba'
+                  ? 'SYSDBA'
+                  : 'Normal'
+              }}
+            </dd>
+          </div>
+
           <div v-else>
             <dt>Database</dt>
 

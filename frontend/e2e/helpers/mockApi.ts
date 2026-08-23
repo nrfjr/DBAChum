@@ -11,6 +11,7 @@ interface MockApiOptions {
 export interface MockApiState {
   historyHours: number[]
   createdConnections: Record<string, unknown>[]
+  createdDatabaseUsers: Record<string, unknown>[]
   updatedUsers: Record<string, unknown>[]
 }
 
@@ -46,6 +47,7 @@ export const oracleConnection = {
   database: null,
   oracle_identifier_type: 'service_name',
   oracle_identifier: 'ERPPRD',
+  oracle_auth_mode: 'normal',
   enabled: true,
   has_password: true,
   created_at: now,
@@ -63,6 +65,7 @@ export const sqlServerConnection = {
   database: 'Reporting',
   oracle_identifier_type: null,
   oracle_identifier: null,
+  oracle_auth_mode: null,
   enabled: true,
   has_password: true,
   created_at: now,
@@ -193,6 +196,7 @@ export async function installMockApi(
   const state: MockApiState = {
     historyHours: [],
     createdConnections: [],
+    createdDatabaseUsers: [],
     updatedUsers: [],
   }
 
@@ -287,6 +291,7 @@ export async function installMockApi(
         service_name: 'ERPPRD',
         connected_user: 'DBACHUM',
         database_version: 'Oracle Database 19c',
+        oracle_auth_mode: 'normal',
       })
     }
 
@@ -364,6 +369,55 @@ export async function installMockApi(
         warning: null,
         checked_at: now,
       })
+    }
+
+    if (
+      path === `/databases/${oracleConnection.id}/oracle/users/reference/APP_USER`
+      && method === 'GET'
+    ) {
+      return json(route, {
+        username: 'APP_USER',
+        status: 'OPEN',
+        default_tablespace: 'USERS',
+        temporary_tablespace: 'TEMP',
+        profile: 'DEFAULT',
+        roles: [
+          {
+            name: 'APP_READ',
+            admin_option: false,
+            default_role: true,
+            sensitive: false,
+          },
+          {
+            name: 'DBA',
+            admin_option: true,
+            default_role: true,
+            sensitive: true,
+          },
+        ],
+        system_privileges: [
+          {
+            name: 'CREATE SESSION',
+            admin_option: false,
+          },
+        ],
+        warnings: [],
+      })
+    }
+
+    if (
+      path === `/databases/${oracleConnection.id}/oracle/users`
+      && method === 'POST'
+    ) {
+      const payload = request.postDataJSON() as Record<string, unknown>
+      state.createdDatabaseUsers.push(payload)
+
+      return json(route, {
+        username: payload.username,
+        roles_applied: payload.roles ?? [],
+        audit_id: 'audit-create-user-1',
+        status: 'succeeded',
+      }, 201)
     }
 
     if (

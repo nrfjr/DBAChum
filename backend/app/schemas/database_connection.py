@@ -24,6 +24,7 @@ class DatabaseConnectionBase(BaseModel):
 
     oracle_identifier_type: Literal["service_name", "sid"] | None = None
     oracle_identifier: str | None = Field(default=None, max_length=128)
+    oracle_auth_mode: Literal["normal", "sysdba"] | None = None
     
     server_ids: list[str] = Field(default_factory=list,max_length=16,)
 
@@ -55,9 +56,14 @@ class DatabaseConnectionBase(BaseModel):
                 raise ValueError(
                     "Oracle connections require a service name or SID."
                 )
+
+            self.oracle_auth_mode = (
+                self.oracle_auth_mode or "normal"
+            )
         else:
             self.oracle_identifier_type = None
             self.oracle_identifier = None
+            self.oracle_auth_mode = None
 
         return self
     
@@ -86,4 +92,5 @@ class DatabaseConnectionTestResponse(BaseModel):
     service_name: str | None = None
     connected_user: str | None = None
     database_version: str | None = None
+    oracle_auth_mode: Literal["normal", "sysdba"] | None = None
 

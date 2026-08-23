@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 
 export type DatabaseEngine = 'oracle' | 'sqlserver' | 'mysql'
+export type OracleAuthMode = 'normal' | 'sysdba'
 
 export interface DatabaseConnection {
   id: string
@@ -12,6 +13,7 @@ export interface DatabaseConnection {
   database: string | null
   oracle_identifier_type: 'service_name' | 'sid' | null
   oracle_identifier: string | null
+  oracle_auth_mode: OracleAuthMode | null
   enabled: boolean
   has_password: boolean
   created_at: string
@@ -29,6 +31,7 @@ export interface DatabaseConnectionInput {
   database: string | null
   oracle_identifier_type: 'service_name' | 'sid' | null
   oracle_identifier: string | null
+  oracle_auth_mode: OracleAuthMode | null
   enabled: boolean
   server_ids: string[]
 }
@@ -41,6 +44,7 @@ export interface DatabaseConnectionTestResult {
   service_name: string | null
   connected_user: string | null
   database_version: string | null
+  oracle_auth_mode: OracleAuthMode | null
 }
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL

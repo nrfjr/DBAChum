@@ -144,3 +144,79 @@ class OracleDatabaseUsersResponse(BaseModel):
 
     warning: str | None = None
     checked_at: datetime
+
+class OracleReferenceRole(BaseModel):
+    name: str
+    admin_option: bool = False
+    default_role: bool = False
+    sensitive: bool = False
+
+
+class OracleReferenceSystemPrivilege(BaseModel):
+    name: str
+    admin_option: bool = False
+
+
+class OracleReferenceUserResponse(BaseModel):
+    username: str
+    status: str
+
+    default_tablespace: str | None = None
+    temporary_tablespace: str | None = None
+    profile: str | None = None
+
+    roles: list[OracleReferenceRole] = Field(
+        default_factory=list
+    )
+    system_privileges: list[OracleReferenceSystemPrivilege] = Field(
+        default_factory=list
+    )
+    warnings: list[str] = Field(
+        default_factory=list
+    )
+
+
+class OracleCreateUserRequest(BaseModel):
+    username: str = Field(min_length=1, max_length=30)
+    password: str = Field(min_length=8, max_length=128)
+
+    reference_username: str | None = Field(
+        default=None,
+        max_length=30,
+    )
+    roles: list[str] = Field(
+        default_factory=list,
+        max_length=100,
+    )
+
+    default_tablespace: str | None = Field(
+        default=None,
+        max_length=30,
+    )
+    temporary_tablespace: str | None = Field(
+        default=None,
+        max_length=30,
+    )
+    profile: str | None = Field(
+        default=None,
+        max_length=30,
+    )
+
+    request_reference: str | None = Field(
+        default=None,
+        max_length=100,
+    )
+    requestor_name: str | None = Field(
+        default=None,
+        max_length=200,
+    )
+
+
+class OracleCreateUserResponse(BaseModel):
+    username: str
+    roles_applied: list[str] = Field(
+        default_factory=list
+    )
+    audit_id: str
+    status: str
+

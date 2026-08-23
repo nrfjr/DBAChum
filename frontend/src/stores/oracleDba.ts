@@ -130,6 +130,48 @@ export interface OracleDatabaseUsersResponse {
   checked_at: string
 }
 
+export interface OracleReferenceRole {
+  name: string
+  admin_option: boolean
+  default_role: boolean
+  sensitive: boolean
+}
+
+export interface OracleReferenceSystemPrivilege {
+  name: string
+  admin_option: boolean
+}
+
+export interface OracleReferenceUser {
+  username: string
+  status: string
+  default_tablespace: string | null
+  temporary_tablespace: string | null
+  profile: string | null
+  roles: OracleReferenceRole[]
+  system_privileges: OracleReferenceSystemPrivilege[]
+  warnings: string[]
+}
+
+export interface OracleCreateUserInput {
+  username: string
+  password: string
+  reference_username: string | null
+  roles: string[]
+  default_tablespace: string | null
+  temporary_tablespace: string | null
+  profile: string | null
+  request_reference: string | null
+  requestor_name: string | null
+}
+
+export interface OracleCreateUserResult {
+  username: string
+  roles_applied: string[]
+  audit_id: string
+  status: string
+}
+
 
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL
@@ -137,11 +179,17 @@ const API_BASE_URL =
 
 async function apiRequest<T>(
   path: string,
+  options: RequestInit = {},
 ): Promise<T> {
   const response = await fetch(
     `${API_BASE_URL}${path}`,
     {
+      ...options,
       credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json',
+        ...options.headers,
+      },
     },
   )
 
@@ -182,15 +230,24 @@ export const useOracleDbaStore =
         OracleDatabaseUsersResponse
       >,
 
+      references: {} as Record<
+        string,
+        OracleReferenceUser
+      >,
+
       loadingSessions: false,
       loadingStorage: false,
       loadingActivity: false,
       loadingUsers: false,
+      loadingReference: false,
+      creatingUser: false,
 
       sessionsError: null as string | null,
       storageError: null as string | null,
       activityError: null as string | null,
       usersError: null as string | null,
+      referenceError: null as string | null,
+      createUserError: null as string | null,
     }),
 
     actions: {
@@ -267,6 +324,58 @@ export const useOracleDbaStore =
               : 'Unable to load Oracle users and schemas.'
         } finally {
           this.loadingUsers = false
+        }
+      },
+
+      async loadReferenceUser(
+        id: string,
+        username: string,
+      ) {
+        this.loadingReference = true
+        this.referenceError = null
+
+        try {
+          const reference =
+            await apiRequest<OracleReferenceUser>(
+              `/databases/${id}/oracle/users/reference/${encodeURIComponent(username)}`,
+            )
+
+          this.references[id] = reference
+          return reference
+        } catch (error) {
+          this.referenceError =
+            error instanceof Error
+              ? error.message
+              : 'Unable to inspect the reference user.'
+          throw error
+        } finally {
+          this.loadingReference = false
+        }
+      },
+
+      async createUser(
+        id: string,
+        data: OracleCreateUserInput,
+      ) {
+        this.creatingUser = true
+        this.createUserError = null
+
+        try {
+          return await apiRequest<OracleCreateUserResult>(
+            `/databases/${id}/oracle/users`,
+            {
+              method: 'POST',
+              body: JSON.stringify(data),
+            },
+          )
+        } catch (error) {
+          this.createUserError =
+            error instanceof Error
+              ? error.message
+              : 'Unable to create Oracle user.'
+          throw error
+        } finally {
+          this.creatingUser = false
         }
       },
     },

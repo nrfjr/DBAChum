@@ -103,3 +103,43 @@ test('shows Oracle users and schemas with filtering', async ({ page }) => {
 
   await expect(page.getByText('OLD_USER', { exact: true })).toBeVisible()
 })
+
+test('reviews reference roles before creating an Oracle user', async ({ page }) => {
+  const state = await installMockApi(page)
+
+  await page.goto('/databases/conn-oracle')
+  await page.getByRole('button', { name: 'Users & Schemas' }).click()
+  await page.getByRole('button', { name: 'Create user' }).click()
+
+  const dialog = page.getByRole('dialog', { name: 'Create Oracle user' })
+
+  await dialog.getByLabel('Username').fill('JSMITH1001')
+  await dialog.getByLabel('Initial password').fill('abc12345')
+  await dialog.getByLabel('Reference user').fill('APP_USER')
+  await dialog.getByLabel('Requestor').fill('DBA Requestor')
+
+  await dialog.getByRole('button', { name: 'Review & Create' }).click()
+
+  await expect(dialog.getByText('APP_READ', { exact: true })).toBeVisible()
+  await expect(dialog.getByText('CREATE SESSION', { exact: false })).toBeVisible()
+
+  const dbaRole = dialog.getByText('DBA', { exact: true }).locator('..').locator('..')
+  await expect(dbaRole.getByRole('checkbox')).toBeDisabled()
+
+  await dialog.getByRole('button', { name: 'Create JSMITH1001' }).click()
+
+  await expect(dialog).toContainText('Oracle account created successfully')
+  await expect(dialog).toContainText('audit-create-user-1')
+
+  expect(state.createdDatabaseUsers).toHaveLength(1)
+  expect(state.createdDatabaseUsers[0]).toMatchObject({
+    username: 'JSMITH1001',
+    reference_username: 'APP_USER',
+    roles: ['APP_READ'],
+    default_tablespace: 'USERS',
+    temporary_tablespace: 'TEMP',
+    profile: 'DEFAULT',
+    requestor_name: 'DBA Requestor',
+  })
+})
+

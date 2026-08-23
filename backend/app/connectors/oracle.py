@@ -27,6 +27,21 @@ def build_oracle_params(connection: dict) -> oracledb.ConnectParams:
 
     return oracledb.ConnectParams(**kwargs)
 
+def build_oracle_connect_kwargs(
+    connection: dict,
+    password: str,
+) -> dict:
+    kwargs = {
+        "user": connection["username"],
+        "password": password,
+        "params": build_oracle_params(connection),
+    }
+
+    if connection.get("oracle_auth_mode", "normal") == "sysdba":
+        kwargs["mode"] = oracledb.AUTH_MODE_SYSDBA
+
+    return kwargs
+
 
 async def test_oracle_connection(connection: dict) -> dict:
     encrypted_password = connection.get("password_encrypted")
@@ -39,13 +54,12 @@ async def test_oracle_connection(connection: dict) -> dict:
         )
 
     password = decrypt_secret(encrypted_password)
-    params = build_oracle_params(connection)
-
     try:
         async with oracledb.connect_async(
-            user=connection["username"],
-            password=password,
-            params=params,
+            **build_oracle_connect_kwargs(
+                connection,
+                password,
+            )
         ) as oracle_connection:
             row = await oracle_connection.fetchone(
                 """
@@ -62,6 +76,10 @@ async def test_oracle_connection(connection: dict) -> dict:
                 "service_name": row[1] if row else None,
                 "connected_user": row[2] if row else None,
                 "database_version": oracle_connection.version,
+                "oracle_auth_mode": connection.get(
+                    "oracle_auth_mode",
+                    "normal",
+                ),
             }
 
     except oracledb.Error as exc:
@@ -122,13 +140,13 @@ async def get_oracle_overview(
         )
 
     password = decrypt_secret(encrypted_password)
-    params = build_oracle_params(connection)
 
     try:
         async with oracledb.connect_async(
-            user=connection["username"],
-            password=password,
-            params=params,
+            **build_oracle_connect_kwargs(
+                connection,
+                password,
+            )
         ) as oracle_connection:
             warnings: list[str] = []
 
@@ -295,13 +313,13 @@ async def open_oracle_connection(connection: dict):
         )
 
     password = decrypt_secret(encrypted_password)
-    params = build_oracle_params(connection)
 
     try:
         oracle_connection = await oracledb.connect_async(
-            user=connection["username"],
-            password=password,
-            params=params,
+            **build_oracle_connect_kwargs(
+                connection,
+                password,
+            )
         )
     except oracledb.Error as exc:
         raise AppError(
