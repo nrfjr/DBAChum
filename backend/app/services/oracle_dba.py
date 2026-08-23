@@ -7,6 +7,9 @@ from app.connectors.oracle_sessions import (
 from app.connectors.oracle_storage import (
     get_oracle_storage,
 )
+from app.connectors.oracle_users import (
+    get_oracle_users,
+)
 from app.core.exceptions import AppError
 from app.services.database_connections import (
     get_database_connection,
@@ -79,5 +82,18 @@ async def load_oracle_activity(
     )
 
     return await get_oracle_activity(
+        connection
+    )
+
+async def load_oracle_users(
+    database,
+    connection_id: str,
+):
+    connection = await get_oracle_target(
+        database,
+        connection_id,
+    )
+
+    return await get_oracle_users(
         connection
     )

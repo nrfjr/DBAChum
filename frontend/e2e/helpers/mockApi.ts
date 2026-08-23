@@ -320,6 +320,53 @@ export async function installMockApi(
     }
 
     if (
+      path === `/databases/${oracleConnection.id}/oracle/users`
+      && method === 'GET'
+    ) {
+      return json(route, {
+        available: true,
+        total: 3,
+        open: 1,
+        locked: 1,
+        expired: 1,
+        items: [
+          {
+            username: 'APP_USER',
+            status: 'OPEN',
+            default_tablespace: 'USERS',
+            temporary_tablespace: 'TEMP',
+            profile: 'DEFAULT',
+            created_at: now,
+            lock_date: null,
+            expiry_date: null,
+          },
+          {
+            username: 'LOCKED_USER',
+            status: 'LOCKED(TIMED)',
+            default_tablespace: 'USERS',
+            temporary_tablespace: 'TEMP',
+            profile: 'DEFAULT',
+            created_at: now,
+            lock_date: now,
+            expiry_date: null,
+          },
+          {
+            username: 'OLD_USER',
+            status: 'EXPIRED',
+            default_tablespace: 'ARCHIVE_DATA',
+            temporary_tablespace: 'TEMP',
+            profile: 'DEFAULT',
+            created_at: now,
+            lock_date: null,
+            expiry_date: now,
+          },
+        ],
+        warning: null,
+        checked_at: now,
+      })
+    }
+
+    if (
       path === `/databases/${oracleConnection.id}/metrics/history`
       && method === 'GET'
     ) {

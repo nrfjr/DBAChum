@@ -82,3 +82,24 @@ test('shows a useful history error without breaking the database page', async ({
   await expect(page.getByRole('button', { name: 'Overview' })).toBeVisible()
   expect(pageErrors).toEqual([])
 })
+
+
+test('shows Oracle users and schemas with filtering', async ({ page }) => {
+  await installMockApi(page)
+
+  await page.goto('/databases/conn-oracle')
+  await page.getByRole('button', { name: 'Users & Schemas' }).click()
+
+  await expect(page.getByRole('heading', { name: 'Users & Schemas' })).toBeVisible()
+  await expect(page.getByText('APP_USER', { exact: true })).toBeVisible()
+  await expect(page.getByText('LOCKED_USER', { exact: true })).toBeVisible()
+
+  await page.getByRole('button', { name: /Locked/ }).click()
+  await expect(page.getByText('LOCKED_USER', { exact: true })).toBeVisible()
+  await expect(page.getByText('APP_USER', { exact: true })).not.toBeVisible()
+
+  await page.getByPlaceholder('Username, status, tablespace or profile').fill('archive')
+  await page.getByRole('button', { name: /Expired/ }).click()
+
+  await expect(page.getByText('OLD_USER', { exact: true })).toBeVisible()
+})

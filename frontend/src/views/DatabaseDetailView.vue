@@ -7,7 +7,10 @@ import DatabaseSessionsPanel from '@/components/databases/DatabaseSessionsPanel.
 import DatabaseStoragePanel from '@/components/databases/DatabaseStoragePanel.vue'
 import DatabaseActivityPanel from '@/components/databases/DatabaseActivityPanel.vue'
 import DatabaseHistoryPanel from '@/components/databases/DatabaseHistoryPanel.vue'
+import DatabaseUsersPanel from '@/components/databases/DatabaseUsersPanel.vue'
 import { useServersStore } from '@/stores/servers'
+import { useAuthStore } from '@/stores/auth'
+import { hasPermission } from '@/core/permissions'
 
 import {
   useConnectionsStore,
@@ -19,6 +22,7 @@ const router = useRouter()
 const connectionsStore = useConnectionsStore()
 const databasesStore = useDatabasesStore()
 const serversStore = useServersStore()
+const authStore = useAuthStore()
 
 const connectionId = computed(
   () => route.params.id as string,
@@ -42,12 +46,21 @@ type DatabaseTab =
   | 'sessions'
   | 'storage'
   | 'activity'
+  | 'users'
 
 const activeTab = ref<DatabaseTab>('overview')
 
 const supportsDbaUtilities = computed(() =>
   ['oracle', 'sqlserver', 'mysql'].includes(
     connection.value?.engine ?? '',
+  ),
+)
+
+const supportsUsersAndSchemas = computed(() =>
+  connection.value?.engine === 'oracle' &&
+  hasPermission(
+    authStore.user?.role,
+    'database:operate',
   ),
 )
 
@@ -178,6 +191,16 @@ onMounted(async () => {
         }" @click="activeTab = 'activity'">
           Activity
         </button>
+
+        <button
+          v-if="supportsUsersAndSchemas"
+          :class="{
+            active: activeTab === 'users',
+          }"
+          @click="activeTab = 'users'"
+        >
+          Users &amp; Schemas
+        </button>
       </nav>
 
       <section v-if="activeTab === 'overview'" class="database-preview-grid database-detail-metrics">
@@ -227,6 +250,12 @@ onMounted(async () => {
 
       <DatabaseActivityPanel v-else-if="activeTab === 'activity'" :connection-id="connection.id"
         :engine="connection.engine" />
+
+      <DatabaseUsersPanel
+        v-else-if="activeTab === 'users'"
+        :connection-id="connection.id"
+        :engine="connection.engine"
+      />
 
       <section v-if="activeTab === 'overview'" class="panel database-overview-panel">
         <div class="panel-header">

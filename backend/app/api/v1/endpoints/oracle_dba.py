@@ -4,19 +4,18 @@ from fastapi import (
     Request,
 )
 
-from app.dependencies.auth import (
-    get_current_user,
-)
 from app.schemas.oracle_dba import (
     OracleActivityResponse,
     OracleSessionsResponse,
     OracleStorageResponse,
+    OracleDatabaseUsersResponse,
 )
 from app.schemas.user import UserResponse
 from app.services.oracle_dba import (
     load_oracle_activity,
     load_oracle_sessions,
     load_oracle_storage,
+    load_oracle_users,
 )
 from app.core.permissions import Permission
 from app.dependencies.permissions import require_permission
@@ -68,6 +67,22 @@ async def get_activity(
     current_user: UserResponse = Depends(require_permission(Permission.MONITOR_READ)),
 ):
     return await load_oracle_activity(
+        request.app.state.database,
+        connection_id,
+    )
+
+@router.get(
+    "/{connection_id}/oracle/users",
+    response_model=OracleDatabaseUsersResponse,
+)
+async def get_database_users(
+    connection_id: str,
+    request: Request,
+    current_user: UserResponse = Depends(
+        require_permission(Permission.DBA_OPERATE)
+    ),
+):
+    return await load_oracle_users(
         request.app.state.database,
         connection_id,
     )

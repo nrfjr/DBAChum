@@ -1867,3 +1867,43 @@ button {
   width: 100%;
   height: 380px;
 }
+.utility-filter-row {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.utility-filter-row label {
+  display: grid;
+  gap: 0.35rem;
+  width: min(100%, 480px);
+}
+
+.utility-filter-row label > span,
+.utility-filter-row > span {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+}
+
+.utility-filter-row input {
+  width: 100%;
+  padding: 0.7rem 0.8rem;
+  border: 1px solid var(--border);
+  border-radius: 0.7rem;
+  background: var(--surface);
+  color: var(--text);
+}
+
+.utility-filter-row input:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+
+@media (max-width: 700px) {
+  .utility-filter-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}

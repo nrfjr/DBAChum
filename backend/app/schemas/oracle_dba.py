@@ -116,3 +116,31 @@ class OracleActivityResponse(BaseModel):
 
     warning: str | None = None
     checked_at: datetime
+
+class OracleDatabaseUserItem(BaseModel):
+    username: str
+    status: str
+
+    default_tablespace: str | None = None
+    temporary_tablespace: str | None = None
+    profile: str | None = None
+
+    created_at: datetime | None = None
+    lock_date: datetime | None = None
+    expiry_date: datetime | None = None
+
+
+class OracleDatabaseUsersResponse(BaseModel):
+    available: bool = True
+
+    total: int = 0
+    open: int = 0
+    locked: int = 0
+    expired: int = 0
+
+    items: list[OracleDatabaseUserItem] = Field(
+        default_factory=list
+    )
+
+    warning: str | None = None
+    checked_at: datetime

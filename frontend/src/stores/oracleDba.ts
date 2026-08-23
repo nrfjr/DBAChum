@@ -103,6 +103,33 @@ export interface OracleActivityResponse {
   checked_at: string
 }
 
+export interface OracleDatabaseUser {
+  username: string
+  status: string
+
+  default_tablespace: string | null
+  temporary_tablespace: string | null
+  profile: string | null
+
+  created_at: string | null
+  lock_date: string | null
+  expiry_date: string | null
+}
+
+export interface OracleDatabaseUsersResponse {
+  available: boolean
+
+  total: number
+  open: number
+  locked: number
+  expired: number
+
+  items: OracleDatabaseUser[]
+
+  warning: string | null
+  checked_at: string
+}
+
 
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL
@@ -150,13 +177,20 @@ export const useOracleDbaStore =
         OracleActivityResponse
       >,
 
+      users: {} as Record<
+        string,
+        OracleDatabaseUsersResponse
+      >,
+
       loadingSessions: false,
       loadingStorage: false,
       loadingActivity: false,
+      loadingUsers: false,
 
       sessionsError: null as string | null,
       storageError: null as string | null,
       activityError: null as string | null,
+      usersError: null as string | null,
     }),
 
     actions: {
@@ -214,6 +248,25 @@ export const useOracleDbaStore =
               : 'Unable to load Oracle activity.'
         } finally {
           this.loadingActivity = false
+        }
+      },
+
+      async loadUsers(id: string) {
+        this.loadingUsers = true
+        this.usersError = null
+
+        try {
+          this.users[id] =
+            await apiRequest<OracleDatabaseUsersResponse>(
+              `/databases/${id}/oracle/users`,
+            )
+        } catch (error) {
+          this.usersError =
+            error instanceof Error
+              ? error.message
+              : 'Unable to load Oracle users and schemas.'
+        } finally {
+          this.loadingUsers = false
         }
       },
     },

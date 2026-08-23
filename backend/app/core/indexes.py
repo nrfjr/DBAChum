@@ -55,3 +55,20 @@ async def create_indexes(
         "server_ids",
         name="ix_database_connections_server_ids",
     )
+
+
+    await database.database_action_audit.create_index(
+        [
+            ("connection_id", 1),
+            ("started_at", -1),
+        ],
+        name="ix_database_action_audit_connection_started",
+    )
+
+    await database.database_action_audit.create_index(
+        [
+            ("operator_user_id", 1),
+            ("started_at", -1),
+        ],
+        name="ix_database_action_audit_operator_started",
+    )
