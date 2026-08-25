@@ -118,7 +118,7 @@ test('reviews reference roles before creating an Oracle user', async ({ page }) 
   await dialog.getByLabel('Reference user').fill('APP_USER')
   await dialog.getByLabel('Requestor').fill('DBA Requestor')
 
-  await dialog.getByRole('button', { name: 'Review & Create' }).click()
+  await dialog.getByRole('button', { name: 'Review', exact: true }).click()
 
   await expect(dialog.getByText('APP_READ', { exact: true })).toBeVisible()
   await expect(dialog.getByText('CREATE SESSION', { exact: false })).toBeVisible()
@@ -143,3 +143,21 @@ test('reviews reference roles before creating an Oracle user', async ({ page }) 
   })
 })
 
+
+test('generates Oracle username from names and employee ID', async ({ page }) => {
+  await installMockApi(page)
+
+  await page.goto('/databases/conn-oracle')
+  await page.getByRole('button', { name: 'Users & Schemas' }).click()
+  await page.getByRole('button', { name: 'Create user' }).click()
+
+  const dialog = page.getByRole('dialog', { name: 'Create Oracle user' })
+  await dialog.getByText('Generate from employee details').click()
+  await dialog.getByLabel('First name').fill('José')
+  await dialog.getByLabel('Middle name').fill('Peña')
+  await dialog.getByLabel('Last name').fill('Niño')
+  await dialog.getByLabel('ID', { exact: true }).fill('12-345')
+  await dialog.getByRole('button', { name: 'Generate username' }).click()
+
+  await expect(dialog.getByLabel('Username')).toHaveValue('JPNINO12345')
+})

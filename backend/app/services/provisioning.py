@@ -26,6 +26,7 @@ from app.schemas.provisioning import (
 )
 from app.services.database_connections import (
     connection_is_active,
+    connection_is_monitored,
     get_database_connection,
 )
 from app.services.ldap_ldif import DEFAULT_LDIF_TEMPLATE
@@ -56,6 +57,28 @@ GENERATED_SOURCE_OPTIONS = [
 
 def normalize_profile_name(name: str) -> str:
     return name.strip().lower()
+
+
+def effective_match_columns(step: dict) -> list[str]:
+    configured = [
+        str(column).strip().upper()
+        for column in (step.get("match_columns") or [])
+        if str(column).strip()
+    ]
+    if configured:
+        return configured
+
+    # Backward-compatible inference for profiles created before Phase 4A added
+    # explicit upsert keys. Generated username is the canonical cross-system
+    # identity in DBAChum, so a single such mapping is safe to infer.
+    inferred = [
+        str(mapping.get("column_name", "")).strip().upper()
+        for mapping in (step.get("mappings") or [])
+        if mapping.get("value_kind") == "generated"
+        and mapping.get("value_key") == "username"
+        and str(mapping.get("column_name", "")).strip()
+    ]
+    return inferred if len(inferred) == 1 else []
 
 
 def parse_profile_id(profile_id: str) -> ObjectId:
@@ -144,13 +167,31 @@ async def ensure_ldap_profiles_migrated(database):
         )
 
 
-async def _validate_oracle_connection(database, connection_id: str, label: str) -> dict:
+async def _validate_oracle_connection(
+    database,
+    connection_id: str,
+    label: str,
+    *,
+    require_monitored: bool = False,
+) -> dict:
     connection = await get_database_connection(database, connection_id)
 
     if connection.get("engine") != "oracle":
         raise AppError(
             f"{label} must use an Oracle connection.",
             code="PROVISIONING_ORACLE_CONNECTION_REQUIRED",
+            status_code=400,
+        )
+    if not connection_is_active(connection):
+        raise AppError(
+            f"{label} is disabled.",
+            code="PROVISIONING_CONNECTION_DISABLED",
+            status_code=400,
+        )
+    if require_monitored and not connection_is_monitored(connection):
+        raise AppError(
+            f"{label} must be a monitored database connection so the profile has a Users & Schemas parent workspace.",
+            code="PROVISIONING_PARENT_NOT_MONITORED",
             status_code=400,
         )
 
@@ -180,11 +221,15 @@ async def validate_profile_dependencies(database, profile: dict) -> list[str]:
             profile["schema_connection_id"],
         )
         if schema_connection.get("engine") != "oracle":
-            issues.append("Schema creation connection is not Oracle.")
+            issues.append("Parent database connection is not Oracle.")
         elif not connection_is_active(schema_connection):
-            issues.append("Schema creation connection is disabled.")
+            issues.append("Parent database connection is disabled.")
+        elif not connection_is_monitored(schema_connection):
+            issues.append(
+                "Parent database connection is not monitored, so the profile has no Users & Schemas workspace."
+            )
     except AppError:
-        issues.append("Schema creation connection is missing.")
+        issues.append("Parent database connection is missing.")
 
     for index, step in enumerate(profile.get("table_steps") or [], start=1):
         try:
@@ -195,6 +240,11 @@ async def validate_profile_dependencies(database, profile: dict) -> list[str]:
                 issues.append(f"Table step {index} uses a disabled connection.")
         except AppError:
             issues.append(f"Table step {index} connection is missing.")
+
+        if not effective_match_columns(step):
+            issues.append(
+                f"Table step {index} needs at least one upsert match column."
+            )
 
     if profile.get("ldap_enabled"):
         ldap_profile_id = profile.get("ldap_profile_id")
@@ -245,6 +295,32 @@ async def list_provisioning_profiles(database):
     return [await profile_to_response(database, document) for document in documents]
 
 
+async def list_provisioning_profiles_for_connection(
+    database,
+    connection_id: str,
+):
+    """Profiles visible from one parent database connection.
+
+    The parent/schema connection is the database context that owns the profile.
+    Table steps may still use separate application connections.
+    """
+    await ensure_ldap_profiles_migrated(database)
+    # Validate the parent connection exists before returning child profiles.
+    await _validate_oracle_connection(
+        database,
+        connection_id,
+        "Parent database connection",
+        require_monitored=True,
+    )
+    documents = await database.provisioning_profiles.find(
+        {
+            "schema_connection_id": connection_id,
+            "enabled": {"$ne": False},
+        }
+    ).sort("name", 1).to_list(None)
+    return [await profile_to_response(database, document) for document in documents]
+
+
 async def get_provisioning_profile(database, profile_id: str):
     await ensure_ldap_profiles_migrated(database)
     document = await database.provisioning_profiles.find_one(
@@ -263,7 +339,8 @@ async def _validate_profile_connections(database, data):
     await _validate_oracle_connection(
         database,
         data.schema_connection_id,
-        "Schema creation connection",
+        "Parent database connection",
+        require_monitored=True,
     )
     for step in data.table_steps:
         await _validate_oracle_connection(

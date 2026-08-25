@@ -19,6 +19,7 @@ const pageSubtitle = computed(() =>
   String(route.meta.subtitle ?? 'Database administration workspace.'),
 )
 
+
 const canAccessSettings = computed(() =>
   hasPermission(
     authStore.user?.role,
@@ -64,11 +65,10 @@ const navigation = computed(() => {
     },
   ]
 
-  return items.filter(
-    (item) =>
-      item.path !== '/settings' ||
-      canAccessSettings.value,
-  )
+  return items.filter((item) => {
+    if (item.path === '/settings') return canAccessSettings.value
+    return true
+  })
 })
 
 async function logout() {

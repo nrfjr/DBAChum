@@ -13,6 +13,11 @@ from app.schemas.oracle_dba import (
     OracleCreateUserRequest,
     OracleCreateUserResponse,
 )
+from app.schemas.provisioning import (
+    ProvisioningPreviewRequest,
+    ProvisioningPreviewResponse,
+    ProvisioningProfileResponse,
+)
 from app.schemas.user import UserResponse
 from app.services.oracle_dba import (
     load_oracle_activity,
@@ -22,6 +27,8 @@ from app.services.oracle_dba import (
     load_oracle_reference_user,
     provision_oracle_user,
 )
+from app.services.provisioning import list_provisioning_profiles_for_connection
+from app.services.provisioning_preview import build_provisioning_preview
 from app.core.permissions import Permission
 from app.dependencies.permissions import require_permission
 
@@ -108,6 +115,46 @@ async def get_reference_user(
         request.app.state.database,
         connection_id,
         username,
+    )
+
+
+@router.get(
+    "/{connection_id}/oracle/provisioning-profiles",
+    response_model=list[ProvisioningProfileResponse],
+)
+async def get_database_provisioning_profiles(
+    connection_id: str,
+    request: Request,
+    current_user: UserResponse = Depends(
+        require_permission(Permission.DBA_OPERATE)
+    ),
+):
+    return await list_provisioning_profiles_for_connection(
+        request.app.state.database,
+        connection_id,
+    )
+
+
+@router.post(
+    "/{connection_id}/oracle/provisioning-profiles/{profile_id}/preview",
+    response_model=ProvisioningPreviewResponse,
+)
+async def preview_database_provisioning_profile(
+    connection_id: str,
+    profile_id: str,
+    data: ProvisioningPreviewRequest,
+    request: Request,
+    current_user: UserResponse = Depends(
+        require_permission(Permission.DBA_OPERATE)
+    ),
+):
+    return await build_provisioning_preview(
+        request.app.state.database,
+        profile_id,
+        data,
+        current_user,
+        requester_ip=request.client.host if request.client else None,
+        parent_connection_id=connection_id,
     )
 
 

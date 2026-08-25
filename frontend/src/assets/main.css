@@ -2167,3 +2167,29 @@ button {
     width: calc(100vw - 1rem);
   }
 }
+
+
+/* Weekend 19 Phase 4A redo - idempotent application-table identity matching */
+.provisioning-upsert-match {
+  display: grid;
+  gap: 0.65rem;
+  padding: 0.85rem;
+  border: 1px dashed var(--border-color);
+  border-radius: 0.7rem;
+}
+
+.provisioning-upsert-match p {
+  margin: 0.3rem 0 0;
+  font-size: 0.82rem;
+  opacity: 0.75;
+}
+
+.provisioning-match-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 0.9rem;
+}
+
+.provisioning-match-options .connection-checkbox.disabled {
+  opacity: 0.45;
+}

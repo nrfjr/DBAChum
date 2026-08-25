@@ -47,6 +47,10 @@ const oracleConnections = computed(() =>
   connectionsStore.connections.filter((connection) => connection.engine === 'oracle' && connection.active),
 )
 
+const parentOracleConnections = computed(() =>
+  oracleConnections.value.filter((connection) => connection.monitor_enabled),
+)
+
 const availableLdapProfiles = computed(() =>
   provisioningStore.ldapProfiles.filter((profile) => profile.enabled && profile.configured),
 )
@@ -74,9 +78,9 @@ function resetForm() {
   Object.assign(form, {
     name: '',
     description: null,
-    schema_connection_id: oracleConnections.value.find(
+    schema_connection_id: parentOracleConnections.value.find(
       (connection) => connection.oracle_auth_mode === 'sysdba',
-    )?.id ?? oracleConnections.value[0]?.id ?? '',
+    )?.id ?? parentOracleConnections.value[0]?.id ?? '',
     ldap_enabled: false,
     ldap_profile_id: null,
     enabled: true,
@@ -119,6 +123,7 @@ async function openEdit(profile: ProvisioningProfile) {
         value_key: mapping.value_key,
         custom_value: mapping.custom_value,
       })),
+      match_columns: [...(step.match_columns ?? [])],
     })),
   })
   stepMetadata.value = profile.table_steps.map(blankMetadata)
@@ -137,11 +142,12 @@ function closeForm() {
 function addTableStep() {
   const connectionId = oracleConnections.value[0]?.id ?? ''
   form.table_steps.push({
-    name: `Table insert ${form.table_steps.length + 1}`,
+    name: `Table upsert ${form.table_steps.length + 1}`,
     connection_id: connectionId,
     owner: '',
     table_name: '',
     mappings: [],
+    match_columns: [],
   })
   stepMetadata.value.push(blankMetadata())
   if (connectionId) void loadSchemas(form.table_steps.length - 1)
@@ -262,6 +268,7 @@ async function connectionChanged(index: number) {
   step.owner = ''
   step.table_name = ''
   step.mappings = []
+  step.match_columns = []
   meta.schemas = []
   meta.tables = []
   meta.sequences = []
@@ -275,6 +282,7 @@ async function ownerChanged(index: number) {
   if (!step || !meta) return
   step.table_name = ''
   step.mappings = []
+  step.match_columns = []
   meta.tables = []
   meta.sequences = []
   meta.columns = []
@@ -286,6 +294,7 @@ async function tableChanged(index: number) {
   const step = form.table_steps[index]
   if (!step) return
   step.mappings = []
+  step.match_columns = []
   await loadColumns(index)
 }
 
@@ -296,18 +305,74 @@ function mappingSelection(mapping: ProvisioningColumnMapping): string {
   return mapping.value_kind
 }
 
-function setMappingSource(mapping: ProvisioningColumnMapping, value: string) {
+function mappingCanMatch(mapping: ProvisioningColumnMapping) {
+  if (mapping.value_kind === 'custom') return true
+  if (mapping.value_kind === 'generated') return mapping.value_key === 'username'
+  return mapping.value_kind === 'form' && mapping.value_key === 'employee_id'
+}
+
+function setMappingSource(
+  stepIndex: number,
+  mapping: ProvisioningColumnMapping,
+  value: string,
+) {
   if (value.startsWith('form:') || value.startsWith('generated:')) {
     const [kind, key] = value.split(':', 2) as ['form' | 'generated', string]
     mapping.value_kind = kind
     mapping.value_key = key
     mapping.custom_value = null
-    return
+  } else {
+    mapping.value_kind = value as ProvisioningValueKind
+    mapping.value_key = null
+    mapping.custom_value = null
   }
 
-  mapping.value_kind = value as ProvisioningValueKind
-  mapping.value_key = null
-  mapping.custom_value = null
+  const step = form.table_steps[stepIndex]
+  if (step && !mappingCanMatch(mapping)) {
+    step.match_columns = step.match_columns.filter(
+      (column) => column !== mapping.column_name,
+    )
+  }
+
+  if (
+    step
+    && mapping.value_kind === 'generated'
+    && mapping.value_key === 'username'
+    && !step.match_columns.includes(mapping.column_name)
+  ) {
+    step.match_columns.push(mapping.column_name)
+  }
+}
+
+function matchColumnSelected(stepIndex: number, columnName: string) {
+  return form.table_steps[stepIndex]?.match_columns.includes(columnName) ?? false
+}
+
+function setMatchColumn(
+  stepIndex: number,
+  columnName: string,
+  checked: boolean,
+) {
+  const step = form.table_steps[stepIndex]
+  if (!step) return
+
+  if (checked) {
+    if (!step.match_columns.includes(columnName)) step.match_columns.push(columnName)
+  } else {
+    step.match_columns = step.match_columns.filter((column) => column !== columnName)
+  }
+}
+
+function handleMatchColumnToggle(
+  stepIndex: number,
+  columnName: string,
+  event: Event,
+) {
+  setMatchColumn(
+    stepIndex,
+    columnName,
+    (event.target as HTMLInputElement).checked,
+  )
 }
 
 function columnInfo(index: number, columnName: string) {
@@ -332,6 +397,12 @@ async function save() {
     return
   }
 
+  const stepWithoutMatch = form.table_steps.findIndex((step) => step.match_columns.length === 0)
+  if (stepWithoutMatch !== -1) {
+    formError.value = `Table step ${stepWithoutMatch + 1} needs at least one upsert match column.`
+    return
+  }
+
   try {
     const payload: ProvisioningProfileInput = {
       name: form.name.trim(),
@@ -351,6 +422,7 @@ async function save() {
           value_key: mapping.value_key,
           custom_value: mapping.custom_value,
         })),
+        match_columns: [...step.match_columns],
       })),
     }
 
@@ -408,8 +480,8 @@ onMounted(async () => {
         </button>
       </div>
 
-      <div v-if="oracleConnections.length === 0" class="provisioning-warning">
-        Add an Oracle connection first. A provisioning profile cannot create a database account without one.
+      <div v-if="parentOracleConnections.length === 0" class="provisioning-warning">
+        Add or enable monitoring on an Oracle database connection first. A profile needs a monitored parent so it can appear under that database's Users & Schemas workspace.
       </div>
 
       <p v-if="provisioningStore.loading" class="empty-state">Loading provisioning profiles...</p>
@@ -430,7 +502,7 @@ onMounted(async () => {
             </div>
             <p>{{ profile.description || 'No description' }}</p>
             <small>
-              Create via {{ connectionName(profile.schema_connection_id) }}
+              Parent DB {{ connectionName(profile.schema_connection_id) }}
               · {{ profile.table_steps.length }} table step{{ profile.table_steps.length === 1 ? '' : 's' }}
               · LDAP {{ profile.ldap_enabled ? (provisioningStore.ldapProfiles.find((ldap) => ldap.id === profile.ldap_profile_id)?.name ?? 'missing profile') : 'off' }}
             </small>
@@ -474,14 +546,14 @@ onMounted(async () => {
           </label>
 
           <label>
-            Schema creation connection
+            Parent database connection (monitored)
             <select v-model="form.schema_connection_id" required>
               <option value="" disabled>Select Oracle connection</option>
-              <option v-for="connection in oracleConnections" :key="connection.id" :value="connection.id">
+              <option v-for="connection in parentOracleConnections" :key="connection.id" :value="connection.id">
                 {{ connection.name }} · {{ connection.username }}{{ connection.oracle_auth_mode === 'sysdba' ? ' / SYSDBA' : '' }}
               </option>
             </select>
-            <small>SYS/SYSDBA is the normal choice, but the profile only requires an Oracle account with the needed privileges.</small>
+            <small>This is the parent database context. The profile appears only in this connection's Users &amp; Schemas → Create User flow. Table steps can use separate application connections below.</small>
           </label>
 
           <label class="connection-checkbox">
@@ -521,7 +593,7 @@ onMounted(async () => {
             <div class="panel-header">
               <div>
                 <h3>Application table steps</h3>
-                <p>Each step inserts one row using mappings you define. USER_MASTER is just another table step.</p>
+                <p>Each step upserts one application row. DBAChum first matches the identity columns you select, then Phase 4B will INSERT when absent or UPDATE when exactly one row exists.</p>
               </div>
               <button type="button" class="secondary-button" @click="addTableStep">Add table step</button>
             </div>
@@ -546,11 +618,11 @@ onMounted(async () => {
 
               <label>
                 Step name
-                <input v-model="step.name" required placeholder="Insert USER_MASTER" />
+                <input v-model="step.name" required placeholder="Upsert USER_MASTER" />
               </label>
 
               <label>
-                Oracle connection used for this insert
+                Application provisioning connection for this step
                 <select v-model="step.connection_id" required @change="connectionChanged(index)">
                   <option value="" disabled>Select Oracle connection</option>
                   <option v-for="connection in oracleConnections" :key="connection.id" :value="connection.id">
@@ -608,7 +680,7 @@ onMounted(async () => {
 
                   <select
                     :value="mappingSelection(mapping)"
-                    @change="setMappingSource(mapping, ($event.target as HTMLSelectElement).value)"
+                    @change="setMappingSource(index, mapping, ($event.target as HTMLSelectElement).value)"
                   >
                     <option value="omit">Database default / omit</option>
                     <option value="null">NULL</option>
@@ -663,13 +735,39 @@ onMounted(async () => {
                   </span>
                 </div>
               </div>
+
+              <section v-if="step.mappings.length" class="provisioning-upsert-match">
+                <div>
+                  <strong>Upsert match columns</strong>
+                  <p>Choose the stable identity column(s) DBAChum should use to find an existing application row before INSERT/UPDATE. Username is the normal choice when it is unique.</p>
+                </div>
+
+                <div class="provisioning-match-options">
+                  <label
+                    v-for="mapping in step.mappings"
+                    :key="`match-${mapping.column_name}`"
+                    class="connection-checkbox"
+                    :class="{ disabled: !mappingCanMatch(mapping) }"
+                  >
+                    <input
+                      type="checkbox"
+                      :checked="matchColumnSelected(index, mapping.column_name)"
+                      :disabled="!mappingCanMatch(mapping)"
+                      @change="handleMatchColumnToggle(index, mapping.column_name, $event)"
+                    />
+                    {{ mapping.column_name }}
+                  </label>
+                </div>
+
+                <small>Use stable identity only: generated username, employee ID, or a fixed custom literal. Sequence, password, requester IP, timestamps, NULL and omitted columns cannot be match keys. Multiple selections form a composite match.</small>
+              </section>
             </article>
           </section>
 
           <p v-if="formError" class="login-error">{{ formError }}</p>
 
           <div class="connection-form-actions">
-            <button class="primary-button" type="submit" :disabled="provisioningStore.saving || oracleConnections.length === 0">
+            <button class="primary-button" type="submit" :disabled="provisioningStore.saving || parentOracleConnections.length === 0">
               {{ provisioningStore.saving ? 'Saving...' : editingId ? 'Save profile' : 'Create profile' }}
             </button>
             <button class="secondary-button" type="button" @click="closeForm">Cancel</button>

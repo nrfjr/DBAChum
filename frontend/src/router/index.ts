@@ -59,6 +59,7 @@ const router = createRouter({
       },
     },
 
+
     {
       path: '/servers',
       name: 'servers',

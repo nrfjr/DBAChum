@@ -130,12 +130,14 @@ def test_profile_supports_user_master_as_normal_table_step():
                         "custom_value": "ACTIVE",
                     },
                 ],
+                "match_columns": ["USERNAME"],
             }
         ],
     )
 
     assert profile.table_steps[0].table_name == "USER_MASTER"
     assert profile.table_steps[0].mappings[1].custom_value == "ACTIVE"
+    assert profile.table_steps[0].match_columns == ["USERNAME"]
 
 
 
@@ -160,6 +162,87 @@ def test_source_catalog_exposes_form_and_generated_values():
     assert ("generated", "password") in keys
     assert ("form", "remarks") in keys
     assert ("generated", "requester_ip") in keys
+
+
+def test_table_step_rejects_sequence_as_upsert_match_key():
+    with pytest.raises(ValidationError):
+        ProvisioningTableStep(
+            name="USER_MASTER",
+            connection_id="a" * 24,
+            owner="ORMS",
+            table_name="USER_MASTER",
+            mappings=[
+                ProvisioningColumnMapping(
+                    column_name="ID",
+                    value_kind="sequence",
+                    value_key="USER_MASTER_SEQ",
+                ),
+                ProvisioningColumnMapping(
+                    column_name="USERNAME",
+                    value_kind="generated",
+                    value_key="username",
+                ),
+            ],
+            match_columns=["ID"],
+        )
+
+
+def test_table_step_infers_generated_username_as_legacy_upsert_key():
+    step = ProvisioningTableStep(
+        name="USER_MASTER",
+        connection_id="a" * 24,
+        owner="ORMS",
+        table_name="USER_MASTER",
+        mappings=[
+            ProvisioningColumnMapping(
+                column_name="USERNAME",
+                value_kind="generated",
+                value_key="username",
+            ),
+        ],
+    )
+
+    assert step.match_columns == ["USERNAME"]
+
+
+def test_table_step_rejects_mutable_generated_value_as_upsert_key():
+    with pytest.raises(ValidationError):
+        ProvisioningTableStep(
+            name="USER_MASTER",
+            connection_id="a" * 24,
+            owner="ORMS",
+            table_name="USER_MASTER",
+            mappings=[
+                ProvisioningColumnMapping(
+                    column_name="PASSWORD",
+                    value_kind="generated",
+                    value_key="password",
+                ),
+            ],
+            match_columns=["PASSWORD"],
+        )
+
+
+@pytest.mark.asyncio
+async def test_table_step_without_match_marks_profile_not_ready():
+    database = FakeDatabase(
+        connections={
+            "a" * 24: {"engine": "oracle", "active": True},
+        }
+    )
+
+    issues = await validate_profile_dependencies(
+        database,
+        {
+            "schema_connection_id": "a" * 24,
+            "ldap_enabled": False,
+            "table_steps": [
+                {"connection_id": "a" * 24, "match_columns": []},
+            ],
+        },
+    )
+
+    assert "Table step 1 needs at least one upsert match column." in issues
 
 
 @pytest.mark.asyncio
@@ -241,7 +324,41 @@ async def test_connection_delete_is_blocked_when_profile_depends_on_it():
 
 
 @pytest.mark.asyncio
-async def test_unmonitored_connection_is_still_valid_for_provisioning():
+async def test_unmonitored_app_connection_is_still_valid_for_provisioning_step():
+    database = FakeDatabase(
+        connections={
+            "a" * 24: {
+                "engine": "oracle",
+                "active": True,
+                "monitor_enabled": True,
+                "enabled": True,
+            },
+            "b" * 24: {
+                "engine": "oracle",
+                "active": True,
+                "monitor_enabled": False,
+                "enabled": False,
+            },
+        },
+        ldap=None,
+    )
+
+    issues = await validate_profile_dependencies(
+        database,
+        {
+            "schema_connection_id": "a" * 24,
+            "ldap_enabled": False,
+            "table_steps": [
+                {"connection_id": "b" * 24, "match_columns": ["USERNAME"]},
+            ],
+        },
+    )
+
+    assert issues == []
+
+
+@pytest.mark.asyncio
+async def test_unmonitored_parent_connection_has_no_provisioning_workspace():
     database = FakeDatabase(
         connections={
             "a" * 24: {
@@ -259,13 +376,14 @@ async def test_unmonitored_connection_is_still_valid_for_provisioning():
         {
             "schema_connection_id": "a" * 24,
             "ldap_enabled": False,
-            "table_steps": [
-                {"connection_id": "a" * 24},
-            ],
+            "table_steps": [],
         },
     )
 
-    assert issues == []
+    assert (
+        "Parent database connection is not monitored, so the profile has no Users & Schemas workspace."
+        in issues
+    )
 
 
 @pytest.mark.asyncio
@@ -291,4 +409,4 @@ async def test_inactive_connection_is_rejected_for_provisioning():
         },
     )
 
-    assert "Schema creation connection is disabled." in issues
+    assert "Parent database connection is disabled." in issues

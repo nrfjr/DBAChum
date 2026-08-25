@@ -12,7 +12,10 @@ import {
   type OracleReferenceUser,
   type OracleCreateUserResult,
 } from '@/stores/oracleDba'
-import { useProvisioningStore } from '@/stores/provisioning'
+import {
+  useProvisioningStore,
+  type ProvisioningPreviewResult,
+} from '@/stores/provisioning'
 
 const props = defineProps<{
   connectionId: string
@@ -114,8 +117,7 @@ interface CreateUserForm {
   lastName: string
   employeeId: string
   remarks: string
-  generateLdif: boolean
-  ldapProfileId: string
+  provisioningProfileId: string
 }
 
 function emptyCreateForm(): CreateUserForm {
@@ -133,8 +135,7 @@ function emptyCreateForm(): CreateUserForm {
     lastName: '',
     employeeId: '',
     remarks: '',
-    generateLdif: false,
-    ldapProfileId: '',
+    provisioningProfileId: '',
   }
 }
 
@@ -145,19 +146,19 @@ const reference = ref<OracleReferenceUser | null>(null)
 const selectedRoles = ref<string[]>([])
 const createResult = ref<OracleCreateUserResult | null>(null)
 const showPassword = ref(false)
+const provisioningPreview = ref<ProvisioningPreviewResult | null>(null)
+const previewLoading = ref(false)
 const createForm = reactive<CreateUserForm>(emptyCreateForm())
 
-const availableLdapProfiles = computed(() =>
-  provisioningStore.ldapProfiles.filter((profile) => profile.enabled && profile.configured),
+const availableProvisioningProfiles = computed(() =>
+  provisioningStore.profilesByConnection[props.connectionId] ?? [],
 )
 
-function ldifEnabledChanged() {
-  if (!createForm.generateLdif) {
-    createForm.ldapProfileId = ''
-  } else if (!createForm.ldapProfileId && availableLdapProfiles.value.length === 1) {
-    createForm.ldapProfileId = availableLdapProfiles.value[0]?.id ?? ''
-  }
-}
+const selectedProvisioningProfile = computed(() =>
+  availableProvisioningProfiles.value.find(
+    (profile) => profile.id === createForm.provisioningProfileId,
+  ) ?? null,
+)
 
 function resetCreate() {
   Object.assign(createForm, emptyCreateForm())
@@ -166,6 +167,8 @@ function resetCreate() {
   reference.value = null
   selectedRoles.value = []
   createResult.value = null
+  provisioningPreview.value = null
+  previewLoading.value = false
   showPassword.value = false
 }
 
@@ -195,7 +198,13 @@ function normalizeNameField(field: 'firstName' | 'middleName' | 'lastName') {
 function cleanUsernamePart(value: string) {
   return normalizePersonName(value)
     .toUpperCase()
-    .replace(/[^A-Z0-9]/g, '')
+    .replace(/[^A-Z]/g, '')
+}
+
+function cleanEmployeeIdPart(value: string) {
+  return value
+    .replace(/[^A-Za-z0-9]/g, '')
+    .toUpperCase()
 }
 
 function randomIndex(max: number) {
@@ -232,7 +241,7 @@ function generateUsername() {
   const first = cleanUsernamePart(createForm.firstName)
   const middle = cleanUsernamePart(createForm.middleName)
   const last = cleanUsernamePart(createForm.lastName)
-  const employeeId = cleanUsernamePart(createForm.employeeId)
+  const employeeId = cleanEmployeeIdPart(createForm.employeeId)
 
   if (!first || !last || !employeeId) {
     createError.value =
@@ -258,6 +267,7 @@ function generateUsername() {
 
 async function reviewCreate() {
   createError.value = null
+  provisioningPreview.value = null
 
   const username = createForm.username
     .trim()
@@ -275,62 +285,63 @@ async function reviewCreate() {
     return
   }
 
-  if (createForm.generateLdif) {
-    if (!createForm.ldapProfileId) {
-      createError.value = 'Select an LDAP profile for LDIF generation.'
-      return
-    }
-
-    createForm.firstName = normalizePersonName(createForm.firstName)
-    createForm.middleName = normalizePersonName(createForm.middleName)
-    createForm.lastName = normalizePersonName(createForm.lastName)
-    createForm.employeeId = createForm.employeeId.replace(/[^A-Za-z0-9]/g, '')
-
-    if (!createForm.firstName || !createForm.lastName || !createForm.employeeId) {
-      createError.value =
-        'First name, last name and ID are required when generating an LDAP LDIF.'
-      return
-    }
-  }
-
+  createForm.firstName = normalizePersonName(createForm.firstName)
+  createForm.middleName = normalizePersonName(createForm.middleName)
+  createForm.lastName = normalizePersonName(createForm.lastName)
+  createForm.employeeId = cleanEmployeeIdPart(createForm.employeeId)
   createForm.username = username
 
   const referenceUsername = createForm.referenceUsername
     .trim()
     .toUpperCase()
 
-  if (!referenceUsername) {
-    reference.value = null
-    selectedRoles.value = []
-    createStep.value = 'review'
-    return
-  }
-
   try {
-    const inspected = await oracleStore.loadReferenceUser(
-      props.connectionId,
-      referenceUsername,
-    )
+    if (referenceUsername) {
+      const inspected = await oracleStore.loadReferenceUser(
+        props.connectionId,
+        referenceUsername,
+      )
 
-    reference.value = inspected
-    createForm.referenceUsername = inspected.username
+      reference.value = inspected
+      createForm.referenceUsername = inspected.username
 
-    selectedRoles.value = inspected.roles
-      .filter((role) => !role.sensitive)
-      .map((role) => role.name)
+      selectedRoles.value = inspected.roles
+        .filter((role) => !role.sensitive)
+        .map((role) => role.name)
 
-    if (!createForm.defaultTablespace) {
-      createForm.defaultTablespace =
-        inspected.default_tablespace ?? ''
+      if (!createForm.defaultTablespace) {
+        createForm.defaultTablespace = inspected.default_tablespace ?? ''
+      }
+      if (!createForm.temporaryTablespace) {
+        createForm.temporaryTablespace = inspected.temporary_tablespace ?? ''
+      }
+      if (!createForm.profile) {
+        createForm.profile = inspected.profile ?? ''
+      }
+    } else {
+      reference.value = null
+      selectedRoles.value = []
     }
 
-    if (!createForm.temporaryTablespace) {
-      createForm.temporaryTablespace =
-        inspected.temporary_tablespace ?? ''
-    }
-
-    if (!createForm.profile) {
-      createForm.profile = inspected.profile ?? ''
+    if (createForm.provisioningProfileId) {
+      previewLoading.value = true
+      provisioningPreview.value = await provisioningStore.previewForConnection(
+        props.connectionId,
+        createForm.provisioningProfileId,
+        {
+          username: createForm.username,
+          password: createForm.password,
+          first_name: createForm.firstName || null,
+          middle_name: createForm.middleName || null,
+          last_name: createForm.lastName || null,
+          employee_id: createForm.employeeId || null,
+          reference_user: createForm.referenceUsername || null,
+          requestor: createForm.requestorName.trim() || null,
+          request_reference: createForm.requestReference.trim() || null,
+          remarks: createForm.remarks.trim() || null,
+        },
+      )
+      createForm.username = provisioningPreview.value.username
     }
 
     createStep.value = 'review'
@@ -338,7 +349,9 @@ async function reviewCreate() {
     createError.value =
       error instanceof Error
         ? error.message
-        : 'Unable to inspect the reference user.'
+        : 'Unable to build the user creation review.'
+  } finally {
+    previewLoading.value = false
   }
 }
 
@@ -368,22 +381,6 @@ function handleRoleToggle(
 ) {
   const target = event.target as HTMLInputElement
   setRoleSelected(roleName, target.checked)
-}
-
-function downloadLdif() {
-  if (!createResult.value?.ldif_content || !createResult.value.ldif_filename) return
-
-  const blob = new Blob([createResult.value.ldif_content], {
-    type: 'text/plain;charset=utf-8',
-  })
-  const url = URL.createObjectURL(blob)
-  const anchor = document.createElement('a')
-  anchor.href = url
-  anchor.download = createResult.value.ldif_filename
-  document.body.appendChild(anchor)
-  anchor.click()
-  anchor.remove()
-  URL.revokeObjectURL(url)
 }
 
 async function createUser() {
@@ -416,9 +413,9 @@ async function createUser() {
         last_name:
           normalizePersonName(createForm.lastName) || null,
         employee_id:
-          createForm.employeeId.replace(/[^A-Za-z0-9]/g, '') || null,
-        generate_ldif: createForm.generateLdif,
-        ldap_profile_id: createForm.generateLdif ? createForm.ldapProfileId || null : null,
+          cleanEmployeeIdPart(createForm.employeeId) || null,
+        generate_ldif: false,
+        ldap_profile_id: null,
       },
     )
 
@@ -441,7 +438,7 @@ onMounted(() => {
   oracleStore.loadUsers(
     props.connectionId,
   )
-  provisioningStore.loadLdapProfiles()
+  provisioningStore.loadProfilesForConnection(props.connectionId)
 })
 </script>
 
@@ -658,6 +655,29 @@ onMounted(() => {
           @submit.prevent="reviewCreate"
         >
           <label>
+            Application provisioning
+            <select v-model="createForm.provisioningProfileId">
+              <option value="">No provisioning — schema/user only</option>
+              <option
+                v-for="profile in availableProvisioningProfiles"
+                :key="profile.id"
+                :value="profile.id"
+                :disabled="!profile.ready"
+              >
+                {{ profile.name }}{{ profile.ready ? '' : ' · Needs attention' }}
+              </option>
+            </select>
+            <small>Only provisioning profiles whose parent database connection is this database appear here. Each profile may use separate application connections for its table steps.</small>
+          </label>
+
+          <div
+            v-if="selectedProvisioningProfile && !selectedProvisioningProfile.ready"
+            class="utility-warning oracle-create-warning"
+          >
+            {{ selectedProvisioningProfile.issues.join(' ') }}
+          </div>
+
+          <label>
             Username
 
             <input
@@ -824,30 +844,6 @@ onMounted(() => {
             ></textarea>
           </label>
 
-          <label class="connection-checkbox">
-            <input
-              v-model="createForm.generateLdif"
-              type="checkbox"
-              :disabled="availableLdapProfiles.length === 0"
-              @change="ldifEnabledChanged"
-            />
-            Generate downloadable LDAP LDIF after successful creation
-          </label>
-          <small v-if="availableLdapProfiles.length === 0" class="connection-danger-note">
-            Add and enable an LDAP profile under Settings → LDAP first.
-          </small>
-
-          <label v-if="createForm.generateLdif">
-            LDAP profile
-            <select v-model="createForm.ldapProfileId" required>
-              <option value="" disabled>Select LDAP profile</option>
-              <option v-for="ldap in availableLdapProfiles" :key="ldap.id" :value="ldap.id">
-                {{ ldap.name }} · {{ ldap.host }}:{{ ldap.port }}
-              </option>
-            </select>
-            <small>The selected profile supplies the Base DN and LDIF template.</small>
-          </label>
-
           <p v-if="createError" class="login-error">
             {{ createError }}
           </p>
@@ -856,12 +852,14 @@ onMounted(() => {
             <button
               type="submit"
               class="primary-button"
-              :disabled="oracleStore.loadingReference"
+              :disabled="oracleStore.loadingReference || previewLoading"
             >
               {{
-                oracleStore.loadingReference
-                  ? 'Inspecting reference...'
-                  : 'Review & Create'
+                previewLoading
+                  ? 'Building provisioning preview...'
+                  : oracleStore.loadingReference
+                    ? 'Inspecting reference...'
+                    : 'Review'
               }}
             </button>
 
@@ -883,6 +881,11 @@ onMounted(() => {
             <div>
               <span>New account</span>
               <strong>{{ createForm.username }}</strong>
+            </div>
+
+            <div>
+              <span>Provisioning</span>
+              <strong>{{ selectedProvisioningProfile?.name ?? 'No provisioning' }}</strong>
             </div>
 
             <div>
@@ -975,9 +978,83 @@ onMounted(() => {
             </div>
           </section>
 
+          <section v-if="provisioningPreview" class="oracle-provisioning-preview">
+            <div class="preview-callout">
+              <strong>Phase 4A preview only — no database, application-table or LDAP changes were made.</strong>
+              <span>The selected profile is a child of this database connection. Phase 4B will execute the reviewed lifecycle.</span>
+            </div>
+
+            <div class="preview-summary-grid">
+              <div>
+                <span>Oracle account</span>
+                <strong>{{ provisioningPreview.account_exists ? 'Existing → ALTER / reconcile' : 'Not found → CREATE' }}</strong>
+              </div>
+              <div>
+                <span>Parent database</span>
+                <strong>{{ provisioningPreview.schema_connection_name }}</strong>
+              </div>
+              <div>
+                <span>Requester IP</span>
+                <strong>{{ provisioningPreview.requester_ip || 'Unavailable' }}</strong>
+              </div>
+            </div>
+
+            <section class="preview-section">
+              <h3>Application upsert steps</h3>
+              <article
+                v-for="step in provisioningPreview.table_steps"
+                :key="`${step.index}-${step.name}`"
+                class="preview-step"
+              >
+                <header>
+                  <strong>Step {{ step.index }} · {{ step.name }}</strong>
+                  <span>{{ step.connection_name }} · {{ step.owner }}.{{ step.table_name }}</span>
+                </header>
+                <div class="preview-step-plan">
+                  <strong>{{ step.planned_action.toUpperCase() }}</strong>
+                  <span>Matched {{ step.existing_rows }} row{{ step.existing_rows === 1 ? '' : 's' }} by {{ step.match_columns.join(' + ') }}</span>
+                </div>
+                <div class="preview-table-wrap">
+                  <table>
+                    <thead>
+                      <tr><th>Column</th><th>Source</th><th>Resolved preview</th></tr>
+                    </thead>
+                    <tbody>
+                      <tr v-for="column in step.columns" :key="column.column_name">
+                        <td>{{ column.column_name }}</td>
+                        <td>{{ column.source }}</td>
+                        <td><code>{{ column.display_value ?? 'NULL / blank' }}</code></td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </article>
+              <p v-if="provisioningPreview.table_steps.length === 0" class="empty-state">No application-table steps are configured.</p>
+            </section>
+
+            <section class="preview-section">
+              <h3>LDAP</h3>
+              <p v-if="provisioningPreview.ldap.enabled">
+                {{ provisioningPreview.ldap.profile_name }} · template validated · output
+                <strong>{{ provisioningPreview.ldap.filename }}</strong>
+              </p>
+              <p v-else>LDAP is not enabled for this provisioning profile.</p>
+            </section>
+
+            <div v-if="provisioningPreview.warnings.length" class="utility-warning oracle-create-warning">
+              <ul>
+                <li v-for="warning in provisioningPreview.warnings" :key="warning">{{ warning }}</li>
+              </ul>
+            </div>
+          </section>
+
           <div class="utility-warning oracle-create-warning">
-            This action creates a real Oracle account and grants the selected roles.
-            The password will not be stored in DBAChum's action history.
+            <template v-if="provisioningPreview">
+              Phase 4B will CREATE or ALTER the Oracle account, reconcile roles, then upsert the configured application rows. Duplicate matches block execution.
+            </template>
+            <template v-else>
+              This action creates a real Oracle account and grants the selected roles. The password will not be stored in DBAChum's action history.
+            </template>
           </div>
 
           <p v-if="createError" class="login-error">
@@ -986,6 +1063,7 @@ onMounted(() => {
 
           <div class="connection-form-actions">
             <button
+              v-if="!provisioningPreview"
               type="button"
               class="primary-button"
               :disabled="oracleStore.creatingUser"
@@ -996,6 +1074,16 @@ onMounted(() => {
                   ? 'Creating user...'
                   : `Create ${createForm.username}`
               }}
+            </button>
+
+            <button
+              v-else
+              type="button"
+              class="primary-button"
+              disabled
+              title="Phase 4B will enable profile execution"
+            >
+              Provision {{ createForm.username }} (Phase 4B)
             </button>
 
             <button
@@ -1027,14 +1115,6 @@ onMounted(() => {
 
           <div class="connection-form-actions">
             <button
-              v-if="createResult?.ldif_content"
-              type="button"
-              class="secondary-button"
-              @click="downloadLdif"
-            >
-              Download {{ createResult?.ldif_filename ?? 'LDIF' }}
-            </button>
-            <button
               type="button"
               class="primary-button"
               @click="closeCreate"
@@ -1047,3 +1127,28 @@ onMounted(() => {
     </div>
   </section>
 </template>
+
+
+<style scoped>
+.oracle-provisioning-preview { display: grid; gap: 1rem; margin-top: 1rem; }
+.preview-callout { display: flex; flex-direction: column; gap: .2rem; padding: .8rem; border: 1px solid var(--border-color); border-radius: .7rem; }
+.preview-summary-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .75rem; }
+.preview-summary-grid > div { display: grid; gap: .2rem; padding: .7rem; border: 1px solid var(--border-color); border-radius: .65rem; }
+.preview-summary-grid span { font-size: .78rem; opacity: .7; }
+.preview-section { display: grid; gap: .7rem; }
+.preview-section h3 { margin: 0; }
+.preview-step { border: 1px solid var(--border-color); border-radius: .7rem; overflow: hidden; }
+.preview-step header { display: flex; justify-content: space-between; gap: 1rem; padding: .7rem .8rem; border-bottom: 1px solid var(--border-color); }
+.preview-step header span { opacity: .72; font-size: .84rem; }
+.preview-step-plan { display: flex; gap: .8rem; align-items: center; padding: .65rem .8rem; border-bottom: 1px solid var(--border-color); }
+.preview-step-plan span { opacity: .75; font-size: .82rem; }
+.preview-table-wrap { overflow-x: auto; }
+.preview-table-wrap table { width: 100%; border-collapse: collapse; }
+.preview-table-wrap th, .preview-table-wrap td { padding: .65rem .8rem; text-align: left; border-bottom: 1px solid var(--border-color); }
+.preview-table-wrap tr:last-child td { border-bottom: 0; }
+.preview-table-wrap code { white-space: pre-wrap; overflow-wrap: anywhere; }
+@media (max-width: 900px) {
+  .preview-summary-grid { grid-template-columns: 1fr; }
+  .preview-step header { align-items: flex-start; flex-direction: column; }
+}
+</style>

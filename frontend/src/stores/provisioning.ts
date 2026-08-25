@@ -21,6 +21,7 @@ export interface ProvisioningTableStep {
   owner: string
   table_name: string
   mappings: ProvisioningColumnMapping[]
+  match_columns: string[]
 }
 
 export interface ProvisioningProfileInput {
@@ -39,6 +40,79 @@ export interface ProvisioningProfile extends ProvisioningProfileInput {
   issues: string[]
   created_at: string
   updated_at: string
+}
+
+
+export interface ProvisioningPreviewInput {
+  username: string | null
+  password: string
+  first_name: string | null
+  middle_name: string | null
+  last_name: string | null
+  employee_id: string | null
+  reference_user: string | null
+  requestor: string | null
+  request_reference: string | null
+  remarks: string | null
+}
+
+export interface ProvisioningPreviewRole {
+  name: string
+  sensitive: boolean
+  will_copy: boolean
+}
+
+export interface ProvisioningPreviewColumn {
+  column_name: string
+  source: string
+  display_value: string | null
+  sensitive: boolean
+  expression: boolean
+}
+
+export interface ProvisioningPreviewTableStep {
+  index: number
+  name: string
+  connection_id: string
+  connection_name: string
+  owner: string
+  table_name: string
+  match_columns: string[]
+  match_values: Record<string, string | null>
+  existing_rows: number
+  planned_action: 'insert' | 'update' | 'conflict'
+  columns: ProvisioningPreviewColumn[]
+}
+
+export interface ProvisioningPreviewLdap {
+  enabled: boolean
+  profile_id: string | null
+  profile_name: string | null
+  filename: string | null
+  template_valid: boolean
+}
+
+export interface ProvisioningPreviewResult {
+  dry_run: boolean
+  ready_to_execute: boolean
+  profile_id: string
+  profile_name: string
+  schema_connection_id: string
+  schema_connection_name: string
+  username: string
+  account_exists: boolean
+  account_action: 'create' | 'alter'
+  requester_ip: string | null
+  operator_username: string
+  generated_at: string
+  reference_user: string | null
+  default_tablespace: string | null
+  temporary_tablespace: string | null
+  oracle_profile: string | null
+  roles: ProvisioningPreviewRole[]
+  table_steps: ProvisioningPreviewTableStep[]
+  ldap: ProvisioningPreviewLdap
+  warnings: string[]
 }
 
 export interface ProvisioningSourceOption {
@@ -133,6 +207,7 @@ async function apiRequest<T>(
 export const useProvisioningStore = defineStore('provisioning', {
   state: () => ({
     profiles: [] as ProvisioningProfile[],
+    profilesByConnection: {} as Record<string, ProvisioningProfile[]>,
     sources: [] as ProvisioningSourceOption[],
     ldapProfiles: [] as LdapProfile[],
     loading: false,
@@ -199,6 +274,25 @@ export const useProvisioningStore = defineStore('provisioning', {
         method: 'DELETE',
       })
       this.profiles = this.profiles.filter((profile) => profile.id !== id)
+    },
+
+    async loadProfilesForConnection(connectionId: string) {
+      const profiles = await apiRequest<ProvisioningProfile[]>(
+        `/databases/${connectionId}/oracle/provisioning-profiles`,
+      )
+      this.profilesByConnection[connectionId] = profiles
+      return profiles
+    },
+
+    async previewForConnection(
+      connectionId: string,
+      profileId: string,
+      data: ProvisioningPreviewInput,
+    ) {
+      return apiRequest<ProvisioningPreviewResult>(
+        `/databases/${connectionId}/oracle/provisioning-profiles/${profileId}/preview`,
+        { method: 'POST', body: JSON.stringify(data) },
+      )
     },
 
     async loadLdapProfiles() {

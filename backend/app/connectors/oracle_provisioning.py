@@ -110,6 +110,60 @@ async def oracle_user_exists(
     return row is not None
 
 
+
+
+async def count_oracle_rows_by_match(
+    connection: dict,
+    *,
+    owner: str,
+    table_name: str,
+    match_values: dict[str, object],
+) -> int:
+    owner = normalize_oracle_identifier(owner, field_name="Schema")
+    table_name = normalize_oracle_identifier(table_name, field_name="Table")
+
+    if not match_values:
+        raise AppError(
+            "At least one upsert match column is required.",
+            code="PROVISIONING_MATCH_REQUIRED",
+            status_code=400,
+        )
+
+    predicates: list[str] = []
+    parameters: dict[str, object] = {}
+
+    for index, (column_name, value) in enumerate(match_values.items()):
+        column = normalize_oracle_identifier(
+            column_name,
+            field_name="Upsert match column",
+        )
+        quoted_column = quote_oracle_identifier(column)
+        if value is None:
+            predicates.append(f"{quoted_column} IS NULL")
+        else:
+            bind_name = f"match_{index}"
+            predicates.append(f"{quoted_column} = :{bind_name}")
+            parameters[bind_name] = value
+
+    sql = (
+        "SELECT COUNT(*) FROM "
+        f"{quote_oracle_identifier(owner)}.{quote_oracle_identifier(table_name)} "
+        "WHERE " + " AND ".join(predicates)
+    )
+
+    async with open_oracle_connection(connection) as oracle_connection:
+        try:
+            row = await oracle_connection.fetchone(sql, parameters)
+        except oracledb.Error as exc:
+            raise AppError(
+                oracle_error_message(exc),
+                code="PROVISIONING_MATCH_LOOKUP_FAILED",
+                status_code=400,
+            ) from exc
+
+    return int(row[0]) if row else 0
+
+
 async def get_oracle_reference_user(
     connection: dict,
     username: str,

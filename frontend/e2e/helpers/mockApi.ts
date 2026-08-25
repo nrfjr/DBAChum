@@ -6,6 +6,7 @@ interface MockApiOptions {
   authenticated?: boolean
   role?: UserRole
   historyFailure?: boolean
+  provisioningProfile?: boolean
 }
 
 export interface MockApiState {
@@ -14,6 +15,7 @@ export interface MockApiState {
   createdDatabaseUsers: Record<string, unknown>[]
   createdProvisioningProfiles: Record<string, unknown>[]
   updatedProvisioningProfiles: Record<string, unknown>[]
+  provisioningPreviewRequests: Record<string, unknown>[]
   ldapProfileUpdates: Record<string, unknown>[]
   ldapProfileTests: string[]
   updatedUsers: Record<string, unknown>[]
@@ -207,6 +209,7 @@ export async function installMockApi(
     createdDatabaseUsers: [],
     createdProvisioningProfiles: [],
     updatedProvisioningProfiles: [],
+    provisioningPreviewRequests: [],
     ldapProfileUpdates: [],
     ldapProfileTests: [],
     updatedUsers: [],
@@ -309,7 +312,179 @@ export async function installMockApi(
 
 
     if (path === '/provisioning/profiles' && method === 'GET') {
-      return json(route, [])
+      if (!options.provisioningProfile) return json(route, [])
+      return json(route, [{
+        id: 'profile-orms',
+        name: 'ORMS User',
+        description: 'Create RMS access',
+        schema_connection_id: oracleConnection.id,
+        ldap_enabled: true,
+        ldap_profile_id: 'global',
+        enabled: true,
+        ready: true,
+        issues: [],
+        table_steps: [{
+          name: 'Insert USER_MASTER',
+          connection_id: oracleConnection.id,
+          owner: 'ORMS',
+          table_name: 'USER_MASTER',
+          mappings: [
+            { column_name: 'ID', value_kind: 'sequence', value_key: 'USER_MASTER_SEQ', custom_value: null },
+            { column_name: 'USERNAME', value_kind: 'generated', value_key: 'username', custom_value: null },
+            { column_name: 'PASSWORD', value_kind: 'generated', value_key: 'password', custom_value: null },
+            { column_name: 'CREATED_BY', value_kind: 'generated', value_key: 'requester_ip', custom_value: null },
+            { column_name: 'REMARKS', value_kind: 'form', value_key: 'remarks', custom_value: null },
+          ],
+          match_columns: ['USERNAME'],
+        }],
+        created_at: now,
+        updated_at: now,
+      }])
+    }
+
+    if (
+      path === `/databases/${oracleConnection.id}/oracle/provisioning-profiles`
+      && method === 'GET'
+    ) {
+      if (!options.provisioningProfile) return json(route, [])
+      return json(route, [{
+        id: 'profile-orms',
+        name: 'ORMS User',
+        description: 'Create RMS access',
+        schema_connection_id: oracleConnection.id,
+        ldap_enabled: true,
+        ldap_profile_id: 'global',
+        enabled: true,
+        ready: true,
+        issues: [],
+        table_steps: [{
+          name: 'Insert USER_MASTER',
+          connection_id: oracleConnection.id,
+          owner: 'ORMS',
+          table_name: 'USER_MASTER',
+          mappings: [
+            { column_name: 'ID', value_kind: 'sequence', value_key: 'USER_MASTER_SEQ', custom_value: null },
+            { column_name: 'USERNAME', value_kind: 'generated', value_key: 'username', custom_value: null },
+            { column_name: 'PASSWORD', value_kind: 'generated', value_key: 'password', custom_value: null },
+            { column_name: 'CREATED_BY', value_kind: 'generated', value_key: 'requester_ip', custom_value: null },
+            { column_name: 'REMARKS', value_kind: 'form', value_key: 'remarks', custom_value: null },
+          ],
+          match_columns: ['USERNAME'],
+        }],
+        created_at: now,
+        updated_at: now,
+      }])
+    }
+
+    if (
+      path === `/databases/${oracleConnection.id}/oracle/provisioning-profiles/profile-orms/preview`
+      && method === 'POST'
+    ) {
+      const payload = request.postDataJSON() as Record<string, unknown>
+      state.provisioningPreviewRequests.push(payload)
+      return json(route, {
+        dry_run: true,
+        ready_to_execute: true,
+        profile_id: 'profile-orms',
+        profile_name: 'ORMS User',
+        schema_connection_id: oracleConnection.id,
+        schema_connection_name: oracleConnection.name,
+        username: payload.username || 'JPNINO12345',
+        account_exists: true,
+        account_action: 'alter',
+        requester_ip: '192.0.2.25',
+        operator_username: 'admin',
+        generated_at: now,
+        reference_user: payload.reference_user || null,
+        default_tablespace: payload.reference_user ? 'USERS' : null,
+        temporary_tablespace: payload.reference_user ? 'TEMP' : null,
+        oracle_profile: payload.reference_user ? 'DEFAULT' : null,
+        roles: payload.reference_user ? [
+          { name: 'APP_READ', sensitive: false, will_copy: true },
+          { name: 'DBA', sensitive: true, will_copy: false },
+        ] : [],
+        table_steps: [{
+          index: 1,
+          name: 'Insert USER_MASTER',
+          connection_id: oracleConnection.id,
+          connection_name: oracleConnection.name,
+          owner: 'ORMS',
+          table_name: 'USER_MASTER',
+          match_columns: ['USERNAME'],
+          match_values: { USERNAME: payload.username || 'JPNINO12345' },
+          existing_rows: 1,
+          planned_action: 'update',
+          columns: [
+            { column_name: 'ID', source: 'Oracle sequence', display_value: 'ORMS.USER_MASTER_SEQ.NEXTVAL', sensitive: false, expression: true },
+            { column_name: 'USERNAME', source: 'Generated · username', display_value: payload.username || 'JPNINO12345', sensitive: false, expression: false },
+            { column_name: 'PASSWORD', source: 'Generated · password', display_value: '•••••••• (provisioned password)', sensitive: true, expression: false },
+            { column_name: 'CREATED_BY', source: 'Generated · requester_ip', display_value: '192.0.2.25', sensitive: false, expression: false },
+            { column_name: 'REMARKS', source: 'Form · remarks', display_value: payload.remarks || null, sensitive: false, expression: false },
+          ],
+        }],
+        ldap: {
+          enabled: true,
+          profile_id: 'global',
+          profile_name: 'Default LDAP',
+          filename: `${payload.username || 'JPNINO12345'}.ldif`,
+          template_valid: true,
+        },
+        warnings: [],
+      })
+    }
+
+    if (path === '/provisioning/profiles/profile-orms/preview' && method === 'POST') {
+      const payload = request.postDataJSON() as Record<string, unknown>
+      state.provisioningPreviewRequests.push(payload)
+      return json(route, {
+        dry_run: true,
+        ready_to_execute: true,
+        profile_id: 'profile-orms',
+        profile_name: 'ORMS User',
+        schema_connection_id: oracleConnection.id,
+        schema_connection_name: oracleConnection.name,
+        username: payload.username || 'JPNINO12345',
+        account_exists: true,
+        account_action: 'alter',
+        requester_ip: '192.0.2.25',
+        operator_username: 'admin',
+        generated_at: now,
+        reference_user: payload.reference_user || null,
+        default_tablespace: payload.reference_user ? 'USERS' : null,
+        temporary_tablespace: payload.reference_user ? 'TEMP' : null,
+        oracle_profile: payload.reference_user ? 'DEFAULT' : null,
+        roles: payload.reference_user ? [
+          { name: 'APP_READ', sensitive: false, will_copy: true },
+          { name: 'DBA', sensitive: true, will_copy: false },
+        ] : [],
+        table_steps: [{
+          index: 1,
+          name: 'Insert USER_MASTER',
+          connection_id: oracleConnection.id,
+          connection_name: oracleConnection.name,
+          owner: 'ORMS',
+          table_name: 'USER_MASTER',
+          match_columns: ['USERNAME'],
+          match_values: { USERNAME: payload.username || 'JPNINO12345' },
+          existing_rows: 1,
+          planned_action: 'update',
+          columns: [
+            { column_name: 'ID', source: 'Oracle sequence', display_value: 'ORMS.USER_MASTER_SEQ.NEXTVAL', sensitive: false, expression: true },
+            { column_name: 'USERNAME', source: 'Generated · username', display_value: payload.username || 'JPNINO12345', sensitive: false, expression: false },
+            { column_name: 'PASSWORD', source: 'Generated · password', display_value: '•••••••• (provisioned password)', sensitive: true, expression: false },
+            { column_name: 'CREATED_BY', source: 'Generated · requester_ip', display_value: '192.0.2.25', sensitive: false, expression: false },
+            { column_name: 'REMARKS', source: 'Form · remarks', display_value: payload.remarks || null, sensitive: false, expression: false },
+          ],
+        }],
+        ldap: {
+          enabled: true,
+          profile_id: 'global',
+          profile_name: 'Default LDAP',
+          filename: `${payload.username || 'JPNINO12345'}.ldif`,
+          template_valid: true,
+        },
+        warnings: [],
+      })
     }
 
     if (path === '/provisioning/profiles' && method === 'POST') {

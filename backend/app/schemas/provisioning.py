@@ -59,6 +59,7 @@ class ProvisioningTableStep(BaseModel):
     owner: str = Field(min_length=1, max_length=128)
     table_name: str = Field(min_length=1, max_length=128)
     mappings: list[ProvisioningColumnMapping] = Field(default_factory=list, max_length=256)
+    match_columns: list[str] = Field(default_factory=list, max_length=32)
 
     @model_validator(mode="after")
     def normalize_step(self):
@@ -73,6 +74,40 @@ class ProvisioningTableStep(BaseModel):
         columns = [mapping.column_name for mapping in self.mappings]
         if len(columns) != len(set(columns)):
             raise ValueError("A table step cannot map the same column twice.")
+
+        self.match_columns = [
+            column.strip().upper()
+            for column in self.match_columns
+            if column and column.strip()
+        ]
+        if len(self.match_columns) != len(set(self.match_columns)):
+            raise ValueError("Upsert match columns cannot contain duplicates.")
+
+        mapping_by_column = {mapping.column_name: mapping for mapping in self.mappings}
+        for column in self.match_columns:
+            mapping = mapping_by_column.get(column)
+            if mapping is None:
+                raise ValueError(
+                    f'Upsert match column "{column}" must be present in the table mappings.'
+                )
+            stable_match = (
+                mapping.value_kind == "custom"
+                or (mapping.value_kind == "generated" and mapping.value_key == "username")
+                or (mapping.value_kind == "form" and mapping.value_key == "employee_id")
+            )
+            if not stable_match:
+                raise ValueError(
+                    f'Upsert match column "{column}" must use generated username, employee ID, or a fixed custom literal.'
+                )
+
+        if not self.match_columns:
+            inferred = [
+                mapping.column_name
+                for mapping in self.mappings
+                if mapping.value_kind == "generated" and mapping.value_key == "username"
+            ]
+            if len(inferred) == 1:
+                self.match_columns = inferred
 
         return self
 
@@ -245,3 +280,74 @@ class ProvisioningSourceOption(BaseModel):
     key: str
     label: str
     kind: Literal["form", "generated"]
+
+class ProvisioningPreviewRequest(BaseModel):
+    username: str | None = Field(default=None, max_length=30)
+    password: str = Field(min_length=8, max_length=128)
+    first_name: str | None = Field(default=None, max_length=100)
+    middle_name: str | None = Field(default=None, max_length=100)
+    last_name: str | None = Field(default=None, max_length=100)
+    employee_id: str | None = Field(default=None, max_length=100)
+    reference_user: str | None = Field(default=None, max_length=30)
+    requestor: str | None = Field(default=None, max_length=200)
+    request_reference: str | None = Field(default=None, max_length=100)
+    remarks: str | None = Field(default=None, max_length=1000)
+
+
+class ProvisioningPreviewRole(BaseModel):
+    name: str
+    sensitive: bool = False
+    will_copy: bool = False
+
+
+class ProvisioningPreviewColumn(BaseModel):
+    column_name: str
+    source: str
+    display_value: str | None = None
+    sensitive: bool = False
+    expression: bool = False
+
+
+class ProvisioningPreviewTableStep(BaseModel):
+    index: int
+    name: str
+    connection_id: str
+    connection_name: str
+    owner: str
+    table_name: str
+    match_columns: list[str] = Field(default_factory=list)
+    match_values: dict[str, str | None] = Field(default_factory=dict)
+    existing_rows: int
+    planned_action: Literal["insert", "update", "conflict"]
+    columns: list[ProvisioningPreviewColumn] = Field(default_factory=list)
+
+
+class ProvisioningPreviewLdap(BaseModel):
+    enabled: bool = False
+    profile_id: str | None = None
+    profile_name: str | None = None
+    filename: str | None = None
+    template_valid: bool = False
+
+
+class ProvisioningPreviewResponse(BaseModel):
+    dry_run: bool = True
+    ready_to_execute: bool = True
+    profile_id: str
+    profile_name: str
+    schema_connection_id: str
+    schema_connection_name: str
+    username: str
+    account_exists: bool = False
+    account_action: Literal["create", "alter"] = "create"
+    requester_ip: str | None = None
+    operator_username: str
+    generated_at: datetime
+    reference_user: str | None = None
+    default_tablespace: str | None = None
+    temporary_tablespace: str | None = None
+    oracle_profile: str | None = None
+    roles: list[ProvisioningPreviewRole] = Field(default_factory=list)
+    table_steps: list[ProvisioningPreviewTableStep] = Field(default_factory=list)
+    ldap: ProvisioningPreviewLdap
+    warnings: list[str] = Field(default_factory=list)

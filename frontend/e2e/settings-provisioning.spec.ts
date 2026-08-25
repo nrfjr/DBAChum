@@ -11,7 +11,7 @@ test('creates a provisioning profile from Oracle metadata mappings', async ({ pa
   const dialog = page.getByRole('dialog', { name: 'Add provisioning profile' })
   await dialog.getByLabel('Profile name').fill('ORMS User')
   await dialog.getByLabel('Description').fill('ORM application user')
-  await dialog.getByLabel('Schema creation connection').selectOption('conn-oracle')
+  await dialog.getByLabel('Parent database connection (monitored)').selectOption('conn-oracle')
   await dialog.getByRole('button', { name: 'Add table step' }).click()
 
   const step = dialog.locator('.provisioning-step-card').first()
@@ -20,7 +20,7 @@ test('creates a provisioning profile from Oracle metadata mappings', async ({ pa
   await stepName.click()
   await page.keyboard.type('Insert USER_MASTER')
   await expect(step.getByLabel('Step name')).toHaveValue('Insert USER_MASTER')
-  await step.getByLabel('Oracle connection used for this insert').selectOption('conn-oracle')
+  await step.getByLabel('Application provisioning connection for this step').selectOption('conn-oracle')
   await step.getByLabel('Schema').selectOption('ORMS')
   await step.getByLabel('Table').selectOption('USER_MASTER')
 
@@ -30,6 +30,7 @@ test('creates a provisioning profile from Oracle metadata mappings', async ({ pa
 
   const usernameRow = step.locator('.provisioning-mapping-row[data-column="USERNAME"]')
   await usernameRow.locator('select').selectOption('generated:username')
+  await step.getByLabel('USERNAME', { exact: true }).check()
 
   const passwordRow = step.locator('.provisioning-mapping-row[data-column="PASSWORD"]')
   await passwordRow.locator('select').selectOption('generated:password')
@@ -58,6 +59,7 @@ test('creates a provisioning profile from Oracle metadata mappings', async ({ pa
           { column_name: 'PASSWORD', value_kind: 'generated', value_key: 'password' },
           { column_name: 'STATUS', value_kind: 'custom', custom_value: 'ACTIVE' },
         ],
+        match_columns: ['USERNAME'],
       },
     ],
   })
