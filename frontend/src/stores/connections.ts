@@ -14,6 +14,9 @@ export interface DatabaseConnection {
   oracle_identifier_type: 'service_name' | 'sid' | null
   oracle_identifier: string | null
   oracle_auth_mode: OracleAuthMode | null
+  active: boolean
+  monitor_enabled: boolean
+  /** Legacy monitoring alias returned for rollback compatibility. */
   enabled: boolean
   has_password: boolean
   created_at: string
@@ -32,7 +35,8 @@ export interface DatabaseConnectionInput {
   oracle_identifier_type: 'service_name' | 'sid' | null
   oracle_identifier: string | null
   oracle_auth_mode: OracleAuthMode | null
-  enabled: boolean
+  active: boolean
+  monitor_enabled: boolean
   server_ids: string[]
 }
 

@@ -12,6 +12,7 @@ from app.core.config import settings
 from app.services.database_overview import (
     collect_database_overview,
 )
+from app.services.database_connections import monitored_connections_filter
 
 
 logger = logging.getLogger(__name__)
@@ -80,9 +81,7 @@ async def collect_metrics_once(
     cursor = (
         database.database_connections
         .find(
-            {
-                "enabled": True,
-            }
+            monitored_connections_filter()
         )
         .sort(
             "name",
@@ -97,7 +96,7 @@ async def collect_metrics_once(
     if not connections:
         logger.info(
             "Metrics collection skipped "
-            "reason=no_enabled_connections"
+            "reason=no_monitored_connections"
         )
 
         return 0

@@ -19,6 +19,81 @@ def normalize_connection_name(name: str) -> str:
     return name.strip().lower()
 
 
+def connection_is_active(connection: dict) -> bool:
+    """Return whether DBAChum may use a connection for admin/manual work.
+
+    Existing records predate the `active` field. Because the old checkbox was
+    explicitly labelled "Monitor this connection", legacy records default to
+    active even when their old `enabled` monitoring flag is false.
+    """
+    return bool(connection.get("active", True))
+
+
+def connection_is_monitored(connection: dict) -> bool:
+    """Return whether a connection belongs in monitoring/workspace flows."""
+    if "monitor_enabled" in connection:
+        return bool(connection.get("monitor_enabled"))
+    return bool(connection.get("enabled", True))
+
+
+def monitored_connections_filter() -> dict:
+    """Mongo filter supporting both legacy and new connection documents."""
+    return {
+        "$and": [
+            {
+                "$or": [
+                    {"active": True},
+                    {"active": {"$exists": False}},
+                ]
+            },
+            {
+                "$or": [
+                    {"monitor_enabled": True},
+                    {
+                        "monitor_enabled": {"$exists": False},
+                        "enabled": True,
+                    },
+                ]
+            },
+        ]
+    }
+
+
+async def ensure_connection_flags_migrated(database) -> None:
+    """Backfill the split connection flags without changing old intent.
+
+    The historic `enabled` field represented monitoring. Therefore old rows
+    become active=True and monitor_enabled=<old enabled>. The legacy field is
+    retained as a mirror so rollback to an older build remains predictable.
+    """
+    await database.database_connections.update_many(
+        {
+            "$or": [
+                {"active": {"$exists": False}},
+                {"monitor_enabled": {"$exists": False}},
+            ]
+        },
+        [
+            {
+                "$set": {
+                    "active": {"$ifNull": ["$active", True]},
+                    "monitor_enabled": {
+                        "$ifNull": [
+                            "$monitor_enabled",
+                            {"$ifNull": ["$enabled", True]},
+                        ]
+                    },
+                }
+            },
+            {
+                "$set": {
+                    "enabled": "$monitor_enabled",
+                }
+            },
+        ],
+    )
+
+
 def parse_connection_id(connection_id: str) -> ObjectId:
     try:
         return ObjectId(connection_id)
@@ -46,7 +121,9 @@ def connection_to_response(connection: dict) -> DatabaseConnectionResponse:
             if connection["engine"] == "oracle"
             else None
         ),
-        enabled=connection.get("enabled", True),
+        active=connection_is_active(connection),
+        monitor_enabled=connection_is_monitored(connection),
+        enabled=connection_is_monitored(connection),
         has_password=bool(connection.get("password_encrypted")),
         created_at=connection["created_at"],
         updated_at=connection["updated_at"],
@@ -55,6 +132,7 @@ def connection_to_response(connection: dict) -> DatabaseConnectionResponse:
 
 
 async def list_database_connections(database):
+    await ensure_connection_flags_migrated(database)
     cursor = database.database_connections.find().sort("name", 1)
     connections = await cursor.to_list(None)
 

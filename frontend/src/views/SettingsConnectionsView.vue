@@ -70,7 +70,8 @@ interface ConnectionForm {
   oracle_identifier_type: 'service_name' | 'sid'
   oracle_identifier: string
   oracle_auth_mode: OracleAuthMode
-  enabled: boolean
+  active: boolean
+  monitor_enabled: boolean
   server_ids: string[]
 }
 
@@ -86,7 +87,8 @@ function emptyForm(): ConnectionForm {
     oracle_identifier_type: 'service_name',
     oracle_identifier: '',
     oracle_auth_mode: 'normal',
-    enabled: true,
+    active: true,
+    monitor_enabled: true,
     server_ids: [],
   }
 }
@@ -148,7 +150,8 @@ function editConnection(connection: DatabaseConnection) {
       connection.oracle_identifier ?? '',
     oracle_auth_mode:
       connection.oracle_auth_mode ?? 'normal',
-    enabled: connection.enabled,
+    active: connection.active,
+    monitor_enabled: connection.monitor_enabled,
     server_ids: [...(connection.server_ids ?? []),],
   })
 
@@ -179,7 +182,8 @@ function buildPayload(): DatabaseConnectionInput {
       form.engine === 'oracle'
         ? form.oracle_auth_mode
         : null,
-    enabled: form.enabled,
+    active: form.active,
+    monitor_enabled: form.monitor_enabled,
     server_ids: [...form.server_ids],
   }
 }
@@ -348,13 +352,15 @@ onMounted(() => {
               <strong>{{ connection.name }}</strong>
 
               <span class="status-pill" :class="{
-                disabled: !connection.enabled,
+                disabled: !connection.active,
               }">
-                {{
-                  connection.enabled
-                    ? 'Enabled'
-                    : 'Disabled'
-                }}
+                {{ connection.active ? 'Enabled' : 'Disabled' }}
+              </span>
+
+              <span class="status-pill" :class="{
+                disabled: !connection.monitor_enabled,
+              }">
+                {{ connection.monitor_enabled ? 'Monitored' : 'Not monitored' }}
               </span>
             </div>
 
@@ -544,10 +550,25 @@ onMounted(() => {
           </label>
 
           <label class="connection-checkbox">
-            <input v-model="form.enabled" type="checkbox" />
+            <input v-model="form.active" type="checkbox" />
+
+            Connection enabled
+          </label>
+          <small>
+            Allows DBAChum to use this connection for provisioning, metadata
+            discovery and DBA operations.
+          </small>
+
+          <label class="connection-checkbox">
+            <input v-model="form.monitor_enabled" type="checkbox" />
 
             Monitor this connection
           </label>
+          <small>
+            Shows this connection in the Databases workspace and collects
+            background monitoring history. Provisioning still works when this
+            is unchecked.
+          </small>
 
           <p v-if="formError" class="login-error">
             {{ formError }}

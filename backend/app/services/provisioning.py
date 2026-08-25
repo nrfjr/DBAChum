@@ -24,7 +24,10 @@ from app.schemas.provisioning import (
     ProvisioningProfileResponse,
     ProvisioningProfileUpdate,
 )
-from app.services.database_connections import get_database_connection
+from app.services.database_connections import (
+    connection_is_active,
+    get_database_connection,
+)
 from app.services.ldap_ldif import DEFAULT_LDIF_TEMPLATE
 
 
@@ -178,7 +181,7 @@ async def validate_profile_dependencies(database, profile: dict) -> list[str]:
         )
         if schema_connection.get("engine") != "oracle":
             issues.append("Schema creation connection is not Oracle.")
-        elif not schema_connection.get("enabled", True):
+        elif not connection_is_active(schema_connection):
             issues.append("Schema creation connection is disabled.")
     except AppError:
         issues.append("Schema creation connection is missing.")
@@ -188,7 +191,7 @@ async def validate_profile_dependencies(database, profile: dict) -> list[str]:
             connection = await get_database_connection(database, step["connection_id"])
             if connection.get("engine") != "oracle":
                 issues.append(f"Table step {index} does not use an Oracle connection.")
-            elif not connection.get("enabled", True):
+            elif not connection_is_active(connection):
                 issues.append(f"Table step {index} uses a disabled connection.")
         except AppError:
             issues.append(f"Table step {index} connection is missing.")
@@ -660,7 +663,7 @@ async def get_metadata_connection(database, connection_id: str) -> dict:
         connection_id,
         "Metadata connection",
     )
-    if not connection.get("enabled", True):
+    if not connection_is_active(connection):
         raise AppError(
             "The selected Oracle connection is disabled.",
             code="PROVISIONING_CONNECTION_DISABLED",

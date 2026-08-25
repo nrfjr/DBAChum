@@ -238,3 +238,57 @@ async def test_connection_delete_is_blocked_when_profile_depends_on_it():
 
     assert exc_info.value.code == "CONNECTION_IN_USE_BY_PROVISIONING"
     assert database.database_connections.deleted is False
+
+
+@pytest.mark.asyncio
+async def test_unmonitored_connection_is_still_valid_for_provisioning():
+    database = FakeDatabase(
+        connections={
+            "a" * 24: {
+                "engine": "oracle",
+                "active": True,
+                "monitor_enabled": False,
+                "enabled": False,
+            },
+        },
+        ldap=None,
+    )
+
+    issues = await validate_profile_dependencies(
+        database,
+        {
+            "schema_connection_id": "a" * 24,
+            "ldap_enabled": False,
+            "table_steps": [
+                {"connection_id": "a" * 24},
+            ],
+        },
+    )
+
+    assert issues == []
+
+
+@pytest.mark.asyncio
+async def test_inactive_connection_is_rejected_for_provisioning():
+    database = FakeDatabase(
+        connections={
+            "a" * 24: {
+                "engine": "oracle",
+                "active": False,
+                "monitor_enabled": False,
+                "enabled": False,
+            },
+        },
+        ldap=None,
+    )
+
+    issues = await validate_profile_dependencies(
+        database,
+        {
+            "schema_connection_id": "a" * 24,
+            "ldap_enabled": False,
+            "table_steps": [],
+        },
+    )
+
+    assert "Schema creation connection is disabled." in issues

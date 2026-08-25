@@ -51,7 +51,8 @@ test('adds a SQL Server connection with the expected payload', async ({ page }) 
     oracle_identifier_type: null,
     oracle_identifier: null,
     oracle_auth_mode: null,
-    enabled: true,
+    active: true,
+    monitor_enabled: true,
   })
 })
 
@@ -83,3 +84,28 @@ test('adds an Oracle SYSDBA connection explicitly', async ({ page }) => {
   })
 })
 
+
+
+test('monitoring can be disabled without disabling the connection', async ({ page }) => {
+  const state = await installMockApi(page)
+
+  await page.goto('/settings/connections')
+  await page.getByRole('button', { name: 'Add connection' }).click()
+
+  const dialog = page.getByRole('dialog', { name: 'Add database connection' })
+  await dialog.getByLabel('Connection name').fill('Provisioning Only')
+  await dialog.getByLabel('Host').fill('ora-provision.example.local')
+  await dialog.getByPlaceholder('ORCLPDB1').fill('ORMS')
+  await dialog.getByLabel('Username').fill('SYS')
+  await dialog.getByLabel('Password').fill('secret123')
+
+  await expect(dialog.getByLabel('Connection enabled')).toBeChecked()
+  await dialog.getByLabel('Monitor this connection').uncheck()
+  await dialog.getByRole('button', { name: 'Add connection' }).click()
+
+  expect(state.createdConnections.at(-1)).toMatchObject({
+    name: 'Provisioning Only',
+    active: true,
+    monitor_enabled: false,
+  })
+})

@@ -28,6 +28,17 @@ class DatabaseConnectionBase(BaseModel):
     
     server_ids: list[str] = Field(default_factory=list,max_length=16,)
 
+    # Whether DBAChum may use this connection for manual/admin operations
+    # such as provisioning and metadata discovery.
+    active: bool = True
+
+    # Whether the connection appears in the Databases workspace and is
+    # collected by the background monitoring worker.
+    monitor_enabled: bool | None = None
+
+    # Legacy compatibility alias. Older DBAChum builds used `enabled` for
+    # the UI label "Monitor this connection". It is kept on the API during
+    # the transition and mirrors monitor_enabled.
     enabled: bool = True
 
     @model_validator(mode="after")
@@ -50,6 +61,13 @@ class DatabaseConnectionBase(BaseModel):
 
         if self.oracle_identifier is not None:
             self.oracle_identifier = self.oracle_identifier.strip() or None
+
+        if self.monitor_enabled is None:
+            self.monitor_enabled = self.enabled
+
+        # Keep the legacy field synchronized so old clients/data readers still
+        # interpret it as the monitoring flag rather than account usability.
+        self.enabled = self.monitor_enabled
 
         if self.engine == DatabaseEngine.ORACLE:
             if not self.oracle_identifier_type or not self.oracle_identifier:

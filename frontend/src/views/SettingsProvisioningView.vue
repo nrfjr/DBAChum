@@ -44,7 +44,7 @@ const form = reactive<ProvisioningProfileInput>({
 })
 
 const oracleConnections = computed(() =>
-  connectionsStore.connections.filter((connection) => connection.engine === 'oracle'),
+  connectionsStore.connections.filter((connection) => connection.engine === 'oracle' && connection.active),
 )
 
 const availableLdapProfiles = computed(() =>
@@ -75,8 +75,8 @@ function resetForm() {
     name: '',
     description: null,
     schema_connection_id: oracleConnections.value.find(
-      (connection) => connection.oracle_auth_mode === 'sysdba' && connection.enabled,
-    )?.id ?? oracleConnections.value.find((connection) => connection.enabled)?.id ?? '',
+      (connection) => connection.oracle_auth_mode === 'sysdba',
+    )?.id ?? oracleConnections.value[0]?.id ?? '',
     ldap_enabled: false,
     ldap_profile_id: null,
     enabled: true,
@@ -135,7 +135,7 @@ function closeForm() {
 }
 
 function addTableStep() {
-  const connectionId = oracleConnections.value.find((connection) => connection.enabled)?.id ?? ''
+  const connectionId = oracleConnections.value[0]?.id ?? ''
   form.table_steps.push({
     name: `Table insert ${form.table_steps.length + 1}`,
     connection_id: connectionId,

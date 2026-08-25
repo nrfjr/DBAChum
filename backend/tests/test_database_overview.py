@@ -8,11 +8,15 @@ def make_connection(
     *,
     engine="oracle",
     enabled=True,
+    active=True,
+    monitor_enabled=True,
 ):
     return {
         "_id": "connection-1",
         "engine": engine,
         "enabled": enabled,
+        "active": active,
+        "monitor_enabled": monitor_enabled,
     }
 
 
@@ -34,7 +38,7 @@ async def test_disabled_connection_skips_connector(
     result = await (
         database_overview
         .collect_database_overview(
-            make_connection(enabled=False)
+            make_connection(active=False)
         )
     )
 
@@ -42,6 +46,35 @@ async def test_disabled_connection_skips_connector(
     assert result["warnings"] == []
     assert result["connection_id"] == "connection-1"
     assert result["engine"] == "oracle"
+
+
+@pytest.mark.asyncio
+async def test_monitor_disabled_connection_skips_connector(
+    monkeypatch,
+):
+    async def should_not_run(_connection):
+        raise AssertionError(
+            "Unmonitored connections must not be opened by monitoring."
+        )
+
+    monkeypatch.setattr(
+        database_overview,
+        "get_oracle_overview",
+        should_not_run,
+    )
+
+    result = await (
+        database_overview
+        .collect_database_overview(
+            make_connection(
+                active=True,
+                monitor_enabled=False,
+            )
+        )
+    )
+
+    assert result["status"] == "disabled"
+    assert result["warnings"] == []
 
 
 @pytest.mark.asyncio
@@ -233,7 +266,7 @@ async def test_overview_list_survives_one_unexpected_failure(
         database
         .database_connections
         .last_query
-        == {"enabled": True}
+        == database_overview.monitored_connections_filter()
     )
     assert len(result) == 2
     assert result[0]["status"] == "online"

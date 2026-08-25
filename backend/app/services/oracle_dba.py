@@ -30,6 +30,7 @@ from app.services.database_actions import (
     start_database_action,
 )
 from app.services.database_connections import (
+    connection_is_active,
     get_database_connection,
 )
 from app.services.ldap_ldif import (
@@ -58,10 +59,9 @@ async def get_oracle_target(
             status_code=400,
         )
 
-    if not connection.get("enabled", True):
+    if not connection_is_active(connection):
         raise AppError(
-            "Monitoring is disabled for "
-            "this connection.",
+            "This database connection is disabled.",
             code="CONNECTION_DISABLED",
             status_code=400,
         )

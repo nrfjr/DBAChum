@@ -9,7 +9,10 @@ from app.connectors.sqlserver import (
 )
 from app.core.exceptions import AppError
 from app.services.database_connections import (
+    connection_is_active,
+    connection_is_monitored,
     get_database_connection,
+    monitored_connections_filter,
 )
 
 
@@ -27,7 +30,10 @@ async def collect_database_overview(
         "checked_at": checked_at,
     }
 
-    if not connection.get("enabled", True):
+    if (
+        not connection_is_active(connection)
+        or not connection_is_monitored(connection)
+    ):
         return {
             **base,
             "status": "disabled",
@@ -114,7 +120,7 @@ async def get_database_overview(
 async def list_database_overviews(database):
     cursor = (
         database.database_connections
-        .find({"enabled": True})
+        .find(monitored_connections_filter())
         .sort("name", 1)
     )
 

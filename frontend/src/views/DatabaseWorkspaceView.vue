@@ -13,9 +13,9 @@ const router = useRouter()
 const connectionsStore = useConnectionsStore()
 const databasesStore = useDatabasesStore()
 
-const enabledConnections = computed(() =>
+const monitoredConnections = computed(() =>
   connectionsStore.connections.filter(
-    (connection) => connection.enabled,
+    (connection) => connection.active && connection.monitor_enabled,
   ),
 )
 
@@ -145,11 +145,11 @@ onMounted(async () => {
     {{ connectionsStore.error }}
   </div>
 
-  <div v-else-if="enabledConnections.length === 0" class="database-empty-state">
+  <div v-else-if="monitoredConnections.length === 0" class="database-empty-state">
     <h2>No monitored databases</h2>
 
     <p>
-      Add or enable a database connection from Settings.
+      Enable monitoring for a database connection from Settings.
     </p>
 
     <RouterLink to="/settings/connections" class="primary-button">
@@ -158,7 +158,7 @@ onMounted(async () => {
   </div>
 
   <div v-else class="database-grid">
-    <button v-for="connection in enabledConnections" :key="connection.id" type="button" class="database-card"
+    <button v-for="connection in monitoredConnections" :key="connection.id" type="button" class="database-card"
       @click="openDatabase(connection)">
       <div class="database-card-header">
         <div>
