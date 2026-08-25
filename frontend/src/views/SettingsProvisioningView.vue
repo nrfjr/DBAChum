@@ -6,6 +6,7 @@ import {
   useProvisioningStore,
   type OracleMetadataColumn,
   type OracleMetadataSchema,
+  type OracleMetadataSequence,
   type OracleMetadataTable,
   type ProvisioningColumnMapping,
   type ProvisioningProfile,
@@ -14,8 +15,10 @@ import {
 } from '@/stores/provisioning'
 
 interface StepMetadata {
+  key: number
   schemas: OracleMetadataSchema[]
   tables: OracleMetadataTable[]
+  sequences: OracleMetadataSequence[]
   columns: OracleMetadataColumn[]
   loading: boolean
   error: string | null
@@ -28,6 +31,7 @@ const formOpen = ref(false)
 const editingId = ref<string | null>(null)
 const formError = ref<string | null>(null)
 const stepMetadata = ref<StepMetadata[]>([])
+let nextStepKey = 0
 
 const form = reactive<ProvisioningProfileInput>({
   name: '',
@@ -49,7 +53,16 @@ const ldapAvailable = computed(() =>
 const sourceOptions = computed(() => provisioningStore.sources)
 
 function blankMetadata(): StepMetadata {
-  return { schemas: [], tables: [], columns: [], loading: false, error: null }
+  nextStepKey += 1
+  return {
+    key: nextStepKey,
+    schemas: [],
+    tables: [],
+    sequences: [],
+    columns: [],
+    loading: false,
+    error: null,
+  }
 }
 
 function resetForm() {
@@ -157,6 +170,22 @@ async function loadTables(index: number) {
   }
 }
 
+async function loadSequences(index: number) {
+  const step = form.table_steps[index]
+  const meta = stepMetadata.value[index]
+  if (!step || !meta || !step.connection_id || !step.owner) return
+
+  meta.loading = true
+  meta.error = null
+  try {
+    meta.sequences = await provisioningStore.sequences(step.connection_id, step.owner)
+  } catch (error) {
+    meta.error = error instanceof Error ? error.message : 'Unable to load Oracle sequences.'
+  } finally {
+    meta.loading = false
+  }
+}
+
 function mergeColumnMappings(
   columns: OracleMetadataColumn[],
   existing: ProvisioningColumnMapping[],
@@ -195,7 +224,10 @@ async function refreshStepMetadata(index: number) {
   const step = form.table_steps[index]
   if (!step) return
   await loadSchemas(index)
-  if (step.owner) await loadTables(index)
+  if (step.owner) {
+    await loadTables(index)
+    await loadSequences(index)
+  }
   if (step.owner && step.table_name) await loadColumns(index)
 }
 
@@ -208,6 +240,7 @@ async function connectionChanged(index: number) {
   step.mappings = []
   meta.schemas = []
   meta.tables = []
+  meta.sequences = []
   meta.columns = []
   await loadSchemas(index)
 }
@@ -219,8 +252,10 @@ async function ownerChanged(index: number) {
   step.table_name = ''
   step.mappings = []
   meta.tables = []
+  meta.sequences = []
   meta.columns = []
   await loadTables(index)
+  await loadSequences(index)
 }
 
 async function tableChanged(index: number) {
@@ -248,7 +283,7 @@ function setMappingSource(mapping: ProvisioningColumnMapping, value: string) {
 
   mapping.value_kind = value as ProvisioningValueKind
   mapping.value_key = null
-  if (mapping.value_kind !== 'custom') mapping.custom_value = null
+  mapping.custom_value = null
 }
 
 function columnInfo(index: number, columnName: string) {
@@ -447,7 +482,7 @@ onMounted(async () => {
 
             <article
               v-for="(step, index) in form.table_steps"
-              :key="`${index}-${step.name}`"
+              :key="stepMetadata[index]?.key ?? index"
               class="provisioning-step-card"
             >
               <div class="provisioning-step-toolbar">
@@ -528,6 +563,7 @@ onMounted(async () => {
                     <option value="omit">Database default / omit</option>
                     <option value="null">NULL</option>
                     <option value="custom">Custom value</option>
+                    <option value="sequence">Oracle sequence</option>
                     <optgroup label="Provisioning form">
                       <option
                         v-for="source in sourceOptions.filter((item) => item.kind === 'form')"
@@ -553,6 +589,21 @@ onMounted(async () => {
                     v-model="mapping.custom_value"
                     placeholder="Custom value"
                   />
+                  <select
+                    v-else-if="mapping.value_kind === 'sequence'"
+                    v-model="mapping.value_key"
+                    aria-label="Oracle sequence"
+                    required
+                  >
+                    <option :value="null" disabled>Select sequence</option>
+                    <option
+                      v-for="sequence in stepMetadata[index]?.sequences ?? []"
+                      :key="sequence.name"
+                      :value="sequence.name"
+                    >
+                      {{ sequence.name }}.NEXTVAL
+                    </option>
+                  </select>
                   <span v-else class="mapping-preview">
                     {{ mapping.value_kind === 'null'
                       ? 'NULL'

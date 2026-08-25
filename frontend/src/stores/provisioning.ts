@@ -3,6 +3,7 @@ import { defineStore } from 'pinia'
 export type ProvisioningValueKind =
   | 'form'
   | 'generated'
+  | 'sequence'
   | 'custom'
   | 'null'
   | 'omit'
@@ -50,6 +51,11 @@ export interface OracleMetadataSchema {
 }
 
 export interface OracleMetadataTable {
+  owner: string
+  name: string
+}
+
+export interface OracleMetadataSequence {
   owner: string
   name: string
 }
@@ -213,6 +219,12 @@ export const useProvisioningStore = defineStore('provisioning', {
     async tables(connectionId: string, owner: string) {
       return apiRequest<OracleMetadataTable[]>(
         `/provisioning/oracle/${connectionId}/schemas/${encodeURIComponent(owner)}/tables`,
+      )
+    },
+
+    async sequences(connectionId: string, owner: string) {
+      return apiRequest<OracleMetadataSequence[]>(
+        `/provisioning/oracle/${connectionId}/schemas/${encodeURIComponent(owner)}/sequences`,
       )
     },
 

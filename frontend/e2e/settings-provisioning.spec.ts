@@ -15,10 +15,18 @@ test('creates a provisioning profile from Oracle metadata mappings', async ({ pa
   await dialog.getByRole('button', { name: 'Add table step' }).click()
 
   const step = dialog.locator('.provisioning-step-card').first()
-  await step.getByLabel('Step name').fill('Insert USER_MASTER')
+  const stepName = step.getByLabel('Step name')
+  await stepName.fill('')
+  await stepName.click()
+  await page.keyboard.type('Insert USER_MASTER')
+  await expect(step.getByLabel('Step name')).toHaveValue('Insert USER_MASTER')
   await step.getByLabel('Oracle connection used for this insert').selectOption('conn-oracle')
   await step.getByLabel('Schema').selectOption('ORMS')
   await step.getByLabel('Table').selectOption('USER_MASTER')
+
+  const idRow = step.locator('.provisioning-mapping-row[data-column="ID"]')
+  await idRow.locator('select').first().selectOption('sequence')
+  await idRow.getByLabel('Oracle sequence').selectOption('USER_MASTER_SEQ')
 
   const usernameRow = step.locator('.provisioning-mapping-row[data-column="USERNAME"]')
   await usernameRow.locator('select').selectOption('generated:username')
@@ -45,6 +53,7 @@ test('creates a provisioning profile from Oracle metadata mappings', async ({ pa
         owner: 'ORMS',
         table_name: 'USER_MASTER',
         mappings: [
+          { column_name: 'ID', value_kind: 'sequence', value_key: 'USER_MASTER_SEQ' },
           { column_name: 'USERNAME', value_kind: 'generated', value_key: 'username' },
           { column_name: 'PASSWORD', value_kind: 'generated', value_key: 'password' },
           { column_name: 'STATUS', value_kind: 'custom', custom_value: 'ACTIVE' },

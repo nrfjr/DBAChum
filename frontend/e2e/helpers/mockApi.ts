@@ -375,13 +375,23 @@ export async function installMockApi(
     }
 
     if (
+      path === `/provisioning/oracle/${oracleConnection.id}/schemas/ORMS/sequences`
+      && method === 'GET'
+    ) {
+      return json(route, [
+        { owner: 'ORMS', name: 'USER_MASTER_SEQ' },
+      ])
+    }
+
+    if (
       path === `/provisioning/oracle/${oracleConnection.id}/schemas/ORMS/tables/USER_MASTER/columns`
       && method === 'GET'
     ) {
       return json(route, [
-        { name: 'USERNAME', data_type: 'VARCHAR2', data_length: 30, nullable: false, data_default: null, column_id: 1 },
-        { name: 'PASSWORD', data_type: 'VARCHAR2', data_length: 100, nullable: false, data_default: null, column_id: 2 },
-        { name: 'STATUS', data_type: 'VARCHAR2', data_length: 10, nullable: false, data_default: "'ACTIVE'", column_id: 3 },
+        { name: 'ID', data_type: 'NUMBER', data_length: 22, nullable: false, data_default: null, column_id: 1 },
+        { name: 'USERNAME', data_type: 'VARCHAR2', data_length: 30, nullable: false, data_default: null, column_id: 2 },
+        { name: 'PASSWORD', data_type: 'VARCHAR2', data_length: 100, nullable: false, data_default: null, column_id: 3 },
+        { name: 'STATUS', data_type: 'VARCHAR2', data_length: 10, nullable: false, data_default: "'ACTIVE'", column_id: 4 },
       ])
     }
 
