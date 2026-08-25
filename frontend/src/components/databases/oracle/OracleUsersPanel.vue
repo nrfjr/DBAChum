@@ -12,12 +12,14 @@ import {
   type OracleReferenceUser,
   type OracleCreateUserResult,
 } from '@/stores/oracleDba'
+import { useProvisioningStore } from '@/stores/provisioning'
 
 const props = defineProps<{
   connectionId: string
 }>()
 
 const oracleStore = useOracleDbaStore()
+const provisioningStore = useProvisioningStore()
 
 const search = ref('')
 
@@ -113,6 +115,7 @@ interface CreateUserForm {
   employeeId: string
   remarks: string
   generateLdif: boolean
+  ldapProfileId: string
 }
 
 function emptyCreateForm(): CreateUserForm {
@@ -131,6 +134,7 @@ function emptyCreateForm(): CreateUserForm {
     employeeId: '',
     remarks: '',
     generateLdif: false,
+    ldapProfileId: '',
   }
 }
 
@@ -142,6 +146,18 @@ const selectedRoles = ref<string[]>([])
 const createResult = ref<OracleCreateUserResult | null>(null)
 const showPassword = ref(false)
 const createForm = reactive<CreateUserForm>(emptyCreateForm())
+
+const availableLdapProfiles = computed(() =>
+  provisioningStore.ldapProfiles.filter((profile) => profile.enabled && profile.configured),
+)
+
+function ldifEnabledChanged() {
+  if (!createForm.generateLdif) {
+    createForm.ldapProfileId = ''
+  } else if (!createForm.ldapProfileId && availableLdapProfiles.value.length === 1) {
+    createForm.ldapProfileId = availableLdapProfiles.value[0]?.id ?? ''
+  }
+}
 
 function resetCreate() {
   Object.assign(createForm, emptyCreateForm())
@@ -260,6 +276,11 @@ async function reviewCreate() {
   }
 
   if (createForm.generateLdif) {
+    if (!createForm.ldapProfileId) {
+      createError.value = 'Select an LDAP profile for LDIF generation.'
+      return
+    }
+
     createForm.firstName = normalizePersonName(createForm.firstName)
     createForm.middleName = normalizePersonName(createForm.middleName)
     createForm.lastName = normalizePersonName(createForm.lastName)
@@ -397,6 +418,7 @@ async function createUser() {
         employee_id:
           createForm.employeeId.replace(/[^A-Za-z0-9]/g, '') || null,
         generate_ldif: createForm.generateLdif,
+        ldap_profile_id: createForm.generateLdif ? createForm.ldapProfileId || null : null,
       },
     )
 
@@ -419,6 +441,7 @@ onMounted(() => {
   oracleStore.loadUsers(
     props.connectionId,
   )
+  provisioningStore.loadLdapProfiles()
 })
 </script>
 
@@ -802,12 +825,28 @@ onMounted(() => {
           </label>
 
           <label class="connection-checkbox">
-            <input v-model="createForm.generateLdif" type="checkbox" />
+            <input
+              v-model="createForm.generateLdif"
+              type="checkbox"
+              :disabled="availableLdapProfiles.length === 0"
+              @change="ldifEnabledChanged"
+            />
             Generate downloadable LDAP LDIF after successful creation
           </label>
-          <small>
-            Uses the template under Settings → LDAP. The LDIF contains the initial password and is returned only with this provisioning result.
+          <small v-if="availableLdapProfiles.length === 0" class="connection-danger-note">
+            Add and enable an LDAP profile under Settings → LDAP first.
           </small>
+
+          <label v-if="createForm.generateLdif">
+            LDAP profile
+            <select v-model="createForm.ldapProfileId" required>
+              <option value="" disabled>Select LDAP profile</option>
+              <option v-for="ldap in availableLdapProfiles" :key="ldap.id" :value="ldap.id">
+                {{ ldap.name }} · {{ ldap.host }}:{{ ldap.port }}
+              </option>
+            </select>
+            <small>The selected profile supplies the Base DN and LDIF template.</small>
+          </label>
 
           <p v-if="createError" class="login-error">
             {{ createError }}

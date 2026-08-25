@@ -14,7 +14,8 @@ export interface MockApiState {
   createdDatabaseUsers: Record<string, unknown>[]
   createdProvisioningProfiles: Record<string, unknown>[]
   updatedProvisioningProfiles: Record<string, unknown>[]
-  ldapUpdates: Record<string, unknown>[]
+  ldapProfileUpdates: Record<string, unknown>[]
+  ldapProfileTests: string[]
   updatedUsers: Record<string, unknown>[]
 }
 
@@ -202,7 +203,8 @@ export async function installMockApi(
     createdDatabaseUsers: [],
     createdProvisioningProfiles: [],
     updatedProvisioningProfiles: [],
-    ldapUpdates: [],
+    ldapProfileUpdates: [],
+    ldapProfileTests: [],
     updatedUsers: [],
   }
 
@@ -345,35 +347,48 @@ export async function installMockApi(
       ])
     }
 
-    if (path === '/provisioning/ldap' && method === 'GET') {
-      return json(route, {
-        configured: false,
-        enabled: false,
-        host: '',
+    if (path === '/provisioning/ldap-profiles' && method === 'GET') {
+      return json(route, [{
+        id: 'global',
+        name: 'Default LDAP',
+        description: 'Migrated automatically from the previous global LDAP settings.',
+        configured: true,
+        enabled: true,
+        host: 'ldap.old.example.local',
         port: 636,
         use_ssl: true,
-        base_dn: '',
-        bind_dn: '',
-        has_bind_password: false,
+        base_dn: 'dc=old,dc=example,dc=local',
+        bind_dn: 'cn=dbachum,dc=old,dc=example,dc=local',
+        has_bind_password: true,
         ldif_template: 'dn: cn=<USERNAME>,cn=Users,<BASE_DN>',
-        updated_at: null,
+        migrated_from_legacy: true,
+        created_at: now,
+        updated_at: now,
+      }])
+    }
+
+    if (path === '/provisioning/ldap-profiles/global' && method === 'PUT') {
+      const payload = request.postDataJSON() as Record<string, unknown>
+      state.ldapProfileUpdates.push(payload)
+      return json(route, {
+        id: 'global',
+        ...payload,
+        configured: true,
+        has_bind_password: true,
+        migrated_from_legacy: true,
+        created_at: now,
+        updated_at: now,
       })
     }
 
-    if (path === '/provisioning/ldap' && method === 'PUT') {
-      const payload = request.postDataJSON() as Record<string, unknown>
-      state.ldapUpdates.push(payload)
+    if (path === '/provisioning/ldap-profiles/global/test' && method === 'POST') {
+      state.ldapProfileTests.push('global')
       return json(route, {
-        configured: true,
-        enabled: payload.enabled,
-        host: payload.host,
-        port: payload.port,
-        use_ssl: payload.use_ssl,
-        base_dn: payload.base_dn,
-        bind_dn: payload.bind_dn,
-        has_bind_password: true,
-        ldif_template: payload.ldif_template,
-        updated_at: now,
+        success: true,
+        connect_ok: true,
+        bind_ok: true,
+        base_dn_ok: true,
+        message: 'LDAP connection, bind authentication, and Base DN lookup succeeded.',
       })
     }
 

@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class OracleSessionItem(BaseModel):
@@ -232,6 +232,15 @@ class OracleCreateUserRequest(BaseModel):
         max_length=100,
     )
     generate_ldif: bool = False
+    ldap_profile_id: str | None = Field(default=None, max_length=64)
+
+    @model_validator(mode="after")
+    def validate_ldif_profile(self):
+        if self.generate_ldif and not self.ldap_profile_id:
+            raise ValueError("Select an LDAP profile when LDIF generation is enabled.")
+        if not self.generate_ldif:
+            self.ldap_profile_id = None
+        return self
 
 
 class OracleCreateUserResponse(BaseModel):

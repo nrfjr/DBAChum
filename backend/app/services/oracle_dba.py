@@ -38,6 +38,7 @@ from app.services.ldap_ldif import (
     normalize_person_name,
     render_ldif,
 )
+from app.services.provisioning import get_ldap_profile_document
 
 
 async def get_oracle_target(
@@ -248,16 +249,30 @@ async def provision_oracle_user(
     ldif_content = None
     ldif_filename = None
     if data.generate_ldif:
-        ldap_settings = await database.ldap_settings.find_one({"_id": "global"}) or {}
+        if not data.ldap_profile_id:
+            raise AppError(
+                "Select an LDAP profile to generate an LDIF file.",
+                code="LDAP_PROFILE_REQUIRED",
+                status_code=400,
+            )
+        ldap_profile = await get_ldap_profile_document(
+            database, data.ldap_profile_id
+        )
+        if not ldap_profile.get("enabled"):
+            raise AppError(
+                "The selected LDAP profile is disabled.",
+                code="LDAP_PROFILE_DISABLED",
+                status_code=400,
+            )
         ldif_content = render_ldif(
-            ldap_settings.get("ldif_template") or DEFAULT_LDIF_TEMPLATE,
+            ldap_profile.get("ldif_template") or DEFAULT_LDIF_TEMPLATE,
             username=username,
             password=data.password,
             first_name=first_name,
             middle_name=middle_name,
             last_name=last_name,
             employee_id=employee_id,
-            base_dn=ldap_settings.get("base_dn", ""),
+            base_dn=ldap_profile.get("base_dn", ""),
         )
         ldif_filename = f"{username}.ldif"
 
@@ -276,6 +291,7 @@ async def provision_oracle_user(
         "last_name": last_name,
         "employee_id": employee_id,
         "ldif_generated": bool(ldif_content),
+        "ldap_profile_id": data.ldap_profile_id if data.generate_ldif else None,
         "connection_auth_mode": connection.get(
             "oracle_auth_mode",
             "normal",

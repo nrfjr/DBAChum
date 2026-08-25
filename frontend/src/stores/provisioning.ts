@@ -28,6 +28,7 @@ export interface ProvisioningProfileInput {
   description: string | null
   schema_connection_id: string
   ldap_enabled: boolean
+  ldap_profile_id: string | null
   enabled: boolean
   table_steps: ProvisioningTableStep[]
 }
@@ -69,20 +70,9 @@ export interface OracleMetadataColumn {
   column_id: number
 }
 
-export interface LdapSettings {
-  configured: boolean
-  enabled: boolean
-  host: string
-  port: number
-  use_ssl: boolean
-  base_dn: string
-  bind_dn: string
-  has_bind_password: boolean
-  ldif_template: string
-  updated_at: string | null
-}
-
-export interface LdapSettingsInput {
+export interface LdapProfileInput {
+  name: string
+  description: string | null
   enabled: boolean
   host: string
   port: number
@@ -91,6 +81,23 @@ export interface LdapSettingsInput {
   bind_dn: string
   bind_password?: string
   ldif_template: string
+}
+
+export interface LdapProfile extends Omit<LdapProfileInput, 'bind_password'> {
+  id: string
+  configured: boolean
+  has_bind_password: boolean
+  migrated_from_legacy: boolean
+  created_at: string | null
+  updated_at: string | null
+}
+
+export interface LdapProfileTestResult {
+  success: boolean
+  connect_ok: boolean
+  bind_ok: boolean
+  base_dn_ok: boolean
+  message: string
 }
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL
@@ -127,7 +134,7 @@ export const useProvisioningStore = defineStore('provisioning', {
   state: () => ({
     profiles: [] as ProvisioningProfile[],
     sources: [] as ProvisioningSourceOption[],
-    ldap: null as LdapSettings | null,
+    ldapProfiles: [] as LdapProfile[],
     loading: false,
     saving: false,
     error: null as string | null,
@@ -194,22 +201,51 @@ export const useProvisioningStore = defineStore('provisioning', {
       this.profiles = this.profiles.filter((profile) => profile.id !== id)
     },
 
-    async loadLdap() {
-      this.ldap = await apiRequest<LdapSettings>('/provisioning/ldap')
-      return this.ldap
+    async loadLdapProfiles() {
+      this.ldapProfiles = await apiRequest<LdapProfile[]>('/provisioning/ldap-profiles')
+      return this.ldapProfiles
     },
 
-    async saveLdap(data: LdapSettingsInput) {
+    async createLdapProfile(data: LdapProfileInput) {
       this.saving = true
       try {
-        this.ldap = await apiRequest<LdapSettings>(
-          '/provisioning/ldap',
-          { method: 'PUT', body: JSON.stringify(data) },
-        )
-        return this.ldap
+        const profile = await apiRequest<LdapProfile>('/provisioning/ldap-profiles', {
+          method: 'POST',
+          body: JSON.stringify(data),
+        })
+        this.ldapProfiles.push(profile)
+        this.ldapProfiles.sort((a, b) => a.name.localeCompare(b.name))
+        return profile
       } finally {
         this.saving = false
       }
+    },
+
+    async updateLdapProfile(id: string, data: LdapProfileInput) {
+      this.saving = true
+      try {
+        const profile = await apiRequest<LdapProfile>(`/provisioning/ldap-profiles/${id}`, {
+          method: 'PUT',
+          body: JSON.stringify(data),
+        })
+        const index = this.ldapProfiles.findIndex((item) => item.id === id)
+        if (index !== -1) this.ldapProfiles[index] = profile
+        this.ldapProfiles.sort((a, b) => a.name.localeCompare(b.name))
+        return profile
+      } finally {
+        this.saving = false
+      }
+    },
+
+    async removeLdapProfile(id: string) {
+      await apiRequest<void>(`/provisioning/ldap-profiles/${id}`, { method: 'DELETE' })
+      this.ldapProfiles = this.ldapProfiles.filter((profile) => profile.id !== id)
+    },
+
+    async testLdapProfile(id: string) {
+      return apiRequest<LdapProfileTestResult>(`/provisioning/ldap-profiles/${id}/test`, {
+        method: 'POST',
+      })
     },
 
     async schemas(connectionId: string) {

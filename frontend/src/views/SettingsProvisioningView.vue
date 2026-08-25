@@ -38,6 +38,7 @@ const form = reactive<ProvisioningProfileInput>({
   description: null,
   schema_connection_id: '',
   ldap_enabled: false,
+  ldap_profile_id: null,
   enabled: true,
   table_steps: [],
 })
@@ -46,9 +47,11 @@ const oracleConnections = computed(() =>
   connectionsStore.connections.filter((connection) => connection.engine === 'oracle'),
 )
 
-const ldapAvailable = computed(() =>
-  Boolean(provisioningStore.ldap?.configured && provisioningStore.ldap?.enabled),
+const availableLdapProfiles = computed(() =>
+  provisioningStore.ldapProfiles.filter((profile) => profile.enabled && profile.configured),
 )
+
+const ldapAvailable = computed(() => availableLdapProfiles.value.length > 0)
 
 const sourceOptions = computed(() => provisioningStore.sources)
 
@@ -75,10 +78,19 @@ function resetForm() {
       (connection) => connection.oracle_auth_mode === 'sysdba' && connection.enabled,
     )?.id ?? oracleConnections.value.find((connection) => connection.enabled)?.id ?? '',
     ldap_enabled: false,
+    ldap_profile_id: null,
     enabled: true,
     table_steps: [],
   })
   stepMetadata.value = []
+}
+
+function ldapEnabledChanged() {
+  if (!form.ldap_enabled) {
+    form.ldap_profile_id = null
+  } else if (!form.ldap_profile_id && availableLdapProfiles.value.length === 1) {
+    form.ldap_profile_id = availableLdapProfiles.value[0]?.id ?? null
+  }
 }
 
 function openAdd() {
@@ -94,6 +106,7 @@ async function openEdit(profile: ProvisioningProfile) {
     description: profile.description,
     schema_connection_id: profile.schema_connection_id,
     ldap_enabled: profile.ldap_enabled,
+    ldap_profile_id: profile.ldap_profile_id,
     enabled: profile.enabled,
     table_steps: profile.table_steps.map((step) => ({
       name: step.name,
@@ -309,8 +322,13 @@ async function save() {
     return
   }
 
-  if (form.ldap_enabled && !ldapAvailable.value) {
-    formError.value = 'LDAP is selected, but global LDAP settings are not enabled and configured.'
+  if (form.ldap_enabled && !form.ldap_profile_id) {
+    formError.value = 'Select an LDAP profile for this provisioning workflow.'
+    return
+  }
+
+  if (form.ldap_enabled && !availableLdapProfiles.value.some((profile) => profile.id === form.ldap_profile_id)) {
+    formError.value = 'The selected LDAP profile is unavailable, disabled, or incomplete.'
     return
   }
 
@@ -320,6 +338,7 @@ async function save() {
       description: form.description?.trim() || null,
       schema_connection_id: form.schema_connection_id,
       ldap_enabled: form.ldap_enabled,
+      ldap_profile_id: form.ldap_enabled ? form.ldap_profile_id : null,
       enabled: form.enabled,
       table_steps: form.table_steps.map((step) => ({
         name: step.name.trim(),
@@ -368,7 +387,7 @@ onMounted(async () => {
     connectionsStore.load(),
     provisioningStore.loadProfiles(),
     provisioningStore.loadSources(),
-    provisioningStore.loadLdap(),
+    provisioningStore.loadLdapProfiles(),
   ])
 })
 </script>
@@ -413,7 +432,7 @@ onMounted(async () => {
             <small>
               Create via {{ connectionName(profile.schema_connection_id) }}
               · {{ profile.table_steps.length }} table step{{ profile.table_steps.length === 1 ? '' : 's' }}
-              · LDAP {{ profile.ldap_enabled ? 'on' : 'off' }}
+              · LDAP {{ profile.ldap_enabled ? (provisioningStore.ldapProfiles.find((ldap) => ldap.id === profile.ldap_profile_id)?.name ?? 'missing profile') : 'off' }}
             </small>
             <ul v-if="profile.issues.length" class="provisioning-issues">
               <li v-for="issue in profile.issues" :key="issue">{{ issue }}</li>
@@ -471,12 +490,32 @@ onMounted(async () => {
           </label>
 
           <label class="connection-checkbox">
-            <input v-model="form.ldap_enabled" type="checkbox" :disabled="!ldapAvailable" />
+            <input
+              v-model="form.ldap_enabled"
+              type="checkbox"
+              :disabled="!ldapAvailable"
+              @change="ldapEnabledChanged"
+            />
             Provision LDAP for users created with this profile
           </label>
           <small v-if="!ldapAvailable" class="connection-danger-note">
-            LDAP is optional. Configure and enable it under Settings → LDAP before profiles can opt in.
+            LDAP is optional. Add and enable an LDAP profile under Settings → LDAP before this workflow can opt in.
           </small>
+
+          <label v-if="form.ldap_enabled">
+            LDAP profile
+            <select v-model="form.ldap_profile_id" required>
+              <option :value="null" disabled>Select LDAP profile</option>
+              <option
+                v-for="ldap in availableLdapProfiles"
+                :key="ldap.id"
+                :value="ldap.id"
+              >
+                {{ ldap.name }} · {{ ldap.host }}:{{ ldap.port }}
+              </option>
+            </select>
+            <small>The selected profile supplies the LDAP connection, Base DN, credentials, and LDIF template.</small>
+          </label>
 
           <section class="provisioning-step-builder">
             <div class="panel-header">

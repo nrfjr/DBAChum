@@ -82,6 +82,7 @@ class ProvisioningProfileBase(BaseModel):
     description: str | None = Field(default=None, max_length=500)
     schema_connection_id: str = Field(min_length=1, max_length=64)
     ldap_enabled: bool = False
+    ldap_profile_id: str | None = Field(default=None, max_length=64)
     enabled: bool = True
     table_steps: list[ProvisioningTableStep] = Field(default_factory=list, max_length=32)
 
@@ -94,6 +95,15 @@ class ProvisioningProfileBase(BaseModel):
             if self.description is not None
             else None
         )
+        self.ldap_profile_id = (
+            self.ldap_profile_id.strip() or None
+            if self.ldap_profile_id is not None
+            else None
+        )
+        if self.ldap_enabled and not self.ldap_profile_id:
+            raise ValueError("Select an LDAP profile when LDAP provisioning is enabled.")
+        if not self.ldap_enabled:
+            self.ldap_profile_id = None
         return self
 
 
@@ -113,6 +123,77 @@ class ProvisioningProfileResponse(ProvisioningProfileBase):
     updated_at: datetime
 
 
+class LdapProfileBase(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+    description: str | None = Field(default=None, max_length=500)
+    enabled: bool = False
+    host: str = Field(default="", max_length=255)
+    port: int = Field(default=636, ge=1, le=65535)
+    use_ssl: bool = True
+    base_dn: str = Field(default="", max_length=500)
+    bind_dn: str = Field(default="", max_length=500)
+    ldif_template: str = Field(default="", max_length=20000)
+
+    @model_validator(mode="after")
+    def normalize_ldap(self):
+        self.name = self.name.strip()
+        self.description = (
+            self.description.strip() or None
+            if self.description is not None
+            else None
+        )
+        self.host = self.host.strip()
+        self.base_dn = self.base_dn.strip()
+        self.bind_dn = self.bind_dn.strip()
+
+        return self
+
+
+def _validate_enabled_ldap(profile):
+    if profile.enabled:
+        if not profile.host:
+            raise ValueError("LDAP host is required when LDAP is enabled.")
+        if not profile.base_dn:
+            raise ValueError("LDAP base DN is required when LDAP is enabled.")
+        if not profile.bind_dn:
+            raise ValueError("LDAP bind DN is required when LDAP is enabled.")
+    return profile
+
+
+class LdapProfileCreate(LdapProfileBase):
+    bind_password: str | None = Field(default=None, max_length=512)
+
+    @model_validator(mode="after")
+    def validate_enabled_profile(self):
+        return _validate_enabled_ldap(self)
+
+
+class LdapProfileUpdate(LdapProfileBase):
+    bind_password: str | None = Field(default=None, max_length=512)
+
+    @model_validator(mode="after")
+    def validate_enabled_profile(self):
+        return _validate_enabled_ldap(self)
+
+
+class LdapProfileResponse(LdapProfileBase):
+    id: str
+    configured: bool
+    has_bind_password: bool
+    migrated_from_legacy: bool = False
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+class LdapProfileTestResponse(BaseModel):
+    success: bool
+    connect_ok: bool
+    bind_ok: bool
+    base_dn_ok: bool
+    message: str
+
+
+# Backward-compatible schema aliases for the old singleton /provisioning/ldap API.
 class LdapSettingsUpdate(BaseModel):
     enabled: bool = False
     host: str = Field(default="", max_length=255)
@@ -122,22 +203,6 @@ class LdapSettingsUpdate(BaseModel):
     bind_dn: str = Field(default="", max_length=500)
     bind_password: str | None = Field(default=None, max_length=512)
     ldif_template: str = Field(default="", max_length=20000)
-
-    @model_validator(mode="after")
-    def normalize_ldap(self):
-        self.host = self.host.strip()
-        self.base_dn = self.base_dn.strip()
-        self.bind_dn = self.bind_dn.strip()
-
-        if self.enabled:
-            if not self.host:
-                raise ValueError("LDAP host is required when LDAP is enabled.")
-            if not self.base_dn:
-                raise ValueError("LDAP base DN is required when LDAP is enabled.")
-            if not self.bind_dn:
-                raise ValueError("LDAP bind DN is required when LDAP is enabled.")
-
-        return self
 
 
 class LdapSettingsResponse(BaseModel):

@@ -111,6 +111,7 @@ def test_profile_supports_user_master_as_normal_table_step():
         name="ORMS User",
         schema_connection_id="a" * 24,
         ldap_enabled=True,
+        ldap_profile_id="global",
         table_steps=[
             {
                 "name": "Insert USER_MASTER",
@@ -136,6 +137,18 @@ def test_profile_supports_user_master_as_normal_table_step():
     assert profile.table_steps[0].table_name == "USER_MASTER"
     assert profile.table_steps[0].mappings[1].custom_value == "ACTIVE"
 
+
+
+
+def test_profile_requires_ldap_profile_when_enabled():
+    with pytest.raises(ValidationError):
+        ProvisioningProfileCreate(
+            name="ORMS User",
+            schema_connection_id="a" * 24,
+            ldap_enabled=True,
+            ldap_profile_id=None,
+            table_steps=[],
+        )
 
 def test_source_catalog_exposes_form_and_generated_values():
     sources = list_provisioning_sources()
@@ -188,7 +201,7 @@ async def test_ldap_opt_in_is_not_ready_without_global_configuration():
         },
     )
 
-    assert "LDAP is enabled for this profile but LDAP settings are incomplete." in issues
+    assert "LDAP is enabled but no LDAP profile is selected." in issues
 
 
 @pytest.mark.asyncio

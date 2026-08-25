@@ -169,6 +169,7 @@ export interface OracleCreateUserInput {
   last_name: string | null
   employee_id: string | null
   generate_ldif: boolean
+  ldap_profile_id: string | null
 }
 
 export interface OracleCreateUserResult {

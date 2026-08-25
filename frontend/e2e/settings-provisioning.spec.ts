@@ -76,27 +76,29 @@ test('creates a provisioning profile from Oracle metadata mappings', async ({ pa
   })
 })
 
-test('keeps LDAP independent and saves its global settings', async ({ page }) => {
+test('migrates the existing LDAP entry into an editable/testable profile', async ({ page }) => {
   const state = await installMockApi(page)
 
   await page.goto('/settings/ldap')
 
-  await page.getByLabel('Enable LDAP provisioning').check()
-  await page.getByLabel('Host').fill('ldap.example.local')
-  await page.getByLabel('Base DN').fill('dc=example,dc=local')
-  await page.getByLabel('Bind DN').fill('cn=dbachum,dc=example,dc=local')
-  await page.getByLabel('Bind password').fill('secret123')
-  await page.getByRole('button', { name: 'Save LDAP settings' }).click()
+  await expect(page.getByText('Default LDAP')).toBeVisible()
+  await expect(page.getByText(/Migrated from your previous global LDAP settings/)).toBeVisible()
 
-  await expect(page.locator('.connection-test-result.success')).toHaveText('LDAP settings saved.')
-  expect(state.ldapUpdates).toHaveLength(1)
-  expect(state.ldapUpdates[0]).toMatchObject({
+  await page.getByRole('button', { name: 'Test' }).click()
+  await expect(page.locator('.connection-test-result.success')).toContainText('Base DN lookup succeeded')
+  expect(state.ldapProfileTests).toEqual(['global'])
+
+  await page.getByRole('button', { name: 'Edit' }).click()
+  const dialog = page.getByRole('dialog', { name: 'Edit LDAP profile' })
+  await dialog.getByLabel('Profile name').fill('Oracle Retail LDAP')
+  await dialog.getByLabel('Host').fill('ldap.example.local')
+  await dialog.getByRole('button', { name: 'Save LDAP profile' }).click()
+  await expect(dialog).toHaveCount(0)
+
+  expect(state.ldapProfileUpdates).toHaveLength(1)
+  expect(state.ldapProfileUpdates[0]).toMatchObject({
+    name: 'Oracle Retail LDAP',
     enabled: true,
     host: 'ldap.example.local',
-    port: 636,
-    use_ssl: true,
-    base_dn: 'dc=example,dc=local',
-    bind_dn: 'cn=dbachum,dc=example,dc=local',
-    bind_password: 'secret123',
   })
 })
