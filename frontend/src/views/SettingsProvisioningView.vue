@@ -95,7 +95,18 @@ async function openEdit(profile: ProvisioningProfile) {
     schema_connection_id: profile.schema_connection_id,
     ldap_enabled: profile.ldap_enabled,
     enabled: profile.enabled,
-    table_steps: structuredClone(profile.table_steps),
+    table_steps: profile.table_steps.map((step) => ({
+      name: step.name,
+      connection_id: step.connection_id,
+      owner: step.owner,
+      table_name: step.table_name,
+      mappings: step.mappings.map((mapping) => ({
+        column_name: mapping.column_name,
+        value_kind: mapping.value_kind,
+        value_key: mapping.value_key,
+        custom_value: mapping.custom_value,
+      })),
+    })),
   })
   stepMetadata.value = profile.table_steps.map(blankMetadata)
   formOpen.value = true

@@ -1,3 +1,4 @@
+import re
 from datetime import datetime
 from typing import Literal
 
@@ -7,10 +8,14 @@ from pydantic import BaseModel, Field, model_validator
 ProvisioningValueKind = Literal[
     "form",
     "generated",
+    "sequence",
     "custom",
     "null",
     "omit",
 ]
+
+
+ORACLE_SEQUENCE_NAME_PATTERN = re.compile(r"^[A-Z][A-Z0-9_$#]{0,29}$")
 
 
 class ProvisioningColumnMapping(BaseModel):
@@ -26,8 +31,15 @@ class ProvisioningColumnMapping(BaseModel):
         if self.value_key is not None:
             self.value_key = self.value_key.strip() or None
 
-        if self.value_kind in {"form", "generated"} and not self.value_key:
-            raise ValueError("Mapped form/generated values require a source key.")
+        if self.value_kind in {"form", "generated", "sequence"} and not self.value_key:
+            raise ValueError("Mapped form/generated/sequence values require a source key.")
+
+        if self.value_kind == "sequence":
+            self.value_key = (self.value_key or "").upper()
+            if not ORACLE_SEQUENCE_NAME_PATTERN.fullmatch(self.value_key):
+                raise ValueError(
+                    "Oracle sequence names must be simple 1-30 character identifiers."
+                )
 
         if self.value_kind == "custom" and self.custom_value is None:
             raise ValueError("Custom mappings require a value.")
@@ -35,7 +47,7 @@ class ProvisioningColumnMapping(BaseModel):
         if self.value_kind != "custom":
             self.custom_value = None
 
-        if self.value_kind in {"null", "omit"}:
+        if self.value_kind in {"custom", "null", "omit"}:
             self.value_key = None
 
         return self
@@ -109,6 +121,7 @@ class LdapSettingsUpdate(BaseModel):
     base_dn: str = Field(default="", max_length=500)
     bind_dn: str = Field(default="", max_length=500)
     bind_password: str | None = Field(default=None, max_length=512)
+    ldif_template: str = Field(default="", max_length=20000)
 
     @model_validator(mode="after")
     def normalize_ldap(self):
@@ -136,6 +149,7 @@ class LdapSettingsResponse(BaseModel):
     base_dn: str
     bind_dn: str
     has_bind_password: bool
+    ldif_template: str
     updated_at: datetime | None = None
 
 
@@ -144,6 +158,11 @@ class OracleMetadataSchema(BaseModel):
 
 
 class OracleMetadataTable(BaseModel):
+    owner: str
+    name: str
+
+
+class OracleMetadataSequence(BaseModel):
     owner: str
     name: str
 

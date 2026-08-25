@@ -129,5 +129,6 @@ async def create_database_user(
         connection_id,
         data,
         current_user,
+        requester_ip=request.client.host if request.client else None,
     )
 

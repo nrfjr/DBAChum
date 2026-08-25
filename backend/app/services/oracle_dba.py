@@ -32,6 +32,12 @@ from app.services.database_actions import (
 from app.services.database_connections import (
     get_database_connection,
 )
+from app.services.ldap_ldif import (
+    DEFAULT_LDIF_TEMPLATE,
+    normalize_employee_id,
+    normalize_person_name,
+    render_ldif,
+)
 
 
 async def get_oracle_target(
@@ -137,6 +143,7 @@ async def provision_oracle_user(
     connection_id: str,
     data: OracleCreateUserRequest,
     operator: UserResponse,
+    requester_ip: str | None = None,
 ):
     connection = await get_oracle_target(
         database,
@@ -233,6 +240,27 @@ async def provision_oracle_user(
         )
     )
 
+    first_name = normalize_person_name(data.first_name)
+    middle_name = normalize_person_name(data.middle_name)
+    last_name = normalize_person_name(data.last_name)
+    employee_id = normalize_employee_id(data.employee_id)
+
+    ldif_content = None
+    ldif_filename = None
+    if data.generate_ldif:
+        ldap_settings = await database.ldap_settings.find_one({"_id": "global"}) or {}
+        ldif_content = render_ldif(
+            ldap_settings.get("ldif_template") or DEFAULT_LDIF_TEMPLATE,
+            username=username,
+            password=data.password,
+            first_name=first_name,
+            middle_name=middle_name,
+            last_name=last_name,
+            employee_id=employee_id,
+            base_dn=ldap_settings.get("base_dn", ""),
+        )
+        ldif_filename = f"{username}.ldif"
+
     details = {
         "reference_username": (
             reference["username"]
@@ -241,6 +269,13 @@ async def provision_oracle_user(
         ),
         "roles_requested": normalized_roles,
         "requestor_name": data.requestor_name,
+        "remarks": data.remarks,
+        "requester_ip": requester_ip,
+        "first_name": first_name,
+        "middle_name": middle_name,
+        "last_name": last_name,
+        "employee_id": employee_id,
+        "ldif_generated": bool(ldif_content),
         "connection_auth_mode": connection.get(
             "oracle_auth_mode",
             "normal",
@@ -339,5 +374,8 @@ async def provision_oracle_user(
         "roles_applied": result["roles_applied"],
         "audit_id": audit_id,
         "status": "succeeded",
+        "requester_ip": requester_ip,
+        "ldif_filename": ldif_filename,
+        "ldif_content": ldif_content,
     }
 

@@ -7,6 +7,7 @@ from app.schemas.provisioning import (
     LdapSettingsUpdate,
     OracleMetadataColumn,
     OracleMetadataSchema,
+    OracleMetadataSequence,
     OracleMetadataTable,
     ProvisioningProfileCreate,
     ProvisioningProfileResponse,
@@ -22,6 +23,7 @@ from app.services.provisioning import (
     list_provisioning_sources,
     load_oracle_columns,
     load_oracle_schemas,
+    load_oracle_sequences,
     load_oracle_tables,
     update_ldap_settings,
     update_provisioning_profile,
@@ -134,6 +136,23 @@ async def oracle_tables(
     ),
 ):
     return await load_oracle_tables(request.app.state.database, connection_id, owner)
+
+
+@router.get(
+    "/oracle/{connection_id}/schemas/{owner}/sequences",
+    response_model=list[OracleMetadataSequence],
+)
+async def oracle_sequences(
+    connection_id: str,
+    owner: str,
+    request: Request,
+    current_user: UserResponse = Depends(
+        require_permission(Permission.PROVISIONING_MANAGE)
+    ),
+):
+    return await load_oracle_sequences(
+        request.app.state.database, connection_id, owner
+    )
 
 
 @router.get(

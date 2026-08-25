@@ -60,6 +60,27 @@ def test_mapping_normalizes_column_and_form_source():
     assert mapping.custom_value is None
 
 
+def test_sequence_mapping_normalizes_sequence_name():
+    mapping = ProvisioningColumnMapping(
+        column_name=" id ",
+        value_kind="sequence",
+        value_key=" user_master_seq ",
+    )
+
+    assert mapping.column_name == "ID"
+    assert mapping.value_key == "USER_MASTER_SEQ"
+    assert mapping.custom_value is None
+
+
+def test_sequence_mapping_rejects_sql_expression():
+    with pytest.raises(ValidationError):
+        ProvisioningColumnMapping(
+            column_name="ID",
+            value_kind="sequence",
+            value_key="USER_MASTER_SEQ.NEXTVAL",
+        )
+
+
 def test_custom_mapping_requires_value():
     with pytest.raises(ValidationError):
         ProvisioningColumnMapping(
@@ -124,6 +145,8 @@ def test_source_catalog_exposes_form_and_generated_values():
     assert ("form", "reference_user") in keys
     assert ("generated", "username") in keys
     assert ("generated", "password") in keys
+    assert ("form", "remarks") in keys
+    assert ("generated", "requester_ip") in keys
 
 
 @pytest.mark.asyncio

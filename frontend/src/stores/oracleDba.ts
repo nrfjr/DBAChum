@@ -163,6 +163,12 @@ export interface OracleCreateUserInput {
   profile: string | null
   request_reference: string | null
   requestor_name: string | null
+  remarks: string | null
+  first_name: string | null
+  middle_name: string | null
+  last_name: string | null
+  employee_id: string | null
+  generate_ldif: boolean
 }
 
 export interface OracleCreateUserResult {
@@ -170,6 +176,9 @@ export interface OracleCreateUserResult {
   roles_applied: string[]
   audit_id: string
   status: string
+  requester_ip: string | null
+  ldif_filename: string | null
+  ldif_content: string | null
 }
 
 

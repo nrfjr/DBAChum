@@ -52,6 +52,33 @@ async def list_oracle_tables(connection: dict, owner: str) -> list[dict]:
     ]
 
 
+async def list_oracle_sequences(connection: dict, owner: str) -> list[dict]:
+    owner = normalize_oracle_identifier(owner, field_name="Schema")
+
+    async with open_oracle_connection(connection) as oracle_connection:
+        try:
+            rows = await oracle_connection.fetchall(
+                """
+                SELECT sequence_owner, sequence_name
+                FROM all_sequences
+                WHERE sequence_owner = :owner
+                ORDER BY sequence_name
+                """,
+                {"owner": owner},
+            )
+        except oracledb.Error as exc:
+            raise AppError(
+                oracle_error_message(exc),
+                code="ORACLE_SEQUENCE_METADATA_FAILED",
+                status_code=400,
+            ) from exc
+
+    return [
+        {"owner": row[0], "name": row[1]}
+        for row in rows
+    ]
+
+
 async def list_oracle_columns(
     connection: dict,
     owner: str,

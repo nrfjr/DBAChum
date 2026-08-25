@@ -210,6 +210,28 @@ class OracleCreateUserRequest(BaseModel):
         default=None,
         max_length=200,
     )
+    remarks: str | None = Field(
+        default=None,
+        max_length=1000,
+    )
+
+    first_name: str | None = Field(
+        default=None,
+        max_length=100,
+    )
+    middle_name: str | None = Field(
+        default=None,
+        max_length=100,
+    )
+    last_name: str | None = Field(
+        default=None,
+        max_length=100,
+    )
+    employee_id: str | None = Field(
+        default=None,
+        max_length=100,
+    )
+    generate_ldif: bool = False
 
 
 class OracleCreateUserResponse(BaseModel):
@@ -219,4 +241,7 @@ class OracleCreateUserResponse(BaseModel):
     )
     audit_id: str
     status: str
+    requester_ip: str | None = None
+    ldif_filename: str | None = None
+    ldif_content: str | None = None
 

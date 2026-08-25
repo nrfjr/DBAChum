@@ -78,6 +78,7 @@ export interface LdapSettings {
   base_dn: string
   bind_dn: string
   has_bind_password: boolean
+  ldif_template: string
   updated_at: string | null
 }
 
@@ -89,6 +90,7 @@ export interface LdapSettingsInput {
   base_dn: string
   bind_dn: string
   bind_password?: string
+  ldif_template: string
 }
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL

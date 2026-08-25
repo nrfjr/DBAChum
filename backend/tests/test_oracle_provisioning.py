@@ -8,6 +8,10 @@ from app.core.exceptions import AppError
 from app.schemas.oracle_dba import OracleCreateUserRequest
 from app.schemas.user import UserResponse, UserRole
 from app.services import oracle_dba
+from app.services.ldap_ldif import (
+    normalize_person_name,
+    render_ldif,
+)
 
 
 class FakeReferenceConnection:
@@ -117,6 +121,33 @@ async def test_create_oracle_user_builds_reviewed_ddl(
     assert result["roles_applied"] == ["APP_READ"]
 
 
+def test_person_name_normalization_transliterates_enye_and_removes_symbols():
+    assert normalize_person_name("Peña") == "Pena"
+    assert normalize_person_name("NIÑO @ TEST") == "NINO TEST"
+
+
+def test_ldif_renderer_uses_normalized_identity_values():
+    rendered = render_ldif(
+        "dn: cn=<USERNAME>,cn=Users,<BASE_DN>\n"
+        "givenname: <FIRSTNAME>\n"
+        "sn: <LASTNAME>\n"
+        "employeenumber: <EMPLOYEE ID>\n"
+        "userpassword: <PASSWORD>\n",
+        username="JPENA123",
+        password="abc12345",
+        first_name="José",
+        middle_name=None,
+        last_name="Peña",
+        employee_id="12-3",
+        base_dn="dc=example,dc=com",
+    )
+
+    assert "givenname: Jose" in rendered
+    assert "sn: Pena" in rendered
+    assert "employeenumber: 123" in rendered
+    assert "userpassword: abc12345" in rendered
+
+
 def make_operator():
     now = datetime.now(timezone.utc)
     return UserResponse(
@@ -198,15 +229,18 @@ async def test_provisioning_audits_success_without_password(
             requestor_name="Requestor",
         ),
         make_operator(),
+        requester_ip="192.168.10.25",
     )
 
     assert result["status"] == "succeeded"
     assert audit_started["action"] == "create_user"
     assert audit_started["target"] == "JSMITH1001"
     assert audit_started["details"]["connection_auth_mode"] == "sysdba"
+    assert audit_started["details"]["requester_ip"] == "192.168.10.25"
     assert "password" not in audit_started["details"]
     assert audit_finished["audit_id"] == "audit-1"
     assert audit_finished["after"]["exists"] is True
+    assert result["requester_ip"] == "192.168.10.25"
 
 
 @pytest.mark.asyncio

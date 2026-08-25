@@ -15,6 +15,7 @@ const form = reactive({
   base_dn: '',
   bind_dn: '',
   bind_password: '',
+  ldif_template: '',
 })
 
 async function load() {
@@ -29,6 +30,7 @@ async function load() {
       base_dn: ldap.base_dn,
       bind_dn: ldap.bind_dn,
       bind_password: '',
+      ldif_template: ldap.ldif_template,
     })
   } catch (error) {
     formError.value = error instanceof Error
@@ -50,6 +52,7 @@ async function save() {
       base_dn: form.base_dn.trim(),
       bind_dn: form.bind_dn.trim(),
       bind_password: form.bind_password || undefined,
+      ldif_template: form.ldif_template,
     }
     await provisioningStore.saveLdap(payload)
     form.bind_password = ''
@@ -127,6 +130,22 @@ onMounted(load)
         />
         <small>
           Stored encrypted. Existing passwords are never returned to the browser.
+        </small>
+      </label>
+
+      <label>
+        LDIF template
+        <textarea
+          v-model="form.ldif_template"
+          rows="18"
+          maxlength="20000"
+          spellcheck="false"
+          placeholder="Paste the working LDIF template here"
+        ></textarea>
+        <small>
+          Used only to generate the downloadable LDIF after provisioning. Supported placeholders:
+          &lt;USERNAME&gt;, &lt;FIRSTNAME&gt;, &lt;MIDDLENAME&gt;, &lt;LASTNAME&gt;,
+          &lt;EMPLOYEE ID&gt;, &lt;PASSWORD&gt;, &lt;BASE_DN&gt;.
         </small>
       </label>
 

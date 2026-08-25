@@ -61,6 +61,19 @@ test('creates a provisioning profile from Oracle metadata mappings', async ({ pa
       },
     ],
   })
+
+  await page.getByRole('button', { name: 'Edit' }).click()
+  const editDialog = page.getByRole('dialog', { name: 'Edit provisioning profile' })
+  await expect(editDialog.getByLabel('Step name')).toHaveValue('Insert USER_MASTER')
+  await editDialog.getByLabel('Description').fill('Updated ORMS application user')
+  await editDialog.getByRole('button', { name: 'Save profile' }).click()
+  await expect(editDialog).toHaveCount(0)
+
+  expect(state.updatedProvisioningProfiles).toHaveLength(1)
+  expect(state.updatedProvisioningProfiles[0]).toMatchObject({
+    name: 'ORMS User',
+    description: 'Updated ORMS application user',
+  })
 })
 
 test('keeps LDAP independent and saves its global settings', async ({ page }) => {

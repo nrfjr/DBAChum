@@ -6,6 +6,7 @@ from pymongo.errors import DuplicateKeyError
 from app.connectors.oracle_metadata import (
     list_oracle_columns,
     list_oracle_schemas,
+    list_oracle_sequences,
     list_oracle_tables,
 )
 from app.core.exceptions import AppError
@@ -18,6 +19,7 @@ from app.schemas.provisioning import (
     ProvisioningProfileUpdate,
 )
 from app.services.database_connections import get_database_connection
+from app.services.ldap_ldif import DEFAULT_LDIF_TEMPLATE
 
 
 FORM_SOURCE_OPTIONS = [
@@ -28,12 +30,14 @@ FORM_SOURCE_OPTIONS = [
     {"key": "reference_user", "label": "Reference user", "kind": "form"},
     {"key": "requestor", "label": "Requestor", "kind": "form"},
     {"key": "request_reference", "label": "Request / ticket", "kind": "form"},
+    {"key": "remarks", "label": "Remarks", "kind": "form"},
 ]
 
 GENERATED_SOURCE_OPTIONS = [
     {"key": "username", "label": "Generated username", "kind": "generated"},
-    {"key": "password", "label": "Provisioned password", "kind": "generated"},
+    {"key": "password", "label": "Provisioned password (generated or custom)", "kind": "generated"},
     {"key": "operator_username", "label": "Current DBAChum user", "kind": "generated"},
+    {"key": "requester_ip", "label": "Requester machine IP", "kind": "generated"},
     {"key": "current_datetime", "label": "Current date/time", "kind": "generated"},
 ]
 
@@ -226,6 +230,7 @@ async def get_ldap_settings(database) -> LdapSettingsResponse:
             base_dn="",
             bind_dn="",
             has_bind_password=False,
+            ldif_template=DEFAULT_LDIF_TEMPLATE,
             updated_at=None,
         )
     return LdapSettingsResponse(
@@ -242,6 +247,7 @@ async def get_ldap_settings(database) -> LdapSettingsResponse:
         base_dn=document.get("base_dn", ""),
         bind_dn=document.get("bind_dn", ""),
         has_bind_password=bool(document.get("bind_password_encrypted")),
+        ldif_template=document.get("ldif_template") or DEFAULT_LDIF_TEMPLATE,
         updated_at=document.get("updated_at"),
     )
 
@@ -291,6 +297,12 @@ async def load_oracle_schemas(database, connection_id: str):
 
 async def load_oracle_tables(database, connection_id: str, owner: str):
     return await list_oracle_tables(
+        await get_metadata_connection(database, connection_id), owner
+    )
+
+
+async def load_oracle_sequences(database, connection_id: str, owner: str):
+    return await list_oracle_sequences(
         await get_metadata_connection(database, connection_id), owner
     )
 

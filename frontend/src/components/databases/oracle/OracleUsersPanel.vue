@@ -111,6 +111,8 @@ interface CreateUserForm {
   middleName: string
   lastName: string
   employeeId: string
+  remarks: string
+  generateLdif: boolean
 }
 
 function emptyCreateForm(): CreateUserForm {
@@ -127,6 +129,8 @@ function emptyCreateForm(): CreateUserForm {
     middleName: '',
     lastName: '',
     employeeId: '',
+    remarks: '',
+    generateLdif: false,
   }
 }
 
@@ -159,8 +163,21 @@ function closeCreate() {
   resetCreate()
 }
 
-function cleanUsernamePart(value: string) {
+function normalizePersonName(value: string) {
   return value
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^A-Za-z ]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function normalizeNameField(field: 'firstName' | 'middleName' | 'lastName') {
+  createForm[field] = normalizePersonName(createForm[field])
+}
+
+function cleanUsernamePart(value: string) {
+  return normalizePersonName(value)
     .toUpperCase()
     .replace(/[^A-Z0-9]/g, '')
 }
@@ -242,6 +259,19 @@ async function reviewCreate() {
     return
   }
 
+  if (createForm.generateLdif) {
+    createForm.firstName = normalizePersonName(createForm.firstName)
+    createForm.middleName = normalizePersonName(createForm.middleName)
+    createForm.lastName = normalizePersonName(createForm.lastName)
+    createForm.employeeId = createForm.employeeId.replace(/[^A-Za-z0-9]/g, '')
+
+    if (!createForm.firstName || !createForm.lastName || !createForm.employeeId) {
+      createError.value =
+        'First name, last name and ID are required when generating an LDAP LDIF.'
+      return
+    }
+  }
+
   createForm.username = username
 
   const referenceUsername = createForm.referenceUsername
@@ -319,6 +349,22 @@ function handleRoleToggle(
   setRoleSelected(roleName, target.checked)
 }
 
+function downloadLdif() {
+  if (!createResult.value?.ldif_content || !createResult.value.ldif_filename) return
+
+  const blob = new Blob([createResult.value.ldif_content], {
+    type: 'text/plain;charset=utf-8',
+  })
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = createResult.value.ldif_filename
+  document.body.appendChild(anchor)
+  anchor.click()
+  anchor.remove()
+  URL.revokeObjectURL(url)
+}
+
 async function createUser() {
   createError.value = null
 
@@ -340,6 +386,17 @@ async function createUser() {
           createForm.requestReference.trim() || null,
         requestor_name:
           createForm.requestorName.trim() || null,
+        remarks:
+          createForm.remarks.trim() || null,
+        first_name:
+          normalizePersonName(createForm.firstName) || null,
+        middle_name:
+          normalizePersonName(createForm.middleName) || null,
+        last_name:
+          normalizePersonName(createForm.lastName) || null,
+        employee_id:
+          createForm.employeeId.replace(/[^A-Za-z0-9]/g, '') || null,
+        generate_ldif: createForm.generateLdif,
       },
     )
 
@@ -595,20 +652,20 @@ onMounted(() => {
             <div class="connection-form-row">
               <label>
                 First name
-                <input v-model="createForm.firstName" autocomplete="off" />
+                <input v-model="createForm.firstName" autocomplete="off" @blur="normalizeNameField('firstName')" />
               </label>
 
               <label>
                 Middle name
                 <span class="optional-label">Optional</span>
-                <input v-model="createForm.middleName" autocomplete="off" />
+                <input v-model="createForm.middleName" autocomplete="off" @blur="normalizeNameField('middleName')" />
               </label>
             </div>
 
             <div class="connection-form-row">
               <label>
                 Last name
-                <input v-model="createForm.lastName" autocomplete="off" />
+                <input v-model="createForm.lastName" autocomplete="off" @blur="normalizeNameField('lastName')" />
               </label>
 
               <label>
@@ -658,7 +715,7 @@ onMounted(() => {
             </span>
 
             <small>
-              Generated passwords follow the current 3-letter + 5-digit pattern.
+              Type the requested custom password, or use Generate password for the current 3-letter + 5-digit pattern.
             </small>
           </label>
 
@@ -732,6 +789,25 @@ onMounted(() => {
               />
             </label>
           </div>
+
+          <label>
+            Remarks
+            <span class="optional-label">Optional</span>
+            <textarea
+              v-model="createForm.remarks"
+              rows="3"
+              maxlength="1000"
+              placeholder="Reason, access note, or provisioning remarks"
+            ></textarea>
+          </label>
+
+          <label class="connection-checkbox">
+            <input v-model="createForm.generateLdif" type="checkbox" />
+            Generate downloadable LDAP LDIF after successful creation
+          </label>
+          <small>
+            Uses the template under Settings → LDAP. The LDIF contains the initial password and is returned only with this provisioning result.
+          </small>
 
           <p v-if="createError" class="login-error">
             {{ createError }}
@@ -906,8 +982,19 @@ onMounted(() => {
           <small>
             Audit ID: {{ createResult?.audit_id }}
           </small>
+          <small v-if="createResult?.requester_ip">
+            Requester IP: {{ createResult.requester_ip }}
+          </small>
 
           <div class="connection-form-actions">
+            <button
+              v-if="createResult?.ldif_content"
+              type="button"
+              class="secondary-button"
+              @click="downloadLdif"
+            >
+              Download {{ createResult?.ldif_filename ?? 'LDIF' }}
+            </button>
             <button
               type="button"
               class="primary-button"

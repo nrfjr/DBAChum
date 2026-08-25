@@ -13,6 +13,7 @@ export interface MockApiState {
   createdConnections: Record<string, unknown>[]
   createdDatabaseUsers: Record<string, unknown>[]
   createdProvisioningProfiles: Record<string, unknown>[]
+  updatedProvisioningProfiles: Record<string, unknown>[]
   ldapUpdates: Record<string, unknown>[]
   updatedUsers: Record<string, unknown>[]
 }
@@ -200,6 +201,7 @@ export async function installMockApi(
     createdConnections: [],
     createdDatabaseUsers: [],
     createdProvisioningProfiles: [],
+    updatedProvisioningProfiles: [],
     ldapUpdates: [],
     updatedUsers: [],
   }
@@ -317,13 +319,28 @@ export async function installMockApi(
       }, 201)
     }
 
+    if (path === '/provisioning/profiles/profile-created' && method === 'PUT') {
+      const payload = request.postDataJSON() as Record<string, unknown>
+      state.updatedProvisioningProfiles.push(payload)
+      return json(route, {
+        id: 'profile-created',
+        ...payload,
+        ready: true,
+        issues: [],
+        created_at: now,
+        updated_at: now,
+      })
+    }
+
     if (path === '/provisioning/sources' && method === 'GET') {
       return json(route, [
         { key: 'first_name', label: 'First name', kind: 'form' },
         { key: 'last_name', label: 'Last name', kind: 'form' },
         { key: 'reference_user', label: 'Reference user', kind: 'form' },
         { key: 'username', label: 'Generated username', kind: 'generated' },
-        { key: 'password', label: 'Provisioned password', kind: 'generated' },
+        { key: 'password', label: 'Provisioned password (generated or custom)', kind: 'generated' },
+        { key: 'remarks', label: 'Remarks', kind: 'form' },
+        { key: 'requester_ip', label: 'Requester machine IP', kind: 'generated' },
         { key: 'current_datetime', label: 'Current date/time', kind: 'generated' },
       ])
     }
@@ -338,6 +355,7 @@ export async function installMockApi(
         base_dn: '',
         bind_dn: '',
         has_bind_password: false,
+        ldif_template: 'dn: cn=<USERNAME>,cn=Users,<BASE_DN>',
         updated_at: null,
       })
     }
@@ -354,6 +372,7 @@ export async function installMockApi(
         base_dn: payload.base_dn,
         bind_dn: payload.bind_dn,
         has_bind_password: true,
+        ldif_template: payload.ldif_template,
         updated_at: now,
       })
     }
