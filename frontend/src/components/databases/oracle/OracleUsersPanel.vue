@@ -14,6 +14,7 @@ import {
 } from '@/stores/oracleDba'
 import {
   useProvisioningStore,
+  type ProvisioningExecutionResult,
   type ProvisioningPreviewResult,
 } from '@/stores/provisioning'
 
@@ -147,7 +148,9 @@ const selectedRoles = ref<string[]>([])
 const createResult = ref<OracleCreateUserResult | null>(null)
 const showPassword = ref(false)
 const provisioningPreview = ref<ProvisioningPreviewResult | null>(null)
+const provisioningResult = ref<ProvisioningExecutionResult | null>(null)
 const previewLoading = ref(false)
+const provisioningExecuting = ref(false)
 const createForm = reactive<CreateUserForm>(emptyCreateForm())
 
 const availableProvisioningProfiles = computed(() =>
@@ -168,7 +171,9 @@ function resetCreate() {
   selectedRoles.value = []
   createResult.value = null
   provisioningPreview.value = null
+  provisioningResult.value = null
   previewLoading.value = false
+  provisioningExecuting.value = false
   showPassword.value = false
 }
 
@@ -381,6 +386,83 @@ function handleRoleToggle(
 ) {
   const target = event.target as HTMLInputElement
   setRoleSelected(roleName, target.checked)
+}
+
+async function executeProvisioning() {
+  if (!createForm.provisioningProfileId || !provisioningPreview.value) {
+    return
+  }
+
+  createError.value = null
+  provisioningExecuting.value = true
+
+  try {
+    provisioningResult.value = await provisioningStore.executeForConnection(
+      props.connectionId,
+      createForm.provisioningProfileId,
+      {
+        username: createForm.username,
+        password: createForm.password,
+        first_name: createForm.firstName || null,
+        middle_name: createForm.middleName || null,
+        last_name: createForm.lastName || null,
+        employee_id: createForm.employeeId || null,
+        reference_user: createForm.referenceUsername || null,
+        requestor: createForm.requestorName.trim() || null,
+        request_reference: createForm.requestReference.trim() || null,
+        remarks: createForm.remarks.trim() || null,
+        roles: [...selectedRoles.value],
+        default_tablespace: createForm.defaultTablespace || null,
+        temporary_tablespace: createForm.temporaryTablespace || null,
+        oracle_profile: createForm.profile || null,
+      },
+    )
+
+    // Never keep the submitted password in component state after execution.
+    createForm.password = ''
+    createStep.value = 'success'
+    await oracleStore.loadUsers(props.connectionId)
+  } catch (error) {
+    createError.value =
+      error instanceof Error
+        ? error.message
+        : 'Unable to execute provisioning.'
+  } finally {
+    provisioningExecuting.value = false
+  }
+}
+
+function createAnotherUser() {
+  const provisioningProfileId = createForm.provisioningProfileId
+  Object.assign(createForm, emptyCreateForm())
+  createForm.provisioningProfileId = provisioningProfileId
+  createStep.value = 'details'
+  createError.value = null
+  reference.value = null
+  selectedRoles.value = []
+  createResult.value = null
+  provisioningPreview.value = null
+  provisioningResult.value = null
+  showPassword.value = false
+}
+
+function downloadProvisioningLdif() {
+  const ldap = provisioningResult.value?.ldap
+  if (!ldap?.content || !ldap.filename) {
+    return
+  }
+
+  const blob = new Blob([ldap.content], {
+    type: 'text/plain;charset=utf-8',
+  })
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = ldap.filename
+  document.body.appendChild(anchor)
+  anchor.click()
+  anchor.remove()
+  URL.revokeObjectURL(url)
 }
 
 async function createUser() {
@@ -980,8 +1062,8 @@ onMounted(() => {
 
           <section v-if="provisioningPreview" class="oracle-provisioning-preview">
             <div class="preview-callout">
-              <strong>Phase 4A preview only — no database, application-table or LDAP changes were made.</strong>
-              <span>The selected profile is a child of this database connection. Phase 4B will execute the reviewed lifecycle.</span>
+              <strong>Reviewed execution plan — no changes have been made yet.</strong>
+              <span>Click Provision once to execute this parent account and its application provisioning lifecycle.</span>
             </div>
 
             <div class="preview-summary-grid">
@@ -1050,7 +1132,7 @@ onMounted(() => {
 
           <div class="utility-warning oracle-create-warning">
             <template v-if="provisioningPreview">
-              Phase 4B will CREATE or ALTER the Oracle account, reconcile roles, then upsert the configured application rows. Duplicate matches block execution.
+              Provision will CREATE or ALTER the Oracle account, reconcile roles, then upsert the configured application rows. Duplicate matches block execution.
             </template>
             <template v-else>
               This action creates a real Oracle account and grants the selected roles. The password will not be stored in DBAChum's action history.
@@ -1080,16 +1162,16 @@ onMounted(() => {
               v-else
               type="button"
               class="primary-button"
-              disabled
-              title="Phase 4B will enable profile execution"
+              :disabled="provisioningExecuting || !provisioningPreview.ready_to_execute"
+              @click="executeProvisioning"
             >
-              Provision {{ createForm.username }} (Phase 4B)
+              {{ provisioningExecuting ? 'Provisioning...' : `Provision ${createForm.username}` }}
             </button>
 
             <button
               type="button"
               class="secondary-button"
-              :disabled="oracleStore.creatingUser"
+              :disabled="oracleStore.creatingUser || provisioningExecuting"
               @click="createStep = 'details'"
             >
               Back
@@ -1101,22 +1183,75 @@ onMounted(() => {
           v-else
           class="oracle-user-success"
         >
-          <strong>{{ createResult?.username }}</strong>
-          <p>
-            Oracle account created successfully with
-            {{ createResult?.roles_applied.length ?? 0 }} role(s).
-          </p>
-          <small>
-            Audit ID: {{ createResult?.audit_id }}
-          </small>
-          <small v-if="createResult?.requester_ip">
-            Requester IP: {{ createResult.requester_ip }}
-          </small>
+          <template v-if="provisioningResult">
+            <strong>{{ provisioningResult.username }}</strong>
+            <p>
+              Provisioning {{ provisioningResult.status === 'succeeded' ? 'completed successfully.' : provisioningResult.status === 'partial' ? 'completed partially.' : 'failed.' }}
+            </p>
+
+            <div class="provisioning-result-grid">
+              <div>
+                <span>Oracle account</span>
+                <strong>{{ provisioningResult.account.action.toUpperCase() }}</strong>
+              </div>
+              <div>
+                <span>Roles</span>
+                <strong>{{ provisioningResult.roles.length }}</strong>
+              </div>
+              <div>
+                <span>Application steps</span>
+                <strong>{{ provisioningResult.table_steps.length }}</strong>
+              </div>
+            </div>
+
+            <div v-if="provisioningResult.table_steps.length" class="provisioning-result-steps">
+              <div v-for="step in provisioningResult.table_steps" :key="`${step.index}-${step.name}`">
+                <strong>Step {{ step.index }} · {{ step.name }}</strong>
+                <span>{{ step.owner }}.{{ step.table_name }} · {{ step.action.toUpperCase() }}</span>
+                <small v-if="Object.keys(step.generated_values).length">Generated: {{ JSON.stringify(step.generated_values) }}</small>
+                <small v-if="step.error" class="login-error">{{ step.error }}</small>
+              </div>
+            </div>
+
+            <button
+              v-if="provisioningResult.ldap.action === 'generated' && provisioningResult.ldap.content"
+              type="button"
+              class="secondary-button"
+              @click="downloadProvisioningLdif"
+            >
+              Download {{ provisioningResult.ldap.filename }}
+            </button>
+
+            <p v-if="provisioningResult.error" class="login-error">
+              {{ provisioningResult.error }}
+            </p>
+
+            <small>Run ID: {{ provisioningResult.run_id }}</small>
+            <small>Audit ID: {{ provisioningResult.audit_id }}</small>
+            <small v-if="provisioningResult.requester_ip">Requester IP: {{ provisioningResult.requester_ip }}</small>
+          </template>
+
+          <template v-else>
+            <strong>{{ createResult?.username }}</strong>
+            <p>
+              Oracle account created successfully with
+              {{ createResult?.roles_applied.length ?? 0 }} role(s).
+            </p>
+            <small>Audit ID: {{ createResult?.audit_id }}</small>
+            <small v-if="createResult?.requester_ip">Requester IP: {{ createResult.requester_ip }}</small>
+          </template>
 
           <div class="connection-form-actions">
             <button
               type="button"
               class="primary-button"
+              @click="createAnotherUser"
+            >
+              Create another user
+            </button>
+            <button
+              type="button"
+              class="secondary-button"
               @click="closeCreate"
             >
               Done
@@ -1151,4 +1286,11 @@ onMounted(() => {
   .preview-summary-grid { grid-template-columns: 1fr; }
   .preview-step header { align-items: flex-start; flex-direction: column; }
 }
+
+.provisioning-result-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .75rem; margin: .8rem 0; width: 100%; }
+.provisioning-result-grid > div { display: grid; gap: .2rem; padding: .7rem; border: 1px solid var(--border-color); border-radius: .65rem; }
+.provisioning-result-grid span { font-size: .78rem; opacity: .7; }
+.provisioning-result-steps { display: grid; gap: .5rem; width: 100%; margin: .6rem 0; }
+.provisioning-result-steps > div { display: grid; gap: .2rem; padding: .65rem .75rem; border: 1px solid var(--border-color); border-radius: .6rem; }
+.provisioning-result-steps span, .provisioning-result-steps small { opacity: .78; }
 </style>

@@ -16,6 +16,7 @@ export interface MockApiState {
   createdProvisioningProfiles: Record<string, unknown>[]
   updatedProvisioningProfiles: Record<string, unknown>[]
   provisioningPreviewRequests: Record<string, unknown>[]
+  provisioningExecuteRequests: Record<string, unknown>[]
   ldapProfileUpdates: Record<string, unknown>[]
   ldapProfileTests: string[]
   updatedUsers: Record<string, unknown>[]
@@ -210,6 +211,7 @@ export async function installMockApi(
     createdProvisioningProfiles: [],
     updatedProvisioningProfiles: [],
     provisioningPreviewRequests: [],
+    provisioningExecuteRequests: [],
     ldapProfileUpdates: [],
     ldapProfileTests: [],
     updatedUsers: [],
@@ -430,6 +432,57 @@ export async function installMockApi(
           template_valid: true,
         },
         warnings: [],
+      })
+    }
+
+    if (
+      path === `/databases/${oracleConnection.id}/oracle/provisioning-profiles/profile-orms/execute`
+      && method === 'POST'
+    ) {
+      const payload = request.postDataJSON() as Record<string, unknown>
+      state.provisioningExecuteRequests.push(payload)
+      return json(route, {
+        run_id: 'run-provision-1',
+        audit_id: 'audit-provision-1',
+        status: 'succeeded',
+        username: payload.username || 'JPNINO12345',
+        profile_id: 'profile-orms',
+        profile_name: 'ORMS User',
+        schema_connection_id: oracleConnection.id,
+        schema_connection_name: oracleConnection.name,
+        requester_ip: '192.0.2.25',
+        account: {
+          action: 'altered',
+          password_applied: true,
+          default_tablespace: payload.default_tablespace || 'USERS',
+          temporary_tablespace: payload.temporary_tablespace || 'TEMP',
+          oracle_profile: payload.oracle_profile || 'DEFAULT',
+          error: null,
+        },
+        roles: [{ name: 'APP_READ', action: 'already_present' }],
+        table_steps: [{
+          index: 1,
+          name: 'Insert USER_MASTER',
+          connection_id: oracleConnection.id,
+          connection_name: oracleConnection.name,
+          owner: 'ORMS',
+          table_name: 'USER_MASTER',
+          action: 'updated',
+          match_values: { USERNAME: payload.username || 'JPNINO12345' },
+          generated_values: {},
+          error: null,
+        }],
+        ldap: {
+          enabled: true,
+          action: 'generated',
+          profile_id: 'global',
+          profile_name: 'Default LDAP',
+          filename: `${payload.username || 'JPNINO12345'}.ldif`,
+          content: `dn: uid=${payload.username || 'JPNINO12345'},dc=example,dc=com`,
+          dn: `uid=${payload.username || 'JPNINO12345'},dc=example,dc=com`,
+          error: null,
+        },
+        error: null,
       })
     }
 

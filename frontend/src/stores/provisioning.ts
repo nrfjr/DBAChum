@@ -115,6 +115,69 @@ export interface ProvisioningPreviewResult {
   warnings: string[]
 }
 
+
+export interface ProvisioningExecuteInput extends ProvisioningPreviewInput {
+  roles: string[]
+  default_tablespace: string | null
+  temporary_tablespace: string | null
+  oracle_profile: string | null
+}
+
+export interface ProvisioningExecutionAccount {
+  action: 'created' | 'altered' | 'unchanged' | 'failed'
+  password_applied: boolean
+  default_tablespace: string | null
+  temporary_tablespace: string | null
+  oracle_profile: string | null
+  error: string | null
+}
+
+export interface ProvisioningExecutionRole {
+  name: string
+  action: 'granted' | 'already_present'
+}
+
+export interface ProvisioningExecutionTableStep {
+  index: number
+  name: string
+  connection_id: string
+  connection_name: string
+  owner: string
+  table_name: string
+  action: 'inserted' | 'updated' | 'unchanged' | 'conflict' | 'failed' | 'not_run'
+  match_values: Record<string, string | null>
+  generated_values: Record<string, string | number | null>
+  error: string | null
+}
+
+export interface ProvisioningExecutionLdap {
+  enabled: boolean
+  action: 'generated' | 'not_run' | 'failed' | null
+  profile_id: string | null
+  profile_name: string | null
+  filename: string | null
+  content: string | null
+  dn: string | null
+  error: string | null
+}
+
+export interface ProvisioningExecutionResult {
+  run_id: string
+  audit_id: string
+  status: 'succeeded' | 'partial' | 'failed'
+  username: string
+  profile_id: string
+  profile_name: string
+  schema_connection_id: string
+  schema_connection_name: string
+  requester_ip: string | null
+  account: ProvisioningExecutionAccount
+  roles: ProvisioningExecutionRole[]
+  table_steps: ProvisioningExecutionTableStep[]
+  ldap: ProvisioningExecutionLdap
+  error: string | null
+}
+
 export interface ProvisioningSourceOption {
   key: string
   label: string
@@ -291,6 +354,18 @@ export const useProvisioningStore = defineStore('provisioning', {
     ) {
       return apiRequest<ProvisioningPreviewResult>(
         `/databases/${connectionId}/oracle/provisioning-profiles/${profileId}/preview`,
+        { method: 'POST', body: JSON.stringify(data) },
+      )
+    },
+
+
+    async executeForConnection(
+      connectionId: string,
+      profileId: string,
+      data: ProvisioningExecuteInput,
+    ) {
+      return apiRequest<ProvisioningExecutionResult>(
+        `/databases/${connectionId}/oracle/provisioning-profiles/${profileId}/execute`,
         { method: 'POST', body: JSON.stringify(data) },
       )
     },

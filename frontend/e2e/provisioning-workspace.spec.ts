@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test'
 
 import { installMockApi } from './helpers/mockApi'
 
-test('provisioning profile is derived from the current database Create User flow', async ({ page }) => {
+test('executes parent-derived provisioning from the current database Create User flow', async ({ page }) => {
   const state = await installMockApi(page, { provisioningProfile: true })
 
   await page.goto('/databases/conn-oracle')
@@ -26,13 +26,31 @@ test('provisioning profile is derived from the current database Create User flow
   await dialog.getByLabel('Remarks').fill('RMS access request')
   await dialog.getByRole('button', { name: 'Review' }).click()
 
-  await expect(dialog.getByText('Phase 4A preview only — no database, application-table or LDAP changes were made.')).toBeVisible()
+  await expect(dialog.getByText('Reviewed execution plan — no changes have been made yet.')).toBeVisible()
   await expect(dialog.getByText('Existing → ALTER / reconcile')).toBeVisible()
   await expect(dialog.getByText('UPDATE', { exact: true })).toBeVisible()
   await expect(dialog.getByText(/Matched 1 row by USERNAME/)).toBeVisible()
   await expect(dialog.getByText('ORMS.USER_MASTER_SEQ.NEXTVAL')).toBeVisible()
   await expect(dialog.getByText('JPNINO12345.ldif')).toBeVisible()
-  await expect(dialog.getByRole('button', { name: 'Provision JPNINO12345 (Phase 4B)' })).toBeDisabled()
+  await dialog.getByRole('button', { name: 'Provision JPNINO12345' }).click()
+
+  await expect(dialog.getByText('Provisioning completed successfully.')).toBeVisible()
+  await expect(dialog.getByText(/ORMS\.USER_MASTER · UPDATED$/)).toBeVisible()
+  await expect(dialog.getByRole('button', { name: 'Download JPNINO12345.ldif' })).toBeVisible()
+  await expect(dialog.getByRole('button', { name: 'Create another user' })).toBeVisible()
+
+  expect(state.provisioningExecuteRequests).toHaveLength(1)
+  expect(state.provisioningExecuteRequests[0]).toMatchObject({
+    username: 'JPNINO12345',
+    employee_id: '12345',
+    reference_user: 'APP_USER',
+    remarks: 'RMS access request',
+    roles: ['APP_READ'],
+  })
+
+  await dialog.getByRole('button', { name: 'Create another user' }).click()
+  await expect(dialog.getByLabel('Application provisioning')).toHaveValue('profile-orms')
+  await expect(dialog.getByLabel('Username')).toHaveValue('')
 
   expect(state.provisioningPreviewRequests).toHaveLength(1)
   expect(state.provisioningPreviewRequests[0]).toMatchObject({
