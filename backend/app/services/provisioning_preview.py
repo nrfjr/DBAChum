@@ -266,6 +266,16 @@ async def build_provisioning_preview(
 
         match_columns = effective_match_columns(step)
         match_values = {column: raw_values.get(column) for column in match_columns}
+        missing_match = [
+            column for column, value in match_values.items()
+            if value is None or (isinstance(value, str) and not value.strip())
+        ]
+        if missing_match:
+            raise AppError(
+                "Upsert match values are missing for: " + ", ".join(missing_match),
+                code="PROVISIONING_MATCH_VALUE_REQUIRED",
+                status_code=400,
+            )
         existing_rows = await count_oracle_rows_by_match(
             step_connection,
             owner=step["owner"],

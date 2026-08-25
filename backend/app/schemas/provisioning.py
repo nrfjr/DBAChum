@@ -351,3 +351,65 @@ class ProvisioningPreviewResponse(BaseModel):
     table_steps: list[ProvisioningPreviewTableStep] = Field(default_factory=list)
     ldap: ProvisioningPreviewLdap
     warnings: list[str] = Field(default_factory=list)
+
+
+class ProvisioningExecuteRequest(ProvisioningPreviewRequest):
+    roles: list[str] = Field(default_factory=list, max_length=100)
+    default_tablespace: str | None = Field(default=None, max_length=30)
+    temporary_tablespace: str | None = Field(default=None, max_length=30)
+    oracle_profile: str | None = Field(default=None, max_length=30)
+
+
+class ProvisioningExecutionAccount(BaseModel):
+    action: Literal["created", "altered", "unchanged", "failed"]
+    password_applied: bool = False
+    default_tablespace: str | None = None
+    temporary_tablespace: str | None = None
+    oracle_profile: str | None = None
+    error: str | None = None
+
+
+class ProvisioningExecutionRole(BaseModel):
+    name: str
+    action: Literal["granted", "already_present"]
+
+
+class ProvisioningExecutionTableStep(BaseModel):
+    index: int
+    name: str
+    connection_id: str
+    connection_name: str
+    owner: str
+    table_name: str
+    action: Literal["inserted", "updated", "unchanged", "conflict", "failed", "not_run"]
+    match_values: dict[str, str | None] = Field(default_factory=dict)
+    generated_values: dict[str, str | int | float | None] = Field(default_factory=dict)
+    error: str | None = None
+
+
+class ProvisioningExecutionLdap(BaseModel):
+    enabled: bool = False
+    action: Literal["generated", "not_run", "failed"] | None = None
+    profile_id: str | None = None
+    profile_name: str | None = None
+    filename: str | None = None
+    content: str | None = None
+    dn: str | None = None
+    error: str | None = None
+
+
+class ProvisioningExecutionResponse(BaseModel):
+    run_id: str
+    audit_id: str
+    status: Literal["succeeded", "partial", "failed"]
+    username: str
+    profile_id: str
+    profile_name: str
+    schema_connection_id: str
+    schema_connection_name: str
+    requester_ip: str | None = None
+    account: ProvisioningExecutionAccount
+    roles: list[ProvisioningExecutionRole] = Field(default_factory=list)
+    table_steps: list[ProvisioningExecutionTableStep] = Field(default_factory=list)
+    ldap: ProvisioningExecutionLdap
+    error: str | None = None

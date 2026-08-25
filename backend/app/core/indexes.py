@@ -88,3 +88,20 @@ async def create_indexes(
         "table_steps.connection_id",
         name="ix_provisioning_profiles_table_connections",
     )
+
+    await database.provisioning_runs.create_index(
+        [
+            ("parent_connection_id", 1),
+            ("username", 1),
+            ("started_at", -1),
+        ],
+        name="ix_provisioning_runs_parent_username_started",
+    )
+
+    await database.provisioning_runs.create_index(
+        [
+            ("profile_id", 1),
+            ("started_at", -1),
+        ],
+        name="ix_provisioning_runs_profile_started",
+    )

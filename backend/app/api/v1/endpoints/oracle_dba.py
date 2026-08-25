@@ -14,6 +14,8 @@ from app.schemas.oracle_dba import (
     OracleCreateUserResponse,
 )
 from app.schemas.provisioning import (
+    ProvisioningExecuteRequest,
+    ProvisioningExecutionResponse,
     ProvisioningPreviewRequest,
     ProvisioningPreviewResponse,
     ProvisioningProfileResponse,
@@ -29,6 +31,7 @@ from app.services.oracle_dba import (
 )
 from app.services.provisioning import list_provisioning_profiles_for_connection
 from app.services.provisioning_preview import build_provisioning_preview
+from app.services.provisioning_execution import execute_provisioning_profile
 from app.core.permissions import Permission
 from app.dependencies.permissions import require_permission
 
@@ -159,6 +162,29 @@ async def preview_database_provisioning_profile(
 
 
 @router.post(
+    "/{connection_id}/oracle/provisioning-profiles/{profile_id}/execute",
+    response_model=ProvisioningExecutionResponse,
+)
+async def execute_database_provisioning_profile(
+    connection_id: str,
+    profile_id: str,
+    data: ProvisioningExecuteRequest,
+    request: Request,
+    current_user: UserResponse = Depends(
+        require_permission(Permission.DBA_OPERATE)
+    ),
+):
+    return await execute_provisioning_profile(
+        request.app.state.database,
+        connection_id,
+        profile_id,
+        data,
+        current_user,
+        requester_ip=request.client.host if request.client else None,
+    )
+
+
+@router.post(
     "/{connection_id}/oracle/users",
     response_model=OracleCreateUserResponse,
     status_code=201,
@@ -178,4 +204,3 @@ async def create_database_user(
         current_user,
         requester_ip=request.client.host if request.client else None,
     )
-
