@@ -65,7 +65,7 @@ test('adds an Oracle SYSDBA connection explicitly', async ({ page }) => {
 
   await dialog.getByLabel('Connection name').fill('ERP SYS')
   await dialog.getByLabel('Host').fill('ora-sys.example.local')
-  await dialog.getByRole('textbox', { name: 'Service name', exact: true }).fill('ERPPRD')
+  await dialog.getByPlaceholder('ORCLPDB1').fill('ERPPRD')
   await dialog.getByLabel('Oracle privilege mode').selectOption('sysdba')
   await dialog.getByLabel('Username').fill('SYS')
   await dialog.getByLabel('Password').fill('secret123')

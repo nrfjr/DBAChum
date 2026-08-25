@@ -27,6 +27,9 @@ class Settings(BaseSettings):
 
     connection_encryption_key: str
 
+    oracle_driver_mode: str = "thin"
+    oracle_client_lib_dir: str | None = None
+
     metrics_collector_enabled: bool = True
     metrics_collector_interval_seconds: int = Field(
         default=60,
@@ -69,6 +72,20 @@ class Settings(BaseSettings):
                 "ENVIRONMENT must be development, test, or production."
             )
 
+        return normalized
+
+
+    @field_validator("oracle_driver_mode")
+    @classmethod
+    def validate_oracle_driver_mode(
+        cls,
+        value: str,
+    ) -> str:
+        normalized = value.strip().lower()
+        if normalized not in {"thin", "thick"}:
+            raise ValueError(
+                "ORACLE_DRIVER_MODE must be thin or thick."
+            )
         return normalized
 
     @field_validator("connection_encryption_key")

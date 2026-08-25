@@ -72,3 +72,19 @@ async def create_indexes(
         ],
         name="ix_database_action_audit_operator_started",
     )
+
+    await database.provisioning_profiles.create_index(
+        "name_key",
+        unique=True,
+        name="uq_provisioning_profiles_name_key",
+    )
+
+    await database.provisioning_profiles.create_index(
+        "schema_connection_id",
+        name="ix_provisioning_profiles_schema_connection",
+    )
+
+    await database.provisioning_profiles.create_index(
+        "table_steps.connection_id",
+        name="ix_provisioning_profiles_table_connections",
+    )

@@ -171,6 +171,59 @@ if ($null -ne $gitCommand -and (Test-Path (Join-Path $ProjectRoot '.git'))) {
     }
 }
 
+# Oracle runtime compatibility. Thick mode is required for Oracle 10g.
+$oracleDriverMode = Get-EnvValue -Text $envText -Name 'ORACLE_DRIVER_MODE'
+if ([string]::IsNullOrWhiteSpace($oracleDriverMode)) {
+    $oracleDriverMode = 'thin'
+}
+else {
+    $oracleDriverMode = $oracleDriverMode.Trim().ToLowerInvariant()
+}
+
+if ($oracleDriverMode -eq 'thick') {
+    $oracleClientLibDir = Get-EnvValue -Text $envText -Name 'ORACLE_CLIENT_LIB_DIR'
+    if ([string]::IsNullOrWhiteSpace($oracleClientLibDir)) {
+        Fail 'ORACLE_CLIENT_LIB_DIR is required when ORACLE_DRIVER_MODE=thick'
+    }
+    else {
+        $ociDll = Join-Path $oracleClientLibDir 'oci.dll'
+        if (Test-Path $ociDll) {
+            Pass "Oracle OCI library found: $ociDll"
+        }
+        else {
+            Fail "Oracle OCI library not found: $ociDll"
+        }
+
+        if (Test-Path $PythonExe) {
+            $previousPreference = $ErrorActionPreference
+            $ErrorActionPreference = 'Continue'
+            $env:DBACHUM_ORACLE_CLIENT_LIB_DIR = $oracleClientLibDir
+            try {
+                $oracleCheck = & $PythonExe -c "import os,oracledb; print('driver=' + oracledb.__version__); oracledb.init_oracle_client(lib_dir=os.environ['DBACHUM_ORACLE_CLIENT_LIB_DIR']); print('client=' + '.'.join(str(x) for x in oracledb.clientversion()))" 2>&1
+                $oracleExitCode = $LASTEXITCODE
+            }
+            finally {
+                Remove-Item Env:DBACHUM_ORACLE_CLIENT_LIB_DIR -ErrorAction SilentlyContinue
+                $ErrorActionPreference = $previousPreference
+            }
+
+            if ($oracleExitCode -eq 0) {
+                Pass 'Oracle Thick mode initializes successfully'
+                $oracleCheck | ForEach-Object { Write-Host "      $_" -ForegroundColor DarkGray }
+            }
+            else {
+                Fail "Oracle Thick mode validation failed: $($oracleCheck -join ' ')"
+            }
+        }
+    }
+}
+elseif ($oracleDriverMode -eq 'thin') {
+    Warn 'Oracle driver is Thin mode; Oracle 10g connections are unavailable'
+}
+else {
+    Fail "ORACLE_DRIVER_MODE must be thin or thick; found '$oracleDriverMode'"
+}
+
 $mongoUri = Get-EnvValue -Text $envText -Name 'MONGODB_URI'
 $usesLocalMongo = (
     [string]::IsNullOrWhiteSpace($mongoUri) -or

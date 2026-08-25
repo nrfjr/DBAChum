@@ -2062,3 +2062,108 @@ button {
   flex-wrap: wrap;
   gap: 0.5rem;
 }
+
+/* Weekend 19 Phase 3 - Provisioning profile engine */
+.provisioning-warning {
+  margin: 0 0 1rem;
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--border-color);
+  border-radius: 0.75rem;
+  background: var(--surface-muted);
+}
+
+.provisioning-issues {
+  margin: 0.65rem 0 0;
+  padding-left: 1.15rem;
+  font-size: 0.82rem;
+}
+
+.provisioning-modal {
+  width: min(1100px, calc(100vw - 2rem));
+  max-height: calc(100vh - 2rem);
+  overflow-y: auto;
+}
+
+.provisioning-step-builder {
+  display: grid;
+  gap: 1rem;
+  margin-top: 0.5rem;
+}
+
+.provisioning-step-builder .panel-header {
+  margin-bottom: 0;
+}
+
+.provisioning-step-card {
+  display: grid;
+  gap: 0.9rem;
+  padding: 1rem;
+  border: 1px solid var(--border-color);
+  border-radius: 0.85rem;
+}
+
+.provisioning-step-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.provisioning-step-toolbar > div {
+  display: flex;
+  gap: 0.35rem;
+}
+
+.provisioning-mapping-table {
+  display: grid;
+  gap: 0.35rem;
+  overflow-x: auto;
+}
+
+.provisioning-mapping-head,
+.provisioning-mapping-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.9fr) minmax(230px, 1.2fr) minmax(220px, 1fr);
+  gap: 0.7rem;
+  align-items: center;
+  min-width: 720px;
+}
+
+.provisioning-mapping-head {
+  padding: 0.4rem 0.55rem;
+  font-size: 0.76rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  opacity: 0.72;
+}
+
+.provisioning-mapping-row {
+  padding: 0.55rem;
+  border: 1px solid var(--border-color);
+  border-radius: 0.6rem;
+}
+
+.provisioning-mapping-row > div {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.provisioning-mapping-row select,
+.provisioning-mapping-row input {
+  width: 100%;
+}
+
+.mapping-preview {
+  font-size: 0.84rem;
+  opacity: 0.78;
+}
+
+.empty-state.compact {
+  padding: 0.6rem 0;
+}
+
+@media (max-width: 760px) {
+  .provisioning-modal {
+    width: calc(100vw - 1rem);
+  }
+}

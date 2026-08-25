@@ -13,6 +13,8 @@ import SettingsView from '@/views/SettingsView.vue'
 import SettingsConnectionsView from '@/views/SettingsConnectionsView.vue'
 import ServersView from '@/views/ServersView.vue'
 import SettingsUsersView from '@/views/SettingsUsersView.vue'
+import SettingsProvisioningView from '@/views/SettingsProvisioningView.vue'
+import SettingsLdapView from '@/views/SettingsLdapView.vue'
 import { hasPermission, } from '@/core/permissions'
 
 
@@ -113,6 +115,24 @@ const router = createRouter({
 
           meta: {
             permission: 'users:manage',
+          },
+        },
+        {
+          path: 'provisioning',
+          name: 'settings-provisioning',
+          component: SettingsProvisioningView,
+
+          meta: {
+            permission: 'provisioning:manage',
+          },
+        },
+        {
+          path: 'ldap',
+          name: 'settings-ldap',
+          component: SettingsLdapView,
+
+          meta: {
+            permission: 'ldap:manage',
           },
         },
       ],

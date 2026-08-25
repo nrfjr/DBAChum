@@ -17,6 +17,12 @@ const sectionTitle = computed(() => {
   switch (route.name) {
     case 'settings-connections':
       return 'Connections'
+    case 'settings-provisioning':
+      return 'Provisioning'
+    case 'settings-ldap':
+      return 'LDAP'
+    case 'settings-users':
+      return 'Users'
     default:
       return 'Settings'
   }
@@ -30,6 +36,15 @@ const canManageUsers = computed(
     ),
 )
 
+
+
+const canManageProvisioning = computed(
+  () => hasPermission(authStore.user?.role, 'provisioning:manage'),
+)
+
+const canManageLdap = computed(
+  () => hasPermission(authStore.user?.role, 'ldap:manage'),
+)
 
 const canAccessConnections = computed(() =>
   hasPermission(
@@ -52,6 +67,12 @@ const canAccessConnections = computed(() =>
     <aside class="settings-nav">
       <RouterLink v-if="canAccessConnections" to="/settings/connections">
         Connections
+      </RouterLink>
+      <RouterLink v-if="canManageProvisioning" to="/settings/provisioning">
+        Provisioning
+      </RouterLink>
+      <RouterLink v-if="canManageLdap" to="/settings/ldap">
+        LDAP
       </RouterLink>
       <RouterLink v-if="canManageUsers" to="/settings/users">
         Users

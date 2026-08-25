@@ -10,6 +10,8 @@ export type Permission =
   | 'servers:manage'
   | 'database:operate'
   | 'users:manage'
+  | 'provisioning:manage'
+  | 'ldap:manage'
 
 const rolePermissions:
   Record<UserRole, ReadonlySet<Permission>> = {
@@ -30,6 +32,8 @@ const rolePermissions:
       'servers:manage',
       'database:operate',
       'users:manage',
+      'provisioning:manage',
+      'ldap:manage',
     ]),
   }
 

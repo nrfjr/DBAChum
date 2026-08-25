@@ -187,6 +187,25 @@ async def delete_database_connection(
 ) -> None:
     object_id = parse_connection_id(connection_id)
 
+    dependent_profile = await database.provisioning_profiles.find_one(
+        {
+            "$or": [
+                {"schema_connection_id": connection_id},
+                {"table_steps.connection_id": connection_id},
+            ]
+        },
+        {"name": 1},
+    )
+
+    if dependent_profile is not None:
+        raise AppError(
+            "This connection is used by provisioning profile "
+            f'"{dependent_profile.get("name", "Unnamed profile")}". '
+            "Reassign or remove that profile dependency first.",
+            code="CONNECTION_IN_USE_BY_PROVISIONING",
+            status_code=409,
+        )
+
     result = await database.database_connections.delete_one(
         {"_id": object_id}
     )

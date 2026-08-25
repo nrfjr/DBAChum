@@ -14,6 +14,8 @@ class Permission(str, Enum):
     DBA_OPERATE = "database:operate"
 
     USER_MANAGE = "users:manage"
+    PROVISIONING_MANAGE = "provisioning:manage"
+    LDAP_MANAGE = "ldap:manage"
 
 
 ROLE_PERMISSIONS: dict[
@@ -46,6 +48,8 @@ ROLE_PERMISSIONS: dict[
             Permission.DBA_OPERATE,
 
             Permission.USER_MANAGE,
+            Permission.PROVISIONING_MANAGE,
+            Permission.LDAP_MANAGE,
         }
     ),
 }
