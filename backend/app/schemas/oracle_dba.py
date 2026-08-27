@@ -176,6 +176,12 @@ class OracleReferenceUserResponse(BaseModel):
     )
 
 
+class OracleUsernameAvailabilityResponse(BaseModel):
+    username: str
+    available: bool
+    message: str | None = None
+
+
 class OracleCreateUserRequest(BaseModel):
     username: str = Field(min_length=1, max_length=30)
     password: str = Field(min_length=8, max_length=128)

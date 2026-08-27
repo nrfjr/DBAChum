@@ -548,3 +548,99 @@ class OracleUserDeprovisionResponse(BaseModel):
     deleted_ldap_entries: int = 0
     items: list[OracleUserDeprovisionExecutionItem] = Field(default_factory=list)
     error: str | None = None
+
+
+class BulkProvisionImportRow(BaseModel):
+    row_number: int
+    employee_id: str
+    first_name: str
+    middle_name: str | None = None
+    last_name: str
+    reference_user: str | None = None
+    password: str
+    password_mode: Literal["generated", "provided"]
+    username: str | None = None
+    valid: bool = True
+    errors: dict[str, str] = Field(default_factory=dict)
+
+
+class BulkProvisionImportResponse(BaseModel):
+    filename: str
+    required_headers: list[str] = Field(default_factory=list)
+    optional_headers: list[str] = Field(default_factory=list)
+    row_count: int
+    valid_count: int
+    invalid_count: int
+    rows: list[BulkProvisionImportRow] = Field(default_factory=list)
+
+
+class BulkProvisionRowInput(BaseModel):
+    row_number: int = Field(ge=2)
+    password_mode: Literal["generated", "provided"] = "provided"
+    employee_id: str = Field(min_length=1, max_length=100)
+    first_name: str = Field(min_length=1, max_length=100)
+    middle_name: str | None = Field(default=None, max_length=100)
+    last_name: str = Field(min_length=1, max_length=100)
+    reference_user: str | None = Field(default=None, max_length=30)
+    password: str = Field(min_length=8, max_length=128)
+
+
+class BulkProvisionRequest(BaseModel):
+    profile_id: str | None = Field(default=None, max_length=64)
+    use_common_reference: bool = False
+    common_reference_user: str | None = Field(default=None, max_length=30)
+    requestor: str | None = Field(default=None, max_length=200)
+    request_reference: str | None = Field(default=None, max_length=100)
+    remarks: str | None = Field(default=None, max_length=1000)
+    rows: list[BulkProvisionRowInput] = Field(min_length=1, max_length=500)
+
+    @model_validator(mode="after")
+    def validate_common_reference(self):
+        if self.use_common_reference and not (self.common_reference_user or "").strip():
+            raise ValueError("Select a common reference user when the common-reference option is enabled.")
+        if not self.use_common_reference:
+            self.common_reference_user = None
+        return self
+
+
+class BulkProvisionPreviewRow(BaseModel):
+    row_number: int
+    employee_id: str
+    first_name: str
+    middle_name: str | None = None
+    last_name: str
+    username: str | None = None
+    reference_user: str | None = None
+    password_mode: Literal["generated", "provided"]
+    valid: bool = True
+    errors: dict[str, str] = Field(default_factory=dict)
+    roles: list[str] = Field(default_factory=list)
+    provisioning: ProvisioningPreviewResponse | None = None
+
+
+class BulkProvisionPreviewResponse(BaseModel):
+    ready_to_execute: bool
+    row_count: int
+    valid_count: int
+    invalid_count: int
+    profile_id: str | None = None
+    profile_name: str | None = None
+    rows: list[BulkProvisionPreviewRow] = Field(default_factory=list)
+
+
+class BulkProvisionExecutionRow(BaseModel):
+    row_number: int
+    username: str | None = None
+    status: Literal["succeeded", "partial", "failed"]
+    run_id: str | None = None
+    audit_id: str | None = None
+    error: str | None = None
+
+
+class BulkProvisionExecutionResponse(BaseModel):
+    status: Literal["succeeded", "partial", "failed"]
+    row_count: int
+    succeeded_count: int
+    partial_count: int
+    failed_count: int
+    rows: list[BulkProvisionExecutionRow] = Field(default_factory=list)

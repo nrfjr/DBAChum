@@ -110,6 +110,42 @@ async def oracle_user_exists(
     return row is not None
 
 
+async def find_existing_oracle_users(
+    connection: dict,
+    usernames: list[str],
+) -> set[str]:
+    normalized: list[str] = []
+    for username in usernames:
+        value = normalize_oracle_identifier(username, field_name="Username")
+        if value not in normalized:
+            normalized.append(value)
+
+    if not normalized:
+        return set()
+
+    existing: set[str] = set()
+    async with open_oracle_connection(connection) as oracle_connection:
+        try:
+            # Oracle limits IN lists; keep well below the limit and use binds.
+            for offset in range(0, len(normalized), 500):
+                chunk = normalized[offset:offset + 500]
+                binds = {f"u{i}": value for i, value in enumerate(chunk)}
+                placeholders = ", ".join(f":u{i}" for i in range(len(chunk)))
+                rows = await oracle_connection.fetchall(
+                    f"SELECT username FROM dba_users WHERE username IN ({placeholders})",
+                    binds,
+                )
+                existing.update(str(row[0]).upper() for row in rows)
+        except oracledb.Error as exc:
+            raise AppError(
+                oracle_error_message(exc),
+                code="ORACLE_USER_LOOKUP_FAILED",
+                status_code=400,
+            ) from exc
+
+    return existing
+
+
 
 
 async def count_oracle_rows_by_match(

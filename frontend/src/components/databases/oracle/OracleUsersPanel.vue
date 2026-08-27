@@ -15,6 +15,8 @@ import {
   type OracleUserLifecycleState,
   type OracleUserEditPreview,
 } from '@/stores/oracleDba'
+import OracleBulkProvisionModal from '@/components/databases/oracle/OracleBulkProvisionModal.vue'
+
 import {
   useProvisioningStore,
   type ProvisioningExecutionResult,
@@ -114,7 +116,7 @@ function formatDeprovisionMatch(values: Record<string, string | null>) {
     .join(', ')
 }
 
-type CreateStep = 'details' | 'review' | 'success'
+type CreateStep = 'identity' | 'access' | 'review' | 'success'
 
 interface CreateUserForm {
   username: string
@@ -153,7 +155,7 @@ function emptyCreateForm(): CreateUserForm {
 }
 
 const createOpen = ref(false)
-const createStep = ref<CreateStep>('details')
+const createStep = ref<CreateStep>('identity')
 const createError = ref<string | null>(null)
 const reference = ref<OracleReferenceUser | null>(null)
 const selectedRoles = ref<string[]>([])
@@ -164,6 +166,9 @@ const provisioningResult = ref<ProvisioningExecutionResult | null>(null)
 const previewLoading = ref(false)
 const provisioningExecuting = ref(false)
 const createForm = reactive<CreateUserForm>(emptyCreateForm())
+const createFieldErrors = reactive<Record<string, string>>({})
+const usernameChecking = ref(false)
+const bulkCreateOpen = ref(false)
 
 const historyOpen = ref(false)
 const historyLoading = ref(false)
@@ -638,8 +643,10 @@ const selectedProvisioningProfile = computed(() =>
 
 function resetCreate() {
   Object.assign(createForm, emptyCreateForm())
-  createStep.value = 'details'
+  createStep.value = 'identity'
   createError.value = null
+  Object.keys(createFieldErrors).forEach((key) => delete createFieldErrors[key])
+  usernameChecking.value = false
   reference.value = null
   selectedRoles.value = []
   createResult.value = null
@@ -653,6 +660,15 @@ function resetCreate() {
 function openCreate() {
   resetCreate()
   createOpen.value = true
+}
+
+function openBulkCreate() {
+  bulkCreateOpen.value = true
+}
+
+async function bulkCompleted() {
+  await oracleStore.loadUsers(props.connectionId)
+  await loadProvisioningHistory()
 }
 
 function closeCreate() {
@@ -669,9 +685,67 @@ function normalizePersonName(value: string) {
     .trim()
 }
 
-function normalizeNameField(field: 'firstName' | 'middleName' | 'lastName') {
-  createForm[field] = normalizePersonName(createForm[field])
+function setCreateFieldError(field: string, message: string | null) {
+  if (message) createFieldErrors[field] = message
+  else delete createFieldErrors[field]
 }
+
+function validateIdentityFields() {
+  let valid = true
+  const fields: Array<[keyof Pick<CreateUserForm, 'employeeId' | 'firstName' | 'middleName' | 'lastName'>, string, boolean]> = [
+    ['employeeId', 'Employee ID', true],
+    ['firstName', 'First name', true],
+    ['middleName', 'Middle name', false],
+    ['lastName', 'Last name', true],
+  ]
+
+  for (const [field, label, required] of fields) {
+    const raw = createForm[field].trim()
+    if (required && !raw) {
+      setCreateFieldError(field, `${label} is required.`)
+      valid = false
+      continue
+    }
+    if (!raw) {
+      setCreateFieldError(field, null)
+      continue
+    }
+    if (field === 'employeeId') {
+      if (!/^[A-Za-z0-9]+$/.test(raw)) {
+        setCreateFieldError(field, 'Employee ID must contain letters and numbers only.')
+        valid = false
+      } else {
+        setCreateFieldError(field, null)
+      }
+    } else if (!/^[A-Za-z ]+$/.test(raw)) {
+      setCreateFieldError(field, `${label} must contain letters and spaces only.`)
+      valid = false
+    } else {
+      setCreateFieldError(field, null)
+    }
+  }
+  return valid
+}
+
+const identityReady = computed(() =>
+  Boolean(
+    createForm.employeeId.trim()
+      && createForm.firstName.trim()
+      && createForm.lastName.trim()
+      && /^[A-Za-z0-9]+$/.test(createForm.employeeId.trim())
+      && /^[A-Za-z ]+$/.test(createForm.firstName.trim())
+      && /^[A-Za-z ]+$/.test(createForm.lastName.trim())
+      && (!createForm.middleName.trim() || /^[A-Za-z ]+$/.test(createForm.middleName.trim())),
+  ),
+)
+
+function identityInput(field: 'employeeId' | 'firstName' | 'middleName' | 'lastName') {
+  setCreateFieldError(field, null)
+  createForm.username = ''
+  setCreateFieldError('username', null)
+  createError.value = null
+}
+
 
 function cleanUsernamePart(value: string) {
   return normalizePersonName(value)
@@ -697,37 +771,105 @@ function randomCharacter(source: string) {
 
 function generatePassword() {
   createForm.password = generatedPassword()
+  setCreateFieldError('password', null)
   showPassword.value = true
 }
 
 function generateUsername() {
   createError.value = null
+  setCreateFieldError('username', null)
+  if (!validateIdentityFields()) {
+    createForm.username = ''
+    return
+  }
 
   const first = cleanUsernamePart(createForm.firstName)
   const middle = cleanUsernamePart(createForm.middleName)
   const last = cleanUsernamePart(createForm.lastName)
   const employeeId = cleanEmployeeIdPart(createForm.employeeId)
-
-  if (!first || !last || !employeeId) {
-    createError.value =
-      'First name, last name and ID are required to generate a username.'
-    return
-  }
-
-  const generated = [
-    first.charAt(0),
-    middle ? middle.charAt(0) : '',
-    last,
-    employeeId,
-  ].join('')
+  const generated = [first.charAt(0), middle ? middle.charAt(0) : '', last, employeeId].join('')
 
   if (generated.length > 30) {
-    createError.value =
-      'Generated username exceeds the 30-character Oracle compatibility limit.'
+    createForm.username = ''
+    setCreateFieldError('username', 'Generated username exceeds the 30-character Oracle compatibility limit.')
     return
   }
-
+  createForm.firstName = normalizePersonName(createForm.firstName)
+  createForm.middleName = normalizePersonName(createForm.middleName)
+  createForm.lastName = normalizePersonName(createForm.lastName)
+  createForm.employeeId = cleanEmployeeIdPart(createForm.employeeId)
   createForm.username = generated
+}
+
+async function continueIdentity() {
+  createError.value = null
+  if (!validateIdentityFields()) return
+  if (!createForm.username) {
+    setCreateFieldError('username', 'Generate the username after entering the required identity fields.')
+    return
+  }
+  usernameChecking.value = true
+  try {
+    const result = await oracleStore.checkUsernameAvailability(props.connectionId, createForm.username)
+    if (!result.available) {
+      setCreateFieldError('username', result.message || 'This Oracle username already exists.')
+      return
+    }
+    setCreateFieldError('username', null)
+    createStep.value = 'access'
+  } catch (error) {
+    setCreateFieldError('username', error instanceof Error ? error.message : 'Unable to validate the generated username.')
+  } finally {
+    usernameChecking.value = false
+  }
+}
+
+async function inspectReferenceAccess() {
+  createError.value = null
+  setCreateFieldError('referenceUsername', null)
+  const referenceUsername = createForm.referenceUsername.trim().toUpperCase()
+  if (!referenceUsername) {
+    reference.value = null
+    selectedRoles.value = []
+    return true
+  }
+
+  try {
+    const inspected = await oracleStore.loadReferenceUser(
+      props.connectionId,
+      referenceUsername,
+    )
+    reference.value = inspected
+    createForm.referenceUsername = inspected.username
+    selectedRoles.value = inspected.roles
+      .filter((role) => !role.sensitive)
+      .map((role) => role.name)
+
+    if (!createForm.defaultTablespace) {
+      createForm.defaultTablespace = inspected.default_tablespace ?? ''
+    }
+    if (!createForm.temporaryTablespace) {
+      createForm.temporaryTablespace = inspected.temporary_tablespace ?? ''
+    }
+    if (!createForm.profile) {
+      createForm.profile = inspected.profile ?? ''
+    }
+    return true
+  } catch (error) {
+    setCreateFieldError(
+      'referenceUsername',
+      error instanceof Error ? error.message : 'Unable to inspect the reference user.',
+    )
+    reference.value = null
+    selectedRoles.value = []
+    return false
+  }
+}
+
+function referenceInput() {
+  setCreateFieldError('referenceUsername', null)
+  reference.value = null
+  selectedRoles.value = []
 }
 
 async function reviewCreate() {
@@ -745,10 +887,14 @@ async function reviewCreate() {
   }
 
   if (createForm.password.length < 8) {
-    createError.value =
-      'Password must contain at least 8 characters.'
+    setCreateFieldError('password', 'Password must contain at least 8 characters.')
     return
   }
+  if (createForm.password.includes('"') || [...createForm.password].some((character) => character.charCodeAt(0) < 32)) {
+    setCreateFieldError('password', 'Password cannot contain double quotes or control characters.')
+    return
+  }
+  setCreateFieldError('password', null)
 
   createForm.firstName = normalizePersonName(createForm.firstName)
   createForm.middleName = normalizePersonName(createForm.middleName)
@@ -762,26 +908,9 @@ async function reviewCreate() {
 
   try {
     if (referenceUsername) {
-      const inspected = await oracleStore.loadReferenceUser(
-        props.connectionId,
-        referenceUsername,
-      )
-
-      reference.value = inspected
-      createForm.referenceUsername = inspected.username
-
-      selectedRoles.value = inspected.roles
-        .filter((role) => !role.sensitive)
-        .map((role) => role.name)
-
-      if (!createForm.defaultTablespace) {
-        createForm.defaultTablespace = inspected.default_tablespace ?? ''
-      }
-      if (!createForm.temporaryTablespace) {
-        createForm.temporaryTablespace = inspected.temporary_tablespace ?? ''
-      }
-      if (!createForm.profile) {
-        createForm.profile = inspected.profile ?? ''
+      if (reference.value?.username !== referenceUsername) {
+        const loaded = await inspectReferenceAccess()
+        if (!loaded) return
       }
     } else {
       reference.value = null
@@ -790,7 +919,7 @@ async function reviewCreate() {
 
     if (createForm.provisioningProfileId) {
       previewLoading.value = true
-      provisioningPreview.value = await provisioningStore.previewForConnection(
+      const builtPreview = await provisioningStore.previewForConnection(
         props.connectionId,
         createForm.provisioningProfileId,
         {
@@ -806,15 +935,18 @@ async function reviewCreate() {
           remarks: createForm.remarks.trim() || null,
         },
       )
-      createForm.username = provisioningPreview.value.username
+      provisioningPreview.value = builtPreview
+      createForm.username = builtPreview.username
     }
 
     createStep.value = 'review'
   } catch (error) {
-    createError.value =
-      error instanceof Error
-        ? error.message
-        : 'Unable to build the user creation review.'
+    const message = error instanceof Error ? error.message : 'Unable to build the user creation review.'
+    if (createForm.referenceUsername.trim() && /reference/i.test(message)) {
+      setCreateFieldError('referenceUsername', message)
+    } else {
+      createError.value = message
+    }
   } finally {
     previewLoading.value = false
   }
@@ -897,8 +1029,9 @@ function createAnotherUser() {
   const provisioningProfileId = createForm.provisioningProfileId
   Object.assign(createForm, emptyCreateForm())
   createForm.provisioningProfileId = provisioningProfileId
-  createStep.value = 'details'
+  createStep.value = 'identity'
   createError.value = null
+  Object.keys(createFieldErrors).forEach((key) => delete createFieldErrors[key])
   reference.value = null
   selectedRoles.value = []
   createResult.value = null
@@ -1009,6 +1142,14 @@ onBeforeUnmount(() => {
           @click="openCreate"
         >
           Create user
+        </button>
+
+        <button
+          type="button"
+          class="secondary-button"
+          @click="openBulkCreate"
+        >
+          Bulk create
         </button>
 
         <button
@@ -1755,15 +1896,16 @@ onBeforeUnmount(() => {
         <div class="modal-header">
           <div>
             <h2>Create Oracle user</h2>
-            <p v-if="createStep === 'details'">
-              Define the account and optionally inspect a reference user.
+            <p v-if="createStep === 'identity'">
+              Enter the identity fields that determine the Oracle username.
+            </p>
+            <p v-else-if="createStep === 'access'">
+              Configure password, reference access and application provisioning.
             </p>
             <p v-else-if="createStep === 'review'">
               Review exactly what DBAChum will change before execution.
             </p>
-            <p v-else>
-              Provisioning completed.
-            </p>
+            <p v-else>Provisioning completed.</p>
           </div>
 
           <button
@@ -1776,11 +1918,103 @@ onBeforeUnmount(() => {
           </button>
         </div>
 
+        <div class="wizard-steps single-create-steps" aria-label="Create user progress">
+          <span :class="{ active: createStep === 'identity' }">1 · Identity</span>
+          <span :class="{ active: createStep === 'access' }">2 · Access</span>
+          <span :class="{ active: createStep === 'review' }">3 · Preview</span>
+        </div>
+
         <form
-          v-if="createStep === 'details'"
+          v-if="createStep === 'identity'"
+          class="connection-form oracle-user-form"
+          @submit.prevent="continueIdentity"
+        >
+          <label :class="{ 'field-invalid': createFieldErrors.employeeId }">
+            Employee ID
+            <input
+              v-model="createForm.employeeId"
+              required
+              maxlength="100"
+              autocomplete="off"
+              placeholder="12345"
+              @input="identityInput('employeeId')"
+            />
+            <small v-if="createFieldErrors.employeeId" class="field-error">{{ createFieldErrors.employeeId }}</small>
+          </label>
+
+          <div class="connection-form-row">
+            <label :class="{ 'field-invalid': createFieldErrors.firstName }">
+              First name
+              <input
+                v-model="createForm.firstName"
+                required
+                maxlength="100"
+                autocomplete="off"
+                @input="identityInput('firstName')"
+              />
+              <small v-if="createFieldErrors.firstName" class="field-error">{{ createFieldErrors.firstName }}</small>
+            </label>
+
+            <label :class="{ 'field-invalid': createFieldErrors.lastName }">
+              Last name
+              <input
+                v-model="createForm.lastName"
+                required
+                maxlength="100"
+                autocomplete="off"
+                @input="identityInput('lastName')"
+              />
+              <small v-if="createFieldErrors.lastName" class="field-error">{{ createFieldErrors.lastName }}</small>
+            </label>
+          </div>
+
+          <label :class="{ 'field-invalid': createFieldErrors.middleName }">
+            Middle name <span class="optional-label">Optional</span>
+            <input
+              v-model="createForm.middleName"
+              maxlength="100"
+              autocomplete="off"
+              @input="identityInput('middleName')"
+            />
+            <small v-if="createFieldErrors.middleName" class="field-error">{{ createFieldErrors.middleName }}</small>
+          </label>
+
+          <div class="username-generation-block" :class="{ 'field-invalid': createFieldErrors.username }">
+            <div>
+              <strong>Generated username</strong>
+              <small>DBAChum uses first initial + optional middle initial + last name + employee ID.</small>
+            </div>
+            <input
+              :value="createForm.username"
+              readonly
+              autocomplete="off"
+              placeholder="Enter identity details, then generate"
+            />
+            <small v-if="createFieldErrors.username" class="field-error">{{ createFieldErrors.username }}</small>
+            <button type="button" class="secondary-button" :disabled="!identityReady" @click="generateUsername">
+              {{ createForm.username ? 'Regenerate username' : 'Generate username' }}
+            </button>
+          </div>
+
+          <p v-if="createError" class="login-error">{{ createError }}</p>
+          <div class="connection-form-actions">
+            <button type="submit" class="primary-button" :disabled="usernameChecking || !createForm.username">
+              {{ usernameChecking ? 'Checking username...' : 'Next' }}
+            </button>
+            <button type="button" class="secondary-button" @click="closeCreate">Cancel</button>
+          </div>
+        </form>
+
+        <form
+          v-else-if="createStep === 'access'"
           class="connection-form oracle-user-form"
           @submit.prevent="reviewCreate"
         >
+          <div class="preview-callout identity-confirmation">
+            <div><span>Username</span><strong>{{ createForm.username }}</strong></div>
+            <div><span>Employee</span><strong>{{ [createForm.firstName, createForm.middleName, createForm.lastName].filter(Boolean).join(' ') }} · {{ createForm.employeeId }}</strong></div>
+          </div>
+
           <label>
             Application provisioning
             <select v-model="createForm.provisioningProfileId">
@@ -1794,68 +2028,15 @@ onBeforeUnmount(() => {
                 {{ profile.name }}{{ profile.ready ? '' : ' · Needs attention' }}
               </option>
             </select>
-            <small>Only provisioning profiles whose parent database connection is this database appear here. Each profile may use separate application connections for its table steps.</small>
+            <small>Only profiles enabled for this parent Oracle database appear here.</small>
           </label>
 
-          <div
-            v-if="selectedProvisioningProfile && !selectedProvisioningProfile.ready"
-            class="utility-warning oracle-create-warning"
-          >
+          <div v-if="selectedProvisioningProfile && !selectedProvisioningProfile.ready" class="utility-warning oracle-create-warning">
             {{ selectedProvisioningProfile.issues.join(' ') }}
           </div>
 
-          <label>
-            Username
-
-            <input
-              v-model="createForm.username"
-              required
-              maxlength="30"
-              autocomplete="off"
-              placeholder="JMSANTOS12345"
-            />
-          </label>
-
-          <details class="oracle-username-generator">
-            <summary>Generate from employee details</summary>
-
-            <div class="connection-form-row">
-              <label>
-                First name
-                <input v-model="createForm.firstName" autocomplete="off" @blur="normalizeNameField('firstName')" />
-              </label>
-
-              <label>
-                Middle name
-                <span class="optional-label">Optional</span>
-                <input v-model="createForm.middleName" autocomplete="off" @blur="normalizeNameField('middleName')" />
-              </label>
-            </div>
-
-            <div class="connection-form-row">
-              <label>
-                Last name
-                <input v-model="createForm.lastName" autocomplete="off" @blur="normalizeNameField('lastName')" />
-              </label>
-
-              <label>
-                ID
-                <input v-model="createForm.employeeId" autocomplete="off" />
-              </label>
-            </div>
-
-            <button
-              type="button"
-              class="secondary-button"
-              @click="generateUsername"
-            >
-              Generate username
-            </button>
-          </details>
-
-          <label>
+          <label :class="{ 'field-invalid': createFieldErrors.password }">
             Initial password
-
             <input
               v-model="createForm.password"
               required
@@ -1864,139 +2045,100 @@ onBeforeUnmount(() => {
               maxlength="128"
               autocomplete="new-password"
               placeholder="At least 8 characters"
+              @input="setCreateFieldError('password', null)"
             />
-
+            <small v-if="createFieldErrors.password" class="field-error">{{ createFieldErrors.password }}</small>
             <span class="oracle-password-actions">
-              <button
-                type="button"
-                class="secondary-button"
-                @click="generatePassword"
-              >
-                Generate password
-              </button>
-
-              <button
-                type="button"
-                class="secondary-button"
-                @click="showPassword = !showPassword"
-              >
-                {{ showPassword ? 'Hide password' : 'Show password' }}
-              </button>
+              <button type="button" class="secondary-button" @click="generatePassword">Generate password</button>
+              <button type="button" class="secondary-button" @click="showPassword = !showPassword">{{ showPassword ? 'Hide password' : 'Show password' }}</button>
             </span>
-
-            <small>
-              Type the requested custom password, or use Generate password for the current 3-letter + 5-digit pattern.
-            </small>
+            <small>Type the requested custom password, or generate the current 3-letter + 5-digit pattern.</small>
           </label>
 
-          <label>
-            Reference user
-            <span class="optional-label">Optional</span>
-
+          <label :class="{ 'field-invalid': createFieldErrors.referenceUsername }">
+            Reference user <span class="optional-label">Optional</span>
             <input
               v-model="createForm.referenceUsername"
               maxlength="30"
               autocomplete="off"
               placeholder="Existing user whose roles should be reviewed"
+              @input="referenceInput"
             />
-
-            <small>
-              DBAChum copies only the roles you approve on the review screen.
-              Direct system privileges are never copied in this phase.
-            </small>
-          </label>
-
-          <div class="connection-form-row">
-            <label>
-              Default tablespace
-              <span class="optional-label">Optional</span>
-              <input
-                v-model="createForm.defaultTablespace"
-                maxlength="30"
-                placeholder="Uses reference/default when blank"
-              />
-            </label>
-
-            <label>
-              Temporary tablespace
-              <span class="optional-label">Optional</span>
-              <input
-                v-model="createForm.temporaryTablespace"
-                maxlength="30"
-                placeholder="Uses reference/default when blank"
-              />
-            </label>
-          </div>
-
-          <label>
-            Profile
-            <span class="optional-label">Optional</span>
-            <input
-              v-model="createForm.profile"
-              maxlength="30"
-              placeholder="Uses reference/default when blank"
-            />
-          </label>
-
-          <div class="connection-form-row">
-            <label>
-              Requestor
-              <span class="optional-label">Optional</span>
-              <input
-                v-model="createForm.requestorName"
-                maxlength="200"
-                placeholder="Requestor full name"
-              />
-            </label>
-
-            <label>
-              Request / ticket reference
-              <span class="optional-label">Optional</span>
-              <input
-                v-model="createForm.requestReference"
-                maxlength="100"
-                placeholder="REQ-12345"
-              />
-            </label>
-          </div>
-
-          <label>
-            Remarks
-            <span class="optional-label">Optional</span>
-            <textarea
-              v-model="createForm.remarks"
-              rows="3"
-              maxlength="1000"
-              placeholder="Reason, access note, or provisioning remarks"
-            ></textarea>
-          </label>
-
-          <p v-if="createError" class="login-error">
-            {{ createError }}
-          </p>
-
-          <div class="connection-form-actions">
+            <small v-if="createFieldErrors.referenceUsername" class="field-error">{{ createFieldErrors.referenceUsername }}</small>
+            <small>Leave blank when no reference user is needed. Direct system privileges are never copied.</small>
             <button
-              type="submit"
-              class="primary-button"
-              :disabled="oracleStore.loadingReference || previewLoading"
-            >
-              {{
-                previewLoading
-                  ? 'Building provisioning preview...'
-                  : oracleStore.loadingReference
-                    ? 'Inspecting reference...'
-                    : 'Review'
-              }}
-            </button>
-
-            <button
+              v-if="createForm.referenceUsername.trim()"
               type="button"
-              class="secondary-button"
-              @click="closeCreate"
+              class="secondary-button reference-inspect-button"
+              :disabled="oracleStore.loadingReference"
+              @click="inspectReferenceAccess"
             >
-              Cancel
+              {{ oracleStore.loadingReference ? 'Inspecting access...' : reference ? 'Reload reference access' : 'Inspect reference access' }}
             </button>
+          </label>
+
+          <section v-if="reference" class="oracle-role-review access-role-selection">
+            <div>
+              <h3>Reference roles</h3>
+              <p>Select the roles to copy before moving to Preview. ADMIN OPTION is intentionally not copied.</p>
+            </div>
+            <div v-if="reference.roles.length === 0" class="empty-state">Reference user has no role grants.</div>
+            <template v-else>
+              <label
+                v-for="role in reference.roles"
+                :key="role.name"
+                class="oracle-role-option"
+                :class="{ blocked: role.sensitive }"
+              >
+                <input
+                  type="checkbox"
+                  :checked="roleSelected(role.name)"
+                  :disabled="role.sensitive"
+                  @change="handleRoleToggle(role.name, $event)"
+                />
+                <span>
+                  <strong>{{ role.name }}</strong>
+                  <small>
+                    {{ role.default_role ? 'Default role' : 'Non-default role' }}
+                    <template v-if="role.admin_option"> · ADMIN OPTION on reference</template>
+                    <template v-if="role.sensitive"> · blocked as sensitive</template>
+                  </small>
+                </span>
+              </label>
+            </template>
+          </section>
+
+          <div v-for="warning in reference?.warnings ?? []" :key="warning" class="utility-warning oracle-create-warning">
+            {{ warning }}
+          </div>
+
+          <section v-if="reference?.system_privileges.length" class="oracle-system-privileges access-system-privileges">
+            <h3>Direct system privileges — review only</h3>
+            <p>Visible for comparison only; DBAChum will not grant these automatically.</p>
+            <div class="oracle-privilege-list">
+              <span v-for="privilege in reference.system_privileges" :key="privilege.name">
+                {{ privilege.name }}<template v-if="privilege.admin_option"> · ADMIN OPTION</template>
+              </span>
+            </div>
+          </section>
+
+          <div class="connection-form-row">
+            <label>Default tablespace <span class="optional-label">Optional</span><input v-model="createForm.defaultTablespace" maxlength="30" placeholder="Uses reference/default when blank" /></label>
+            <label>Temporary tablespace <span class="optional-label">Optional</span><input v-model="createForm.temporaryTablespace" maxlength="30" placeholder="Uses reference/default when blank" /></label>
+          </div>
+          <label>Profile <span class="optional-label">Optional</span><input v-model="createForm.profile" maxlength="30" placeholder="Uses reference/default when blank" /></label>
+          <div class="connection-form-row">
+            <label>Requestor <span class="optional-label">Optional</span><input v-model="createForm.requestorName" maxlength="200" placeholder="Requestor full name" /></label>
+            <label>Request / ticket reference <span class="optional-label">Optional</span><input v-model="createForm.requestReference" maxlength="100" placeholder="REQ-12345" /></label>
+          </div>
+          <label>Remarks <span class="optional-label">Optional</span><textarea v-model="createForm.remarks" rows="3" maxlength="1000" placeholder="Reason, access note, or provisioning remarks"></textarea></label>
+
+          <p v-if="createError" class="login-error">{{ createError }}</p>
+          <div class="connection-form-actions">
+            <button type="submit" class="primary-button" :disabled="oracleStore.loadingReference || previewLoading">
+              {{ previewLoading ? 'Building preview...' : oracleStore.loadingReference ? 'Inspecting reference...' : 'Next' }}
+            </button>
+            <button type="button" class="secondary-button" :disabled="previewLoading" @click="createStep = 'identity'">Back</button>
           </div>
         </form>
 
@@ -2036,72 +2178,14 @@ onBeforeUnmount(() => {
             </div>
           </div>
 
-          <section v-if="reference" class="oracle-role-review">
+          <section v-if="reference" class="oracle-role-review role-preview-summary">
             <div>
-              <h3>Reference roles</h3>
-              <p>
-                Select the roles to copy. ADMIN OPTION is intentionally not copied.
-              </p>
+              <h3>Roles to grant</h3>
+              <p>The role selection was made in Access. Go Back if it needs to change.</p>
             </div>
-
-            <div
-              v-if="reference.roles.length === 0"
-              class="empty-state"
-            >
-              Reference user has no role grants.
-            </div>
-
-            <template v-else>
-              <label
-                v-for="role in reference.roles"
-                :key="role.name"
-                class="oracle-role-option"
-                :class="{ blocked: role.sensitive }"
-              >
-                <input
-                  type="checkbox"
-                  :checked="roleSelected(role.name)"
-                  :disabled="role.sensitive"
-                  @change="handleRoleToggle(role.name, $event)"
-                />
-
-                <span>
-                  <strong>{{ role.name }}</strong>
-                  <small>
-                    {{ role.default_role ? 'Default role' : 'Non-default role' }}
-                    <template v-if="role.admin_option"> · ADMIN OPTION on reference</template>
-                    <template v-if="role.sensitive"> · blocked as sensitive</template>
-                  </small>
-                </span>
-              </label>
-            </template>
-          </section>
-
-          <div
-            v-for="warning in reference?.warnings ?? []"
-            :key="warning"
-            class="utility-warning oracle-create-warning"
-          >
-            {{ warning }}
-          </div>
-
-          <section
-            v-if="reference?.system_privileges.length"
-            class="oracle-system-privileges"
-          >
-            <h3>Direct system privileges — review only</h3>
-            <p>
-              These are visible so you can compare access, but DBAChum will not grant them automatically.
-            </p>
-
-            <div class="oracle-privilege-list">
-              <span
-                v-for="privilege in reference.system_privileges"
-                :key="privilege.name"
-              >
-                {{ privilege.name }}
-                <template v-if="privilege.admin_option"> · ADMIN OPTION</template>
-              </span>
+            <div v-if="selectedRoles.length === 0" class="empty-state">No reference roles selected.</div>
+            <div v-else class="oracle-privilege-list">
+              <span v-for="roleName in selectedRoles" :key="roleName">{{ roleName }}</span>
             </div>
           </section>
 
@@ -2159,13 +2243,12 @@ onBeforeUnmount(() => {
               <p v-if="provisioningPreview.table_steps.length === 0" class="empty-state">No application-table steps are configured.</p>
             </section>
 
-            <section class="preview-section">
+            <section v-if="provisioningPreview.ldap.enabled" class="preview-section">
               <h3>LDAP</h3>
-              <p v-if="provisioningPreview.ldap.enabled">
+              <p>
                 {{ provisioningPreview.ldap.profile_name }} · directory entry will be added automatically · LDIF validated as
                 <strong>{{ provisioningPreview.ldap.filename }}</strong>
               </p>
-              <p v-else>LDAP is not enabled for this provisioning profile.</p>
             </section>
 
             <div v-if="provisioningPreview.warnings.length" class="utility-warning oracle-create-warning">
@@ -2217,7 +2300,7 @@ onBeforeUnmount(() => {
               type="button"
               class="secondary-button"
               :disabled="oracleStore.creatingUser || provisioningExecuting"
-              @click="createStep = 'details'"
+              @click="createStep = 'access'"
             >
               Back
             </button>
@@ -2313,6 +2396,13 @@ onBeforeUnmount(() => {
         </div>
       </section>
     </div>
+
+    <OracleBulkProvisionModal
+      v-if="bulkCreateOpen"
+      :connection-id="connectionId"
+      @close="bulkCreateOpen = false"
+      @completed="bulkCompleted"
+    />
   </section>
 </template>
 
@@ -2346,4 +2436,20 @@ onBeforeUnmount(() => {
 .provisioning-result-steps { display: grid; gap: .5rem; width: 100%; margin: .6rem 0; }
 .provisioning-result-steps > div { display: grid; gap: .2rem; padding: .65rem .75rem; border: 1px solid var(--border-color); border-radius: .6rem; }
 .provisioning-result-steps span, .provisioning-result-steps small { opacity: .78; }
+
+.wizard-steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .5rem; margin-bottom: 1rem; }
+.wizard-steps span { padding: .55rem .7rem; border: 1px solid var(--border-color); border-radius: .6rem; font-size: .82rem; opacity: .62; text-align: center; }
+.wizard-steps span.active { opacity: 1; font-weight: 700; border-color: var(--accent); }
+.field-invalid input, .field-invalid select, .field-invalid textarea, .username-generation-block.field-invalid input { border-color: var(--color-danger) !important; box-shadow: 0 0 0 1px var(--color-danger); }
+.field-error { color: var(--color-danger); font-size: .75rem; }
+.username-generation-block { display: grid; gap: .55rem; padding: .85rem; border: 1px solid var(--border-color); border-radius: .7rem; }
+.username-generation-block > div { display: grid; gap: .2rem; }
+.username-generation-block button { justify-self: start; }
+.reference-inspect-button { align-self: start; margin-top: .35rem; }
+.access-role-selection, .access-system-privileges { margin-top: .25rem; }
+.role-preview-summary .oracle-privilege-list { margin-top: .45rem; }
+.identity-confirmation { display: grid; grid-template-columns: 1fr 2fr; gap: .7rem; }
+.identity-confirmation > div { display: grid; gap: .15rem; }
+.identity-confirmation span { font-size: .78rem; opacity: .7; }
+@media (max-width: 700px) { .wizard-steps, .identity-confirmation { grid-template-columns: 1fr; } }
 </style>

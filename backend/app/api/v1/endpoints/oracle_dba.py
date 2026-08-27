@@ -1,7 +1,9 @@
 from fastapi import (
     APIRouter,
     Depends,
+    File,
     Request,
+    UploadFile,
 )
 
 from app.schemas.oracle_dba import (
@@ -20,6 +22,7 @@ from app.schemas.oracle_dba import (
     OracleUserPasswordResetRequest,
     OracleUserAccountActionRequest,
     OracleUserLifecycleActionResponse,
+    OracleUsernameAvailabilityResponse,
 )
 from app.schemas.provisioning import (
     ProvisioningExecuteRequest,
@@ -35,6 +38,10 @@ from app.schemas.provisioning import (
     OracleUserDeprovisionPreviewResponse,
     OracleUserDeprovisionRequest,
     OracleUserDeprovisionResponse,
+    BulkProvisionImportResponse,
+    BulkProvisionRequest,
+    BulkProvisionPreviewResponse,
+    BulkProvisionExecutionResponse,
 )
 from app.schemas.user import UserResponse
 from app.services.oracle_dba import (
@@ -44,8 +51,10 @@ from app.services.oracle_dba import (
     load_oracle_users,
     load_oracle_reference_user,
     provision_oracle_user,
+    get_oracle_target,
 )
 from app.services.provisioning import list_provisioning_profiles_for_connection
+from app.connectors.oracle_provisioning import normalize_oracle_identifier, oracle_user_exists
 from app.services.oracle_user_lifecycle import (
     load_oracle_user_lifecycle_state,
     build_oracle_user_edit_preview,
@@ -54,6 +63,11 @@ from app.services.oracle_user_lifecycle import (
     execute_oracle_user_lifecycle_action,
 )
 from app.services.provisioning_preview import build_provisioning_preview
+from app.services.bulk_provisioning import (
+    execute_bulk_provisioning,
+    import_bulk_provision_file,
+    preview_bulk_provisioning,
+)
 from app.services.provisioning_execution import execute_provisioning_profile
 from app.services.deprovisioning import (
     build_oracle_user_deprovision_preview,
@@ -135,6 +149,87 @@ async def get_database_users(
         request.app.state.database,
         connection_id,
     )
+
+@router.get(
+    "/{connection_id}/oracle/users/{username}/availability",
+    response_model=OracleUsernameAvailabilityResponse,
+)
+async def get_oracle_username_availability(
+    connection_id: str,
+    username: str,
+    request: Request,
+    current_user: UserResponse = Depends(
+        require_permission(Permission.DBA_OPERATE)
+    ),
+):
+    normalized = normalize_oracle_identifier(username, field_name="Username")
+    connection = await get_oracle_target(request.app.state.database, connection_id)
+    exists = await oracle_user_exists(connection, normalized)
+    return OracleUsernameAvailabilityResponse(
+        username=normalized,
+        available=not exists,
+        message=None if not exists else "This Oracle username already exists.",
+    )
+
+
+@router.post(
+    "/{connection_id}/oracle/bulk-provision/import",
+    response_model=BulkProvisionImportResponse,
+)
+async def import_oracle_bulk_provision_file(
+    connection_id: str,
+    request: Request,
+    file: UploadFile = File(...),
+    current_user: UserResponse = Depends(
+        require_permission(Permission.DBA_OPERATE)
+    ),
+):
+    return await import_bulk_provision_file(
+        request.app.state.database, connection_id, file
+    )
+
+
+@router.post(
+    "/{connection_id}/oracle/bulk-provision/preview",
+    response_model=BulkProvisionPreviewResponse,
+)
+async def preview_oracle_bulk_provisioning(
+    connection_id: str,
+    data: BulkProvisionRequest,
+    request: Request,
+    current_user: UserResponse = Depends(
+        require_permission(Permission.DBA_OPERATE)
+    ),
+):
+    return await preview_bulk_provisioning(
+        request.app.state.database,
+        connection_id,
+        data,
+        current_user,
+        requester_ip=request.client.host if request.client else None,
+    )
+
+
+@router.post(
+    "/{connection_id}/oracle/bulk-provision/execute",
+    response_model=BulkProvisionExecutionResponse,
+)
+async def execute_oracle_bulk_provisioning(
+    connection_id: str,
+    data: BulkProvisionRequest,
+    request: Request,
+    current_user: UserResponse = Depends(
+        require_permission(Permission.DBA_OPERATE)
+    ),
+):
+    return await execute_bulk_provisioning(
+        request.app.state.database,
+        connection_id,
+        data,
+        current_user,
+        requester_ip=request.client.host if request.client else None,
+    )
+
 
 @router.get(
     "/{connection_id}/oracle/users/{username}/lifecycle",

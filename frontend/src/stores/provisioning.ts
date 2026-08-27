@@ -277,6 +277,95 @@ export interface OracleUserDeprovisionResult {
   error: string | null
 }
 
+
+export interface BulkProvisionImportRow {
+  row_number: number
+  employee_id: string
+  first_name: string
+  middle_name: string | null
+  last_name: string
+  reference_user: string | null
+  password: string
+  password_mode: 'generated' | 'provided'
+  username: string | null
+  valid: boolean
+  errors: Record<string, string>
+}
+
+export interface BulkProvisionImportResult {
+  filename: string
+  required_headers: string[]
+  optional_headers: string[]
+  row_count: number
+  valid_count: number
+  invalid_count: number
+  rows: BulkProvisionImportRow[]
+}
+
+export interface BulkProvisionRowInput {
+  row_number: number
+  password_mode: 'generated' | 'provided'
+  employee_id: string
+  first_name: string
+  middle_name: string | null
+  last_name: string
+  reference_user: string | null
+  password: string
+}
+
+export interface BulkProvisionRequest {
+  profile_id: string | null
+  use_common_reference: boolean
+  common_reference_user: string | null
+  requestor: string | null
+  request_reference: string | null
+  remarks: string | null
+  rows: BulkProvisionRowInput[]
+}
+
+export interface BulkProvisionPreviewRow {
+  row_number: number
+  employee_id: string
+  first_name: string
+  middle_name: string | null
+  last_name: string
+  username: string | null
+  reference_user: string | null
+  password_mode: 'generated' | 'provided'
+  valid: boolean
+  errors: Record<string, string>
+  roles: string[]
+  provisioning: ProvisioningPreviewResult | null
+}
+
+export interface BulkProvisionPreviewResult {
+  ready_to_execute: boolean
+  row_count: number
+  valid_count: number
+  invalid_count: number
+  profile_id: string | null
+  profile_name: string | null
+  rows: BulkProvisionPreviewRow[]
+}
+
+export interface BulkProvisionExecutionRow {
+  row_number: number
+  username: string | null
+  status: 'succeeded' | 'partial' | 'failed'
+  run_id: string | null
+  audit_id: string | null
+  error: string | null
+}
+
+export interface BulkProvisionExecutionResult {
+  status: 'succeeded' | 'partial' | 'failed'
+  row_count: number
+  succeeded_count: number
+  partial_count: number
+  failed_count: number
+  rows: BulkProvisionExecutionRow[]
+}
+
 export interface ProvisioningSourceOption {
   key: string
   label: string
@@ -365,6 +454,25 @@ async function apiRequest<T>(
 
   return response.json()
 }
+
+async function apiFormRequest<T>(path: string, form: FormData): Promise<T> {
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    method: 'POST',
+    credentials: 'include',
+    body: form,
+  })
+
+  if (!response.ok) {
+    const body = await response.json().catch(() => null)
+    throw new Error(
+      body?.error?.message ??
+        `Request failed with status ${response.status}`,
+    )
+  }
+
+  return response.json() as Promise<T>
+}
+
 
 export const useProvisioningStore = defineStore('provisioning', {
   state: () => ({
@@ -466,6 +574,29 @@ export const useProvisioningStore = defineStore('provisioning', {
     ) {
       return apiRequest<ProvisioningExecutionResult>(
         `/databases/${connectionId}/oracle/provisioning-profiles/${profileId}/execute`,
+        { method: 'POST', body: JSON.stringify(data) },
+      )
+    },
+
+    async importBulkFile(connectionId: string, file: File) {
+      const form = new FormData()
+      form.append('file', file)
+      return apiFormRequest<BulkProvisionImportResult>(
+        `/databases/${connectionId}/oracle/bulk-provision/import`,
+        form,
+      )
+    },
+
+    async previewBulk(connectionId: string, data: BulkProvisionRequest) {
+      return apiRequest<BulkProvisionPreviewResult>(
+        `/databases/${connectionId}/oracle/bulk-provision/preview`,
+        { method: 'POST', body: JSON.stringify(data) },
+      )
+    },
+
+    async executeBulk(connectionId: string, data: BulkProvisionRequest) {
+      return apiRequest<BulkProvisionExecutionResult>(
+        `/databases/${connectionId}/oracle/bulk-provision/execute`,
         { method: 'POST', body: JSON.stringify(data) },
       )
     },

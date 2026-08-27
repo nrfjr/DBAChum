@@ -116,6 +116,12 @@ export interface OracleDatabaseUser {
   expiry_date: string | null
 }
 
+export interface OracleUsernameAvailability {
+  username: string
+  available: boolean
+  message: string | null
+}
+
 export interface OracleDatabaseUsersResponse {
   available: boolean
 
@@ -401,6 +407,12 @@ export const useOracleDbaStore =
         } finally {
           this.loadingUsers = false
         }
+      },
+
+      async checkUsernameAvailability(id: string, username: string) {
+        return apiRequest<OracleUsernameAvailability>(
+          `/databases/${id}/oracle/users/${encodeURIComponent(username)}/availability`,
+        )
       },
 
       async loadReferenceUser(
