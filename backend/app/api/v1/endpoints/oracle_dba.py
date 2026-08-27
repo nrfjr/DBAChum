@@ -19,6 +19,14 @@ from app.schemas.provisioning import (
     ProvisioningPreviewRequest,
     ProvisioningPreviewResponse,
     ProvisioningProfileResponse,
+    ProvisioningRetryRequest,
+    ProvisioningRetryRequirement,
+    ProvisioningRunDetail,
+    ProvisioningRunSummary,
+    ProvisioningDeprovisionPreviewResponse,
+    OracleUserDeprovisionPreviewResponse,
+    OracleUserDeprovisionRequest,
+    OracleUserDeprovisionResponse,
 )
 from app.schemas.user import UserResponse
 from app.services.oracle_dba import (
@@ -32,6 +40,17 @@ from app.services.oracle_dba import (
 from app.services.provisioning import list_provisioning_profiles_for_connection
 from app.services.provisioning_preview import build_provisioning_preview
 from app.services.provisioning_execution import execute_provisioning_profile
+from app.services.deprovisioning import (
+    build_oracle_user_deprovision_preview,
+    execute_oracle_user_deprovision,
+)
+from app.services.provisioning_lifecycle import (
+    build_deprovision_preview,
+    get_provisioning_run,
+    get_retry_requirement,
+    list_provisioning_runs,
+    retry_provisioning_run,
+)
 from app.core.permissions import Permission
 from app.dependencies.permissions import require_permission
 
@@ -181,6 +200,144 @@ async def execute_database_provisioning_profile(
         data,
         current_user,
         requester_ip=request.client.host if request.client else None,
+    )
+
+
+@router.get(
+    "/{connection_id}/oracle/provisioning-runs",
+    response_model=list[ProvisioningRunSummary],
+)
+async def get_database_provisioning_runs(
+    connection_id: str,
+    request: Request,
+    current_user: UserResponse = Depends(
+        require_permission(Permission.DBA_OPERATE)
+    ),
+):
+    return await list_provisioning_runs(
+        request.app.state.database,
+        connection_id,
+    )
+
+
+@router.get(
+    "/{connection_id}/oracle/provisioning-runs/{run_id}",
+    response_model=ProvisioningRunDetail,
+)
+async def get_database_provisioning_run(
+    connection_id: str,
+    run_id: str,
+    request: Request,
+    current_user: UserResponse = Depends(
+        require_permission(Permission.DBA_OPERATE)
+    ),
+):
+    return await get_provisioning_run(
+        request.app.state.database,
+        connection_id,
+        run_id,
+    )
+
+
+@router.get(
+    "/{connection_id}/oracle/provisioning-runs/{run_id}/retry-requirement",
+    response_model=ProvisioningRetryRequirement,
+)
+async def get_database_provisioning_retry_requirement(
+    connection_id: str,
+    run_id: str,
+    request: Request,
+    current_user: UserResponse = Depends(
+        require_permission(Permission.DBA_OPERATE)
+    ),
+):
+    return await get_retry_requirement(
+        request.app.state.database,
+        connection_id,
+        run_id,
+    )
+
+
+@router.post(
+    "/{connection_id}/oracle/provisioning-runs/{run_id}/retry",
+    response_model=ProvisioningExecutionResponse,
+)
+async def retry_database_provisioning_run(
+    connection_id: str,
+    run_id: str,
+    data: ProvisioningRetryRequest,
+    request: Request,
+    current_user: UserResponse = Depends(
+        require_permission(Permission.DBA_OPERATE)
+    ),
+):
+    return await retry_provisioning_run(
+        request.app.state.database,
+        connection_id,
+        run_id,
+        data,
+        current_user,
+        requester_ip=request.client.host if request.client else None,
+    )
+
+
+@router.get(
+    "/{connection_id}/oracle/provisioning-runs/{run_id}/deprovision-preview",
+    response_model=ProvisioningDeprovisionPreviewResponse,
+)
+async def preview_database_deprovision(
+    connection_id: str,
+    run_id: str,
+    request: Request,
+    current_user: UserResponse = Depends(
+        require_permission(Permission.DBA_OPERATE)
+    ),
+):
+    return await build_deprovision_preview(
+        request.app.state.database,
+        connection_id,
+        run_id,
+    )
+
+
+@router.get(
+    "/{connection_id}/oracle/users/{username}/deprovision-preview",
+    response_model=OracleUserDeprovisionPreviewResponse,
+)
+async def preview_oracle_user_deprovision(
+    connection_id: str,
+    username: str,
+    request: Request,
+    current_user: UserResponse = Depends(
+        require_permission(Permission.DBA_OPERATE)
+    ),
+):
+    return await build_oracle_user_deprovision_preview(
+        request.app.state.database,
+        connection_id,
+        username,
+    )
+
+
+@router.post(
+    "/{connection_id}/oracle/users/{username}/deprovision",
+    response_model=OracleUserDeprovisionResponse,
+)
+async def deprovision_oracle_user(
+    connection_id: str,
+    username: str,
+    data: OracleUserDeprovisionRequest,
+    request: Request,
+    current_user: UserResponse = Depends(
+        require_permission(Permission.DBA_OPERATE)
+    ),
+):
+    return await execute_oracle_user_deprovision(
+        request.app.state.database,
+        connection_id,
+        username,
+        data,
+        current_user,
     )
 
 

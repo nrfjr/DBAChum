@@ -384,6 +384,9 @@ class ProvisioningExecutionTableStep(BaseModel):
     action: Literal["inserted", "updated", "unchanged", "conflict", "failed", "not_run"]
     match_values: dict[str, str | None] = Field(default_factory=dict)
     generated_values: dict[str, str | int | float | None] = Field(default_factory=dict)
+    before_values: dict[str, str | int | float | None] = Field(default_factory=dict)
+    after_values: dict[str, str | int | float | None] = Field(default_factory=dict)
+    sensitive_columns: list[str] = Field(default_factory=list)
     error: str | None = None
 
 
@@ -412,4 +415,132 @@ class ProvisioningExecutionResponse(BaseModel):
     roles: list[ProvisioningExecutionRole] = Field(default_factory=list)
     table_steps: list[ProvisioningExecutionTableStep] = Field(default_factory=list)
     ldap: ProvisioningExecutionLdap
+    error: str | None = None
+
+
+class ProvisioningRetryRequest(BaseModel):
+    password: str | None = Field(default=None, min_length=8, max_length=128)
+
+
+class ProvisioningRetryRequirement(BaseModel):
+    retryable: bool = False
+    password_required: bool = False
+    pending: list[str] = Field(default_factory=list)
+    reason: str | None = None
+
+
+class ProvisioningRunSummary(BaseModel):
+    run_id: str
+    status: Literal["succeeded", "partial", "failed", "running"]
+    username: str
+    employee_id: str | None = None
+    profile_id: str
+    profile_name: str
+    operator_username: str
+    request_reference: str | None = None
+    started_at: datetime
+    completed_at: datetime | None = None
+    retry_count: int = 0
+    retryable: bool = False
+    password_required: bool = False
+
+
+class ProvisioningRetryAttempt(BaseModel):
+    operator_username: str
+    requester_ip: str | None = None
+    status: Literal["succeeded", "partial", "failed"]
+    started_at: datetime
+    completed_at: datetime
+    error: str | None = None
+
+
+class ProvisioningRunDetail(ProvisioningRunSummary):
+    schema_connection_id: str
+    schema_connection_name: str
+    requester_ip: str | None = None
+    requestor: str | None = None
+    remarks: str | None = None
+    reference_user: str | None = None
+    account: ProvisioningExecutionAccount | None = None
+    roles: list[ProvisioningExecutionRole] = Field(default_factory=list)
+    table_steps: list[ProvisioningExecutionTableStep] = Field(default_factory=list)
+    ldap: ProvisioningExecutionLdap | None = None
+    error: str | None = None
+    retry_attempts: list[ProvisioningRetryAttempt] = Field(default_factory=list)
+
+
+class ProvisioningDeprovisionPreviewItem(BaseModel):
+    component: Literal["account", "role", "table", "ldap"]
+    label: str
+    planned_action: str
+    safe_to_reverse: bool = False
+    state: Literal["candidate", "blocked", "no_action", "already_absent"]
+    reason: str
+
+
+class ProvisioningDeprovisionPreviewResponse(BaseModel):
+    run_id: str
+    username: str
+    generated_at: datetime
+    destructive_execution_enabled: bool = False
+    items: list[ProvisioningDeprovisionPreviewItem] = Field(default_factory=list)
+    safe_candidate_count: int = 0
+    blocked_count: int = 0
+    warnings: list[str] = Field(default_factory=list)
+
+
+class OracleUserDeprovisionPreviewItem(BaseModel):
+    component: Literal["account", "table", "history"]
+    label: str
+    planned_action: str
+    state: Literal["candidate", "blocked", "no_action", "already_absent"]
+    reason: str
+    profile_id: str | None = None
+    profile_name: str | None = None
+    step_index: int | None = None
+    connection_id: str | None = None
+    owner: str | None = None
+    table_name: str | None = None
+    match_values: dict[str, str | None] = Field(default_factory=dict)
+    existing_rows: int = 0
+
+
+class OracleUserDeprovisionPreviewResponse(BaseModel):
+    username: str
+    generated_at: datetime
+    account_exists: bool
+    account_status: str | None = None
+    protected_account: bool = False
+    owned_object_count: int = 0
+    drop_cascade: bool = False
+    lifecycle_run_count: int = 0
+    linked_row_count: int = 0
+    blocked_count: int = 0
+    execution_ready: bool = False
+    confirmation_text: str
+    items: list[OracleUserDeprovisionPreviewItem] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    blocked_reasons: list[str] = Field(default_factory=list)
+
+
+class OracleUserDeprovisionRequest(BaseModel):
+    confirmation: str = Field(min_length=1, max_length=30)
+    request_reference: str | None = Field(default=None, max_length=100)
+
+
+class OracleUserDeprovisionExecutionItem(BaseModel):
+    component: Literal["account", "table"]
+    label: str
+    status: Literal["succeeded", "failed"]
+    affected_rows: int = 0
+    error: str | None = None
+
+
+class OracleUserDeprovisionResponse(BaseModel):
+    audit_id: str
+    status: Literal["succeeded", "partial", "failed"]
+    username: str
+    account_dropped: bool
+    deleted_provisioning_rows: int = 0
+    items: list[OracleUserDeprovisionExecutionItem] = Field(default_factory=list)
     error: str | None = None

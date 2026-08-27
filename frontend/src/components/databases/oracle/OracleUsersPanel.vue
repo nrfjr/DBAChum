@@ -16,6 +16,9 @@ import {
   useProvisioningStore,
   type ProvisioningExecutionResult,
   type ProvisioningPreviewResult,
+  type ProvisioningRunSummary,
+  type OracleUserDeprovisionPreview,
+  type OracleUserDeprovisionResult,
 } from '@/stores/provisioning'
 
 const props = defineProps<{
@@ -102,6 +105,12 @@ function formatDate(value: string | null) {
   return parsed.toLocaleString()
 }
 
+function formatDeprovisionMatch(values: Record<string, string | null>) {
+  return Object.entries(values)
+    .map(([key, value]) => `${key}=${value ?? 'NULL'}`)
+    .join(', ')
+}
+
 type CreateStep = 'details' | 'review' | 'success'
 
 interface CreateUserForm {
@@ -152,6 +161,184 @@ const provisioningResult = ref<ProvisioningExecutionResult | null>(null)
 const previewLoading = ref(false)
 const provisioningExecuting = ref(false)
 const createForm = reactive<CreateUserForm>(emptyCreateForm())
+
+const historyOpen = ref(false)
+const historyLoading = ref(false)
+const historyError = ref<string | null>(null)
+const retryingRunId = ref<string | null>(null)
+const retryPasswordRun = ref<ProvisioningRunSummary | null>(null)
+const retryPassword = ref('')
+const retryShowPassword = ref(false)
+const deprovisionLoadingRunId = ref<string | null>(null)
+const deprovisionTargetUsername = ref<string | null>(null)
+const deprovisionError = ref<string | null>(null)
+const deprovisionPreview = ref<OracleUserDeprovisionPreview | null>(null)
+const deprovisionExecuting = ref(false)
+const deprovisionConfirmation = ref('')
+const deprovisionRequestReference = ref('')
+const deprovisionResult = ref<OracleUserDeprovisionResult | null>(null)
+
+const provisioningRuns = computed(() =>
+  provisioningStore.runsByConnection[props.connectionId] ?? [],
+)
+
+
+function toggleProvisioningHistory() {
+  historyOpen.value = !historyOpen.value
+}
+
+async function loadProvisioningHistory() {
+  historyLoading.value = true
+  historyError.value = null
+  try {
+    await provisioningStore.loadRunsForConnection(props.connectionId)
+  } catch (error) {
+    historyError.value = error instanceof Error
+      ? error.message
+      : 'Unable to load provisioning history.'
+  } finally {
+    historyLoading.value = false
+  }
+}
+
+async function performRetry(run: ProvisioningRunSummary, password: string | null) {
+  retryingRunId.value = run.run_id
+  historyError.value = null
+  try {
+    provisioningResult.value = await provisioningStore.retryRun(
+      props.connectionId,
+      run.run_id,
+      password,
+    )
+    retryPasswordRun.value = null
+    retryPassword.value = ''
+    retryShowPassword.value = false
+    await oracleStore.loadUsers(props.connectionId)
+    await loadProvisioningHistory()
+  } catch (error) {
+    historyError.value = error instanceof Error
+      ? error.message
+      : 'Unable to retry the provisioning run.'
+  } finally {
+    retryingRunId.value = null
+  }
+}
+
+function retryLabel(run: ProvisioningRunSummary) {
+  return run.retry_count > 0 ? `Retry #${run.retry_count + 1}` : 'Retry'
+}
+
+async function retryRun(run: ProvisioningRunSummary) {
+  // No confirmation dialog: retry either starts immediately or asks only for
+  // the non-persisted password when a remaining step actually needs it.
+  if (run.password_required) {
+    retryPasswordRun.value = run
+    retryPassword.value = ''
+    retryShowPassword.value = false
+    return
+  }
+  await performRetry(run, null)
+}
+
+async function submitRetryPassword() {
+  if (!retryPasswordRun.value) return
+  if (retryPassword.value.length < 8) {
+    historyError.value = 'Provisioning password must contain at least 8 characters.'
+    return
+  }
+  const run = retryPasswordRun.value
+  const password = retryPassword.value
+  await performRetry(run, password)
+  // Drop the password from component state immediately after the request.
+  retryPassword.value = ''
+}
+
+function cancelRetryPassword() {
+  retryPassword.value = ''
+  retryPasswordRun.value = null
+  retryShowPassword.value = false
+}
+
+async function previewUserDeprovision(user: OracleDatabaseUser) {
+  deprovisionTargetUsername.value = user.username
+  deprovisionPreview.value = null
+  deprovisionError.value = null
+  deprovisionResult.value = null
+  deprovisionConfirmation.value = ''
+  deprovisionRequestReference.value = ''
+  deprovisionLoadingRunId.value = `preview:${user.username}`
+
+  try {
+    deprovisionPreview.value = await provisioningStore.previewOracleUserDeprovision(
+      props.connectionId,
+      user.username,
+    )
+  } catch (error) {
+    deprovisionError.value = error instanceof Error
+      ? error.message
+      : 'Unable to build the deprovision preview.'
+  } finally {
+    deprovisionLoadingRunId.value = null
+  }
+}
+
+const deprovisionConfirmationMatches = computed(() =>
+  Boolean(
+    deprovisionPreview.value
+    && deprovisionConfirmation.value.trim() === deprovisionPreview.value.confirmation_text,
+  ),
+)
+
+async function executeUserDeprovision() {
+  if (!deprovisionPreview.value || !deprovisionConfirmationMatches.value) return
+
+  deprovisionExecuting.value = true
+  deprovisionError.value = null
+  deprovisionResult.value = null
+  try {
+    const result = await provisioningStore.executeOracleUserDeprovision(
+      props.connectionId,
+      deprovisionPreview.value.username,
+      deprovisionConfirmation.value.trim(),
+      deprovisionRequestReference.value.trim() || null,
+    )
+    deprovisionResult.value = result
+
+    // Always refresh because a partial run may have removed linked rows even
+    // when the final Oracle DROP USER failed.
+    await oracleStore.loadUsers(props.connectionId)
+    if (historyOpen.value) {
+      await loadProvisioningHistory()
+    }
+
+    if (result.status === 'succeeded') {
+      closeDeprovisionPreview()
+    } else {
+      // Rebuild the preview so a retry reflects rows already cleaned up.
+      deprovisionPreview.value = await provisioningStore.previewOracleUserDeprovision(
+        props.connectionId,
+        result.username,
+      )
+      deprovisionConfirmation.value = ''
+    }
+  } catch (error) {
+    deprovisionError.value = error instanceof Error
+      ? error.message
+      : 'Unable to deprovision the Oracle schema.'
+  } finally {
+    deprovisionExecuting.value = false
+  }
+}
+
+function closeDeprovisionPreview() {
+  deprovisionTargetUsername.value = null
+  deprovisionError.value = null
+  deprovisionPreview.value = null
+  deprovisionConfirmation.value = ''
+  deprovisionRequestReference.value = ''
+  deprovisionResult.value = null
+  deprovisionExecuting.value = false
+}
 
 const availableProvisioningProfiles = computed(() =>
   provisioningStore.profilesByConnection[props.connectionId] ?? [],
@@ -422,6 +609,7 @@ async function executeProvisioning() {
     createForm.password = ''
     createStep.value = 'success'
     await oracleStore.loadUsers(props.connectionId)
+    await loadProvisioningHistory()
   } catch (error) {
     createError.value =
       error instanceof Error
@@ -521,6 +709,7 @@ onMounted(() => {
     props.connectionId,
   )
   provisioningStore.loadProfilesForConnection(props.connectionId)
+  loadProvisioningHistory()
 })
 </script>
 
@@ -541,6 +730,14 @@ onMounted(() => {
           @click="openCreate"
         >
           Create user
+        </button>
+
+        <button
+          type="button"
+          class="secondary-button"
+          @click="toggleProvisioningHistory"
+        >
+          {{ historyOpen ? 'Hide provisioning history' : 'Provisioning history' }}
         </button>
 
         <button
@@ -648,6 +845,7 @@ onMounted(() => {
                 <th>Profile</th>
                 <th>Created</th>
                 <th>Expiry</th>
+                <th class="user-actions-column">Actions</th>
               </tr>
             </thead>
 
@@ -683,10 +881,23 @@ onMounted(() => {
                 <td>
                   {{ formatDate(user.expiry_date) }}
                 </td>
+
+                <td class="user-actions-cell">
+                  <button
+                    type="button"
+                    class="user-action-button danger-action"
+                    :disabled="deprovisionTargetUsername === user.username && deprovisionLoadingRunId !== null"
+                    :aria-label="`Deprovision ${user.username}`"
+                    :title="`Deprovision ${user.username}`"
+                    @click="previewUserDeprovision(user)"
+                  >
+                    <FontAwesomeIcon icon="trash-can" />
+                  </button>
+                </td>
               </tr>
 
               <tr v-if="filteredUsers.length === 0">
-                <td colspan="7">
+                <td colspan="8">
                   No matching database accounts.
                 </td>
               </tr>
@@ -695,6 +906,290 @@ onMounted(() => {
         </div>
       </template>
     </template>
+
+    <section v-if="historyOpen" class="provisioning-history-panel">
+      <div class="provisioning-history-heading">
+        <div>
+          <h3>Provisioning history</h3>
+          <p>Lifecycle runs created from this parent Oracle database. Passwords are never stored.</p>
+        </div>
+        <button
+          type="button"
+          class="secondary-button"
+          :disabled="historyLoading"
+          @click="loadProvisioningHistory"
+        >
+          {{ historyLoading ? 'Loading...' : 'Refresh history' }}
+        </button>
+      </div>
+
+      <p v-if="historyError" class="login-error">{{ historyError }}</p>
+
+      <div v-if="provisioningResult && !createOpen" class="preview-callout provisioning-retry-result">
+        <div>
+          <strong>Retry result · {{ provisioningResult.username }} · {{ provisioningResult.status.toUpperCase() }}</strong>
+          <span v-if="provisioningResult.error">{{ provisioningResult.error }}</span>
+          <span v-else>Incomplete lifecycle steps were retried; previously completed steps were skipped.</span>
+        </div>
+        <button
+          v-if="provisioningResult.ldap.action === 'generated' && provisioningResult.ldap.content"
+          type="button"
+          class="secondary-button compact-button"
+          @click="downloadProvisioningLdif"
+        >
+          Download {{ provisioningResult.ldap.filename }}
+        </button>
+      </div>
+
+      <div v-if="historyLoading && provisioningRuns.length === 0" class="empty-state">
+        Loading provisioning history...
+      </div>
+
+      <div v-else-if="provisioningRuns.length === 0" class="empty-state">
+        No provisioning lifecycle runs have been recorded for this database yet.
+      </div>
+
+      <div v-else class="utility-table-wrap provisioning-history-table">
+        <table class="utility-table">
+          <thead>
+            <tr>
+              <th>User</th>
+              <th>Profile</th>
+              <th>Status</th>
+              <th>Request</th>
+              <th>DBA</th>
+              <th>Started</th>
+              <th>Retry</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="run in provisioningRuns" :key="run.run_id">
+              <td>
+                <strong>{{ run.username }}</strong>
+                <small v-if="run.employee_id">ID {{ run.employee_id }}</small>
+              </td>
+              <td>{{ run.profile_name }}</td>
+              <td>
+                <span class="provisioning-status" :data-status="run.status">
+                  {{ run.status.toUpperCase() }}
+                </span>
+              </td>
+              <td>{{ run.request_reference || '—' }}</td>
+              <td>{{ run.operator_username }}</td>
+              <td>{{ formatDate(run.started_at) }}</td>
+              <td>
+                <button
+                  v-if="run.retryable"
+                  type="button"
+                  class="secondary-button compact-button"
+                  :disabled="retryingRunId === run.run_id"
+                  @click="retryRun(run)"
+                >
+                  {{ retryingRunId === run.run_id ? 'Retrying...' : retryLabel(run) }}
+                </button>
+                <span v-else>—</span>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div v-if="retryPasswordRun" class="provisioning-retry-password">
+        <div>
+          <strong>Retry {{ retryPasswordRun.username }}</strong>
+          <p>Only the remaining step(s) need the original provisioning password. It will be used in memory for this retry and will not be persisted.</p>
+        </div>
+        <label>
+          <span>Original provisioning password</span>
+          <div class="password-input-row">
+            <input
+              v-model="retryPassword"
+              :type="retryShowPassword ? 'text' : 'password'"
+              autocomplete="new-password"
+              @keyup.enter="submitRetryPassword"
+            />
+            <button type="button" class="secondary-button" @click="retryShowPassword = !retryShowPassword">
+              {{ retryShowPassword ? 'Hide' : 'Show' }}
+            </button>
+          </div>
+        </label>
+        <div class="connection-form-actions">
+          <button
+            type="button"
+            class="primary-button"
+            :disabled="retryingRunId === retryPasswordRun.run_id"
+            @click="submitRetryPassword"
+          >
+            {{ retryingRunId === retryPasswordRun.run_id ? 'Retrying...' : 'Retry incomplete steps' }}
+          </button>
+          <button type="button" class="secondary-button" @click="cancelRetryPassword">Cancel</button>
+        </div>
+      </div>
+
+    </section>
+
+    <div
+      v-if="deprovisionTargetUsername"
+      class="modal-backdrop"
+      @click.self="closeDeprovisionPreview"
+    >
+      <section
+        class="modal-panel deprovision-preview-modal"
+        role="dialog"
+        aria-modal="true"
+        :aria-label="`Deprovision ${deprovisionTargetUsername}`"
+      >
+        <div class="modal-header">
+          <div>
+            <h2>Deprovision {{ deprovisionTargetUsername }}</h2>
+            <p>Review the Oracle schema and any linked rows found through enabled provisioning profiles.</p>
+          </div>
+          <button
+            type="button"
+            class="modal-close"
+            aria-label="Close"
+            :disabled="deprovisionExecuting"
+            @click="closeDeprovisionPreview"
+          >
+            ×
+          </button>
+        </div>
+
+        <div v-if="deprovisionLoadingRunId" class="empty-state">
+          Building live deprovision preview...
+        </div>
+
+        <div v-else-if="deprovisionError" class="utility-warning oracle-create-warning">
+          {{ deprovisionError }}
+        </div>
+
+        <template v-if="deprovisionPreview">
+          <div v-if="deprovisionResult" class="preview-callout provisioning-retry-result">
+            <div>
+              <strong>Last execution · {{ deprovisionResult.status.toUpperCase() }}</strong>
+              <span v-if="deprovisionResult.error">{{ deprovisionResult.error }}</span>
+              <span v-else>{{ deprovisionResult.deleted_provisioning_rows }} linked row(s) removed.</span>
+            </div>
+          </div>
+
+          <div class="preview-summary-grid">
+            <div>
+              <span>Owned objects</span>
+              <strong>{{ deprovisionPreview.owned_object_count }}</strong>
+            </div>
+            <div>
+              <span>Linked rows</span>
+              <strong>{{ deprovisionPreview.linked_row_count }}</strong>
+            </div>
+            <div>
+              <span>Execution</span>
+              <strong>{{ deprovisionPreview.execution_ready ? 'READY' : 'BLOCKED' }}</strong>
+            </div>
+          </div>
+
+          <div
+            v-if="deprovisionPreview.drop_cascade"
+            class="utility-warning oracle-create-warning"
+          >
+            This schema owns {{ deprovisionPreview.owned_object_count }} object(s). Deprovisioning will execute DROP USER {{ deprovisionPreview.username }} CASCADE and permanently remove those objects.
+          </div>
+
+          <div
+            v-for="warning in deprovisionPreview.warnings"
+            :key="warning"
+            class="utility-warning"
+          >
+            {{ warning }}
+          </div>
+
+          <div
+            v-for="reason in deprovisionPreview.blocked_reasons"
+            :key="reason"
+            class="utility-warning oracle-create-warning"
+          >
+            {{ reason }}
+          </div>
+
+          <div class="deprovision-item-list">
+            <article
+              v-for="item in deprovisionPreview.items"
+              :key="`${item.component}-${item.label}`"
+              class="deprovision-item"
+            >
+              <header>
+                <strong>{{ item.label }}</strong>
+                <span class="provisioning-status" :data-status="item.state">
+                  {{ item.state.replace('_', ' ').toUpperCase() }}
+                </span>
+              </header>
+              <p><strong>{{ item.planned_action }}</strong></p>
+              <small>{{ item.reason }}</small>
+              <small v-if="Object.keys(item.match_values).length" class="deprovision-match-key">
+                Match: {{ formatDeprovisionMatch(item.match_values) }}
+              </small>
+            </article>
+          </div>
+
+          <div v-if="deprovisionPreview.execution_ready" class="deprovision-confirmation">
+            <div>
+              <strong>Permanent deprovision</strong>
+              <p>Type <code>{{ deprovisionPreview.confirmation_text }}</code> exactly to enable deletion.</p>
+            </div>
+
+            <label>
+              <span>Schema confirmation</span>
+              <input
+                v-model="deprovisionConfirmation"
+                type="text"
+                autocomplete="off"
+                :placeholder="deprovisionPreview.confirmation_text"
+                :disabled="deprovisionExecuting"
+                @keyup.enter="executeUserDeprovision"
+              />
+            </label>
+
+            <label>
+              <span>Request / ticket <small>optional</small></span>
+              <input
+                v-model="deprovisionRequestReference"
+                type="text"
+                maxlength="100"
+                placeholder="Change or ticket reference"
+                :disabled="deprovisionExecuting"
+              />
+            </label>
+          </div>
+
+          <div class="deprovision-preview-footer">
+            <p v-if="deprovisionPreview.lifecycle_run_count">
+              {{ deprovisionPreview.lifecycle_run_count }} DBAChum provisioning run(s) found; lifecycle history will be retained.
+            </p>
+            <p v-else>
+              No DBAChum provisioning history is required to delete this schema.
+            </p>
+            <div class="deprovision-footer-actions">
+              <button
+                v-if="deprovisionPreview.execution_ready"
+                type="button"
+                class="primary-button danger-confirm-button"
+                :disabled="!deprovisionConfirmationMatches || deprovisionExecuting"
+                @click="executeUserDeprovision"
+              >
+                {{ deprovisionExecuting ? 'Deprovisioning...' : 'Deprovision schema' }}
+              </button>
+              <button
+                type="button"
+                class="secondary-button"
+                :disabled="deprovisionExecuting"
+                @click="closeDeprovisionPreview"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </template>
+      </section>
+    </div>
 
     <div
       v-if="createOpen"

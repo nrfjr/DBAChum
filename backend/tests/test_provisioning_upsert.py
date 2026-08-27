@@ -19,6 +19,8 @@ class FakeUpsertConnection:
             return (self.existing_rows,)
         if ".NEXTVAL" in sql:
             return (77,)
+        if sql.lstrip().startswith("SELECT") and 'FROM "ORMS"."USER_MASTER"' in sql:
+            return ("JSMITH1001", "Changed", 55)
         raise AssertionError(sql)
 
     async def execute(self, sql, parameters=None):
@@ -84,5 +86,7 @@ async def test_table_upsert_preserves_match_and_sequence_columns_on_update(monke
     assert 'UPDATE "ORMS"."USER_MASTER" SET "REMARKS" = :set_0' in sql
     assert '"USERNAME" = :set_' not in sql
     assert "ID" not in params
-    assert fake.fetchone_calls == 1  # no NEXTVAL call on update
+    assert fake.fetchone_calls == 2  # count + before-state read; no NEXTVAL on update
+    assert result["before_values"]["USERNAME"] == "JSMITH1001"
+    assert result["after_values"]["REMARKS"] == "Changed"
     assert fake.commits == 1

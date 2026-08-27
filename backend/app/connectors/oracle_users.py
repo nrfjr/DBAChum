@@ -6,9 +6,7 @@ from app.connectors.oracle import (
     open_oracle_connection,
     oracle_error_message,
 )
-
-
-USER_LIST_LIMIT = 1000
+from app.core.oracle_accounts import is_oracle_system_account
 
 
 def _is_open(status: str) -> bool:
@@ -23,6 +21,49 @@ def _is_expired(status: str) -> bool:
     return "EXPIRED" in status.upper()
 
 
+BASE_USER_COLUMNS = """
+    username,
+    account_status,
+    default_tablespace,
+    temporary_tablespace,
+    profile,
+    created,
+    lock_date,
+    expiry_date
+"""
+
+
+async def _fetch_user_rows(oracle_connection):
+    """Return every user plus whether Oracle-maintained metadata is available.
+
+    Oracle 12c+ exposes DBA_USERS.ORACLE_MAINTAINED, which is the best source of
+    truth for hiding Oracle-owned accounts. Oracle 11g and older do not expose
+    that column, so fall back to the same unlimited DBA_USERS query and the
+    version-neutral built-in account classifier.
+    """
+    try:
+        rows = await oracle_connection.fetchall(
+            f"""
+            SELECT
+                {BASE_USER_COLUMNS},
+                oracle_maintained
+            FROM dba_users
+            ORDER BY username
+            """
+        )
+        return rows, True
+    except oracledb.Error:
+        rows = await oracle_connection.fetchall(
+            f"""
+            SELECT
+                {BASE_USER_COLUMNS}
+            FROM dba_users
+            ORDER BY username
+            """
+        )
+        return rows, False
+
+
 async def get_oracle_users(
     connection: dict,
 ) -> dict:
@@ -32,27 +73,8 @@ async def get_oracle_users(
         connection
     ) as oracle_connection:
         try:
-            rows = await oracle_connection.fetchall(
-                """
-                SELECT *
-                FROM (
-                    SELECT
-                        username,
-                        account_status,
-                        default_tablespace,
-                        temporary_tablespace,
-                        profile,
-                        created,
-                        lock_date,
-                        expiry_date
-                    FROM dba_users
-                    ORDER BY username
-                )
-                WHERE ROWNUM <= :user_limit
-                """,
-                {
-                    "user_limit": USER_LIST_LIMIT,
-                },
+            rows, has_oracle_maintained = await _fetch_user_rows(
+                oracle_connection
             )
         except oracledb.Error as exc:
             return {
@@ -73,6 +95,10 @@ async def get_oracle_users(
             "expiry_date": row[7],
         }
         for row in rows
+        if (
+            (not has_oracle_maintained or str(row[8]).upper() != "Y")
+            and not is_oracle_system_account(row[0])
+        )
     ]
 
     statuses = [

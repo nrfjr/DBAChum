@@ -19,6 +19,7 @@ import {
   faBars,
   faMoon,
   faSun,
+  faTrashCan,
 } from '@fortawesome/free-solid-svg-icons'
 
 import { useUiStore } from './stores/ui'
@@ -33,6 +34,7 @@ library.add(
   faBars,
   faMoon,
   faSun,
+  faTrashCan,
 )
 
 const app = createApp(App)

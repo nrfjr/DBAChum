@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import deepcopy
 from datetime import datetime, timezone
 
 from app.connectors.oracle_provisioning import (
@@ -73,6 +74,51 @@ def _extract_ldif_dn(content: str | None) -> str | None:
     return None
 
 
+def _is_sensitive_column(column_name: str) -> bool:
+    normalized = str(column_name).strip().upper()
+    return any(token in normalized for token in ("PASSWORD", "PASSWD", "PWD", "SECRET", "TOKEN"))
+
+
+def _sensitive_step_columns(step: dict) -> set[str]:
+    sensitive: set[str] = set()
+    for mapping in step.get("mappings") or []:
+        column = str(mapping.get("column_name", "")).strip().upper()
+        if not column:
+            continue
+        if _is_sensitive_column(column) or (
+            mapping.get("value_kind") == "generated"
+            and mapping.get("value_key") == "password"
+        ):
+            sensitive.add(column)
+    return sensitive
+
+
+def _redact_values(values: dict[str, object], sensitive_columns: set[str]) -> dict[str, object]:
+    return {
+        key: "<redacted>" if key.upper() in sensitive_columns else _display_value(value)
+        for key, value in values.items()
+    }
+
+
+def _profile_snapshot(profile: dict) -> dict:
+    """Persist retry-safe profile structure without storing password-like custom values."""
+    steps = deepcopy(profile.get("table_steps") or [])
+    for step in steps:
+        for mapping in step.get("mappings") or []:
+            column = str(mapping.get("column_name", "")).strip().upper()
+            if _is_sensitive_column(column) and mapping.get("value_kind") == "custom":
+                mapping["custom_value"] = None
+                mapping["value_redacted"] = True
+    return {
+        "name": profile.get("name"),
+        "schema_connection_id": profile.get("schema_connection_id"),
+        "ldap_enabled": bool(profile.get("ldap_enabled")),
+        "ldap_profile_id": profile.get("ldap_profile_id"),
+        "table_steps": steps,
+        "updated_at": profile.get("updated_at"),
+    }
+
+
 def _resolve_step_values(
     step: dict,
     *,
@@ -108,7 +154,9 @@ def _resolve_step_values(
 
         insert_values[column] = value
         update_values[column] = value
-        if kind == "generated" and mapping.get("value_key") == "password":
+        if _is_sensitive_column(column) or (
+            kind == "generated" and mapping.get("value_key") == "password"
+        ):
             redacted_values[column] = "<redacted>"
         else:
             redacted_values[column] = value
@@ -230,6 +278,18 @@ async def execute_provisioning_profile(
         "current_datetime": now,
     }
 
+    ldap_snapshot = None
+    if profile.get("ldap_enabled"):
+        ldap_document = await get_ldap_profile_document(
+            database, profile["ldap_profile_id"]
+        )
+        ldap_snapshot = {
+            "profile_id": profile.get("ldap_profile_id"),
+            "profile_name": ldap_document.get("name", "LDAP"),
+            "base_dn": ldap_document.get("base_dn", ""),
+            "ldif_template": ldap_document.get("ldif_template") or DEFAULT_LDIF_TEMPLATE,
+        }
+
     run_document = {
         "parent_connection_id": parent_connection_id,
         "parent_connection_name": parent_connection.get("name", parent_connection_id),
@@ -246,6 +306,27 @@ async def execute_provisioning_profile(
         "requestor": _clean_optional(data.requestor),
         "remarks": _clean_optional(data.remarks),
         "reference_user": reference_username,
+        "account_existed_before": preview.account_exists,
+        "input_snapshot": {
+            **form_values,
+            "username": username,
+        },
+        "desired_roles": selected_roles,
+        "account_settings": {
+            "default_tablespace": _clean_optional(data.default_tablespace),
+            "temporary_tablespace": _clean_optional(data.temporary_tablespace),
+            "oracle_profile": _clean_optional(data.oracle_profile),
+        },
+        "generated_context": {
+            "username": username,
+            "operator_username": operator.username,
+            "requester_ip": requester_ip,
+            "current_datetime": now,
+        },
+        "profile_snapshot": _profile_snapshot(profile),
+        "ldap_snapshot": ldap_snapshot,
+        "retry_attempts": [],
+        "retry_count": 0,
         "account": None,
         "roles": [],
         "table_steps": [],
@@ -371,6 +452,7 @@ async def execute_provisioning_profile(
                     status_code=400,
                 )
 
+            sensitive_columns = _sensitive_step_columns(step)
             try:
                 upsert = await upsert_oracle_provisioning_row(
                     step_connection,
@@ -385,6 +467,7 @@ async def execute_provisioning_profile(
                     key: _display_value(value)
                     for key, value in (upsert.get("generated_values") or {}).items()
                 }
+                sensitive_columns = _sensitive_step_columns(step)
                 step_result = ProvisioningExecutionTableStep(
                     index=index,
                     name=step["name"],
@@ -393,11 +476,18 @@ async def execute_provisioning_profile(
                     owner=step["owner"],
                     table_name=step["table_name"],
                     action=upsert["action"],
-                    match_values={
-                        key: _display_value(value)
-                        for key, value in match_values.items()
+                    match_values=_redact_values(match_values, sensitive_columns),
+                    generated_values={
+                        key: "<redacted>" if key.upper() in sensitive_columns else value
+                        for key, value in generated.items()
                     },
-                    generated_values=generated,
+                    before_values=_redact_values(
+                        upsert.get("before_values") or {}, sensitive_columns
+                    ),
+                    after_values=_redact_values(
+                        upsert.get("after_values") or {}, sensitive_columns
+                    ),
+                    sensitive_columns=sorted(sensitive_columns),
                 )
                 step_results.append(step_result)
                 mutated = True
@@ -429,10 +519,8 @@ async def execute_provisioning_profile(
                         owner=step["owner"],
                         table_name=step["table_name"],
                         action=action,
-                        match_values={
-                            key: _display_value(value)
-                            for key, value in match_values.items()
-                        },
+                        match_values=_redact_values(match_values, sensitive_columns),
+                        sensitive_columns=sorted(sensitive_columns),
                         error=_safe_error(exc),
                     )
                 )
@@ -454,6 +542,7 @@ async def execute_provisioning_profile(
                             owner=remaining["owner"],
                             table_name=remaining["table_name"],
                             action="not_run",
+                            sensitive_columns=sorted(_sensitive_step_columns(remaining)),
                         )
                     )
                 raise

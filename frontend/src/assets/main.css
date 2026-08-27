@@ -2193,3 +2193,249 @@ button {
 .provisioning-match-options .connection-checkbox.disabled {
   opacity: 0.45;
 }
+
+/* Phase 4C - provisioning lifecycle history, retry and deprovision preview */
+.provisioning-history-panel {
+  margin-top: 1.25rem;
+  padding: 1rem;
+  border: 1px solid var(--border-color, rgba(127, 127, 127, 0.25));
+  border-radius: 0.9rem;
+}
+
+.provisioning-history-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.9rem;
+}
+
+.provisioning-history-heading h3,
+.provisioning-history-heading p {
+  margin: 0;
+}
+
+.provisioning-history-heading p {
+  margin-top: 0.25rem;
+  opacity: 0.75;
+}
+
+.provisioning-history-table td:first-child small {
+  display: block;
+  margin-top: 0.2rem;
+  opacity: 0.7;
+}
+
+.compact-button {
+  padding: 0.4rem 0.65rem;
+  white-space: nowrap;
+}
+
+.user-actions-column,
+.user-actions-cell {
+  width: 1%;
+  text-align: center !important;
+  white-space: nowrap;
+}
+
+.user-action-button {
+  display: inline-grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 1px solid var(--color-border);
+  border-radius: 9px;
+  background: transparent;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+}
+
+.user-action-button:hover:not(:disabled) {
+  background: var(--color-surface-secondary);
+}
+
+.user-action-button.danger-action {
+  color: var(--color-danger);
+}
+
+.user-action-button:disabled {
+  cursor: wait;
+  opacity: 0.55;
+}
+
+.deprovision-preview-modal {
+  width: min(100%, 760px);
+}
+
+.deprovision-preview-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--color-border);
+}
+
+.deprovision-preview-footer p {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: 0.86rem;
+}
+
+.provisioning-status {
+  display: inline-flex;
+  padding: 0.18rem 0.45rem;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.provisioning-status[data-status='succeeded'],
+.provisioning-status[data-status='no_action'],
+.provisioning-status[data-status='already_absent'] {
+  opacity: 0.9;
+}
+
+.provisioning-status[data-status='partial'],
+.provisioning-status[data-status='candidate'] {
+  font-weight: 800;
+}
+
+.provisioning-status[data-status='failed'],
+.provisioning-status[data-status='blocked'] {
+  text-decoration: underline;
+  text-decoration-style: dotted;
+}
+
+.provisioning-retry-password {
+  margin-top: 1rem;
+  padding: 1rem;
+  border: 1px solid var(--border-color, rgba(127, 127, 127, 0.25));
+  border-radius: 0.75rem;
+}
+
+.provisioning-retry-password > div:first-child p {
+  margin: 0.25rem 0 0.75rem;
+  opacity: 0.78;
+}
+
+.password-input-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.password-input-row input {
+  flex: 1;
+}
+
+.deprovision-item-list {
+  display: grid;
+  gap: 0.65rem;
+  margin-top: 0.9rem;
+}
+
+.deprovision-item {
+  padding: 0.75rem;
+  border: 1px solid var(--border-color, rgba(127, 127, 127, 0.25));
+  border-radius: 0.65rem;
+}
+
+.deprovision-item header {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.deprovision-item p {
+  margin: 0.45rem 0 0.25rem;
+}
+
+@media (max-width: 800px) {
+  .provisioning-history-heading,
+  .password-input-row,
+  .deprovision-item header,
+  .deprovision-preview-footer {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
+
+.provisioning-retry-result {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  align-items: center;
+  margin-bottom: 0.85rem;
+}
+
+.provisioning-retry-result > div {
+  display: grid;
+  gap: 0.2rem;
+}
+
+@media (max-width: 800px) {
+  .provisioning-retry-result {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
+
+/* Phase 4D - typed-confirmation Oracle schema deprovision */
+.deprovision-confirmation {
+  display: grid;
+  gap: 0.75rem;
+  margin-top: 1rem;
+  padding: 1rem;
+  border: 1px solid var(--color-border);
+  border-radius: 0.75rem;
+}
+
+.deprovision-confirmation p {
+  margin: 0.25rem 0 0;
+  color: var(--color-text-secondary);
+}
+
+.deprovision-confirmation label {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.deprovision-confirmation input {
+  width: 100%;
+}
+
+.deprovision-match-key {
+  display: block;
+  margin-top: 0.4rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  opacity: 0.78;
+  overflow-wrap: anywhere;
+}
+
+.deprovision-footer-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.danger-confirm-button {
+  border-color: var(--color-danger);
+}
+
+@media (max-width: 800px) {
+  .deprovision-footer-actions {
+    width: 100%;
+    justify-content: stretch;
+  }
+
+  .deprovision-footer-actions > button {
+    flex: 1;
+  }
+}

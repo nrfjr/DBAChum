@@ -100,6 +100,14 @@ async def create_indexes(
 
     await database.provisioning_runs.create_index(
         [
+            ("parent_connection_id", 1),
+            ("started_at", -1),
+        ],
+        name="ix_provisioning_runs_parent_started",
+    )
+
+    await database.provisioning_runs.create_index(
+        [
             ("profile_id", 1),
             ("started_at", -1),
         ],

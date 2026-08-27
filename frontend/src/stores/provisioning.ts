@@ -178,6 +178,101 @@ export interface ProvisioningExecutionResult {
   error: string | null
 }
 
+export interface ProvisioningRunSummary {
+  run_id: string
+  status: 'succeeded' | 'partial' | 'failed' | 'running'
+  username: string
+  employee_id: string | null
+  profile_id: string
+  profile_name: string
+  operator_username: string
+  request_reference: string | null
+  started_at: string
+  completed_at: string | null
+  retry_count: number
+  retryable: boolean
+  password_required: boolean
+}
+
+export interface ProvisioningRetryRequirement {
+  retryable: boolean
+  password_required: boolean
+  pending: string[]
+  reason: string | null
+}
+
+export interface ProvisioningDeprovisionPreviewItem {
+  component: 'account' | 'role' | 'table' | 'ldap'
+  label: string
+  planned_action: string
+  safe_to_reverse: boolean
+  state: 'candidate' | 'blocked' | 'no_action' | 'already_absent'
+  reason: string
+}
+
+export interface ProvisioningDeprovisionPreview {
+  run_id: string
+  username: string
+  generated_at: string
+  destructive_execution_enabled: boolean
+  items: ProvisioningDeprovisionPreviewItem[]
+  safe_candidate_count: number
+  blocked_count: number
+  warnings: string[]
+}
+
+export interface OracleUserDeprovisionPreviewItem {
+  component: 'account' | 'table' | 'history'
+  label: string
+  planned_action: string
+  state: 'candidate' | 'blocked' | 'no_action' | 'already_absent'
+  reason: string
+  profile_id: string | null
+  profile_name: string | null
+  step_index: number | null
+  connection_id: string | null
+  owner: string | null
+  table_name: string | null
+  match_values: Record<string, string | null>
+  existing_rows: number
+}
+
+export interface OracleUserDeprovisionPreview {
+  username: string
+  generated_at: string
+  account_exists: boolean
+  account_status: string | null
+  protected_account: boolean
+  owned_object_count: number
+  drop_cascade: boolean
+  lifecycle_run_count: number
+  linked_row_count: number
+  blocked_count: number
+  execution_ready: boolean
+  confirmation_text: string
+  items: OracleUserDeprovisionPreviewItem[]
+  warnings: string[]
+  blocked_reasons: string[]
+}
+
+export interface OracleUserDeprovisionExecutionItem {
+  component: 'account' | 'table'
+  label: string
+  status: 'succeeded' | 'failed'
+  affected_rows: number
+  error: string | null
+}
+
+export interface OracleUserDeprovisionResult {
+  audit_id: string
+  status: 'succeeded' | 'partial' | 'failed'
+  username: string
+  account_dropped: boolean
+  deleted_provisioning_rows: number
+  items: OracleUserDeprovisionExecutionItem[]
+  error: string | null
+}
+
 export interface ProvisioningSourceOption {
   key: string
   label: string
@@ -272,6 +367,7 @@ export const useProvisioningStore = defineStore('provisioning', {
     profiles: [] as ProvisioningProfile[],
     profilesByConnection: {} as Record<string, ProvisioningProfile[]>,
     sources: [] as ProvisioningSourceOption[],
+    runsByConnection: {} as Record<string, ProvisioningRunSummary[]>,
     ldapProfiles: [] as LdapProfile[],
     loading: false,
     saving: false,
@@ -367,6 +463,60 @@ export const useProvisioningStore = defineStore('provisioning', {
       return apiRequest<ProvisioningExecutionResult>(
         `/databases/${connectionId}/oracle/provisioning-profiles/${profileId}/execute`,
         { method: 'POST', body: JSON.stringify(data) },
+      )
+    },
+
+    async loadRunsForConnection(connectionId: string) {
+      const runs = await apiRequest<ProvisioningRunSummary[]>(
+        `/databases/${connectionId}/oracle/provisioning-runs`,
+      )
+      this.runsByConnection[connectionId] = runs
+      return runs
+    },
+
+    async retryRun(
+      connectionId: string,
+      runId: string,
+      password: string | null = null,
+    ) {
+      const result = await apiRequest<ProvisioningExecutionResult>(
+        `/databases/${connectionId}/oracle/provisioning-runs/${runId}/retry`,
+        {
+          method: 'POST',
+          body: JSON.stringify({ password }),
+        },
+      )
+      await this.loadRunsForConnection(connectionId)
+      return result
+    },
+
+    async loadDeprovisionPreview(connectionId: string, runId: string) {
+      return apiRequest<ProvisioningDeprovisionPreview>(
+        `/databases/${connectionId}/oracle/provisioning-runs/${runId}/deprovision-preview`,
+      )
+    },
+
+    async previewOracleUserDeprovision(connectionId: string, username: string) {
+      return apiRequest<OracleUserDeprovisionPreview>(
+        `/databases/${connectionId}/oracle/users/${encodeURIComponent(username)}/deprovision-preview`,
+      )
+    },
+
+    async executeOracleUserDeprovision(
+      connectionId: string,
+      username: string,
+      confirmation: string,
+      requestReference: string | null = null,
+    ) {
+      return apiRequest<OracleUserDeprovisionResult>(
+        `/databases/${connectionId}/oracle/users/${encodeURIComponent(username)}/deprovision`,
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            confirmation,
+            request_reference: requestReference,
+          }),
+        },
       )
     },
 
