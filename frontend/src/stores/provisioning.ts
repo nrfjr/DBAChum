@@ -152,7 +152,7 @@ export interface ProvisioningExecutionTableStep {
 
 export interface ProvisioningExecutionLdap {
   enabled: boolean
-  action: 'generated' | 'not_run' | 'failed' | null
+  action: 'generated' | 'created' | 'already_present' | 'not_run' | 'failed' | null
   profile_id: string | null
   profile_name: string | null
   filename: string | null
@@ -222,7 +222,7 @@ export interface ProvisioningDeprovisionPreview {
 }
 
 export interface OracleUserDeprovisionPreviewItem {
-  component: 'account' | 'table' | 'history'
+  component: 'account' | 'table' | 'ldap' | 'ldap' | 'history'
   label: string
   planned_action: string
   state: 'candidate' | 'blocked' | 'no_action' | 'already_absent'
@@ -235,6 +235,8 @@ export interface OracleUserDeprovisionPreviewItem {
   table_name: string | null
   match_values: Record<string, string | null>
   existing_rows: number
+  ldap_profile_id: string | null
+  ldap_dn: string | null
 }
 
 export interface OracleUserDeprovisionPreview {
@@ -247,6 +249,7 @@ export interface OracleUserDeprovisionPreview {
   drop_cascade: boolean
   lifecycle_run_count: number
   linked_row_count: number
+  linked_ldap_count: number
   blocked_count: number
   execution_ready: boolean
   confirmation_text: string
@@ -256,7 +259,7 @@ export interface OracleUserDeprovisionPreview {
 }
 
 export interface OracleUserDeprovisionExecutionItem {
-  component: 'account' | 'table'
+  component: 'account' | 'table' | 'ldap'
   label: string
   status: 'succeeded' | 'failed'
   affected_rows: number
@@ -269,6 +272,7 @@ export interface OracleUserDeprovisionResult {
   username: string
   account_dropped: boolean
   deleted_provisioning_rows: number
+  deleted_ldap_entries: number
   items: OracleUserDeprovisionExecutionItem[]
   error: string | null
 }

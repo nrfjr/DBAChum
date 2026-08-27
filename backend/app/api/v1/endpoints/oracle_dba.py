@@ -12,6 +12,14 @@ from app.schemas.oracle_dba import (
     OracleReferenceUserResponse,
     OracleCreateUserRequest,
     OracleCreateUserResponse,
+    OracleUserLifecycleStateResponse,
+    OracleUserEditRequest,
+    OracleUserEditExecuteRequest,
+    OracleUserEditPreviewResponse,
+    OracleUserEditResponse,
+    OracleUserPasswordResetRequest,
+    OracleUserAccountActionRequest,
+    OracleUserLifecycleActionResponse,
 )
 from app.schemas.provisioning import (
     ProvisioningExecuteRequest,
@@ -38,6 +46,13 @@ from app.services.oracle_dba import (
     provision_oracle_user,
 )
 from app.services.provisioning import list_provisioning_profiles_for_connection
+from app.services.oracle_user_lifecycle import (
+    load_oracle_user_lifecycle_state,
+    build_oracle_user_edit_preview,
+    execute_oracle_user_edit,
+    execute_oracle_user_password_reset,
+    execute_oracle_user_lifecycle_action,
+)
 from app.services.provisioning_preview import build_provisioning_preview
 from app.services.provisioning_execution import execute_provisioning_profile
 from app.services.deprovisioning import (
@@ -120,6 +135,95 @@ async def get_database_users(
         request.app.state.database,
         connection_id,
     )
+
+@router.get(
+    "/{connection_id}/oracle/users/{username}/lifecycle",
+    response_model=OracleUserLifecycleStateResponse,
+)
+async def get_oracle_user_lifecycle(
+    connection_id: str,
+    username: str,
+    request: Request,
+    current_user: UserResponse = Depends(
+        require_permission(Permission.DBA_OPERATE)
+    ),
+):
+    return await load_oracle_user_lifecycle_state(
+        request.app.state.database, connection_id, username
+    )
+
+
+@router.post(
+    "/{connection_id}/oracle/users/{username}/edit-preview",
+    response_model=OracleUserEditPreviewResponse,
+)
+async def preview_oracle_user_edit(
+    connection_id: str,
+    username: str,
+    data: OracleUserEditRequest,
+    request: Request,
+    current_user: UserResponse = Depends(
+        require_permission(Permission.DBA_OPERATE)
+    ),
+):
+    return await build_oracle_user_edit_preview(
+        request.app.state.database, connection_id, username, data
+    )
+
+
+@router.post(
+    "/{connection_id}/oracle/users/{username}/edit",
+    response_model=OracleUserEditResponse,
+)
+async def edit_oracle_user(
+    connection_id: str,
+    username: str,
+    data: OracleUserEditExecuteRequest,
+    request: Request,
+    current_user: UserResponse = Depends(
+        require_permission(Permission.DBA_OPERATE)
+    ),
+):
+    return await execute_oracle_user_edit(
+        request.app.state.database, connection_id, username, data, current_user
+    )
+
+
+@router.post(
+    "/{connection_id}/oracle/users/{username}/reset-password",
+    response_model=OracleUserLifecycleActionResponse,
+)
+async def reset_oracle_user_password_endpoint(
+    connection_id: str,
+    username: str,
+    data: OracleUserPasswordResetRequest,
+    request: Request,
+    current_user: UserResponse = Depends(
+        require_permission(Permission.DBA_OPERATE)
+    ),
+):
+    return await execute_oracle_user_password_reset(
+        request.app.state.database, connection_id, username, data, current_user
+    )
+
+
+@router.post(
+    "/{connection_id}/oracle/users/{username}/account-action",
+    response_model=OracleUserLifecycleActionResponse,
+)
+async def oracle_user_account_action(
+    connection_id: str,
+    username: str,
+    data: OracleUserAccountActionRequest,
+    request: Request,
+    current_user: UserResponse = Depends(
+        require_permission(Permission.DBA_OPERATE)
+    ),
+):
+    return await execute_oracle_user_lifecycle_action(
+        request.app.state.database, connection_id, username, data, current_user
+    )
+
 
 @router.get(
     "/{connection_id}/oracle/users/reference/{username}",

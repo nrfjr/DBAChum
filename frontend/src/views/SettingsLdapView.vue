@@ -221,7 +221,7 @@ onMounted(() => provisioningStore.loadLdapProfiles())
         <div class="modal-header">
           <div>
             <h2>{{ editingId ? 'Edit LDAP profile' : 'Add LDAP profile' }}</h2>
-            <p>Connection, credentials and LDIF template travel together as one reusable profile.</p>
+            <p>Connection, credentials and LDIF template travel together as one reusable profile. Provisioning can add entries and deprovisioning can remove exact matches automatically.</p>
           </div>
           <button class="modal-close" type="button" aria-label="Close" @click="closeForm">×</button>
         </div>

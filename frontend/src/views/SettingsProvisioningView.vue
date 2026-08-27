@@ -586,7 +586,7 @@ onMounted(async () => {
                 {{ ldap.name }} · {{ ldap.host }}:{{ ldap.port }}
               </option>
             </select>
-            <small>The selected profile supplies the LDAP connection, Base DN, credentials, and LDIF template.</small>
+            <small>The selected profile supplies the LDAP connection, Base DN, credentials, and LDIF template. Enabled provisioning writes the LDAP entry automatically.</small>
           </label>
 
           <section class="provisioning-step-builder">

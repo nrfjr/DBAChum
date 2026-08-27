@@ -31,8 +31,9 @@ from app.schemas.provisioning import (
 from app.schemas.user import UserResponse
 from app.services.database_actions import finish_database_action, start_database_action
 from app.services.database_connections import get_database_connection
+from app.services.ldap_directory import add_ldap_entry_from_ldif
 from app.services.ldap_ldif import DEFAULT_LDIF_TEMPLATE, render_ldif
-from app.services.provisioning import effective_match_columns
+from app.services.provisioning import effective_match_columns, get_ldap_profile_document
 from app.services.provisioning_execution import (
     _display_value,
     _extract_ldif_dn,
@@ -45,6 +46,7 @@ from app.services.provisioning_execution import (
 
 
 COMPLETED_TABLE_ACTIONS = {"inserted", "updated", "unchanged"}
+COMPLETED_LDAP_ACTIONS = {"created", "already_present"}
 
 
 def _parse_run_id(run_id: str) -> ObjectId:
@@ -130,8 +132,8 @@ def _pending_state(document: dict) -> tuple[list[str], bool, bool, str | None]:
 
     if profile.get("ldap_enabled"):
         ldap = document.get("ldap") or {}
-        if ldap.get("action") != "generated":
-            pending.append("LDAP LDIF")
+        if ldap.get("action") not in COMPLETED_LDAP_ACTIONS:
+            pending.append("LDAP entry")
             template = (document.get("ldap_snapshot") or {}).get("ldif_template") or ""
             if "<PASSWORD>" in template.upper():
                 password_required = True
@@ -282,7 +284,7 @@ def _all_completed(
     for index, _step in enumerate(profile.get("table_steps") or [], start=1):
         if by_index.get(index) is None or by_index[index].action not in COMPLETED_TABLE_ACTIONS:
             return False
-    if profile.get("ldap_enabled") and (ldap is None or ldap.action != "generated"):
+    if profile.get("ldap_enabled") and (ldap is None or ldap.action not in COMPLETED_LDAP_ACTIONS):
         return False
     return True
 
@@ -523,7 +525,7 @@ async def retry_provisioning_run(
                 _replace_step(steps, replacement)
                 raise
 
-        if profile.get("ldap_enabled") and ldap.action != "generated":
+        if profile.get("ldap_enabled") and ldap.action not in COMPLETED_LDAP_ACTIONS:
             snapshot = document.get("ldap_snapshot") or {}
             template = snapshot.get("ldif_template") or DEFAULT_LDIF_TEMPLATE
             try:
@@ -537,14 +539,17 @@ async def retry_provisioning_run(
                     employee_id=inputs.get("employee_id"),
                     base_dn=snapshot.get("base_dn", ""),
                 )
+                ldap_profile_id = snapshot.get("profile_id") or profile.get("ldap_profile_id")
+                ldap_profile = await get_ldap_profile_document(database, ldap_profile_id)
+                ldap_write = await add_ldap_entry_from_ldif(ldap_profile, ldif_content)
                 ldap = ProvisioningExecutionLdap(
                     enabled=True,
-                    action="generated",
-                    profile_id=snapshot.get("profile_id") or profile.get("ldap_profile_id"),
-                    profile_name=snapshot.get("profile_name") or "LDAP",
+                    action=ldap_write["action"],
+                    profile_id=ldap_profile_id,
+                    profile_name=snapshot.get("profile_name") or ldap_profile.get("name", "LDAP"),
                     filename=f"{username}.ldif",
                     content=ldif_content,
-                    dn=_extract_ldif_dn(ldif_content),
+                    dn=ldap_write["dn"],
                 )
             except Exception as exc:
                 ldap = ProvisioningExecutionLdap(
@@ -621,7 +626,7 @@ async def retry_provisioning_run(
 
     # Return a fresh LDIF only to this request; persisted LDAP content remains None.
     response_ldap = ldap or ProvisioningExecutionLdap(enabled=False)
-    if ldif_content and response_ldap.action == "generated":
+    if ldif_content and response_ldap.action in COMPLETED_LDAP_ACTIONS:
         response_ldap.content = ldif_content
 
     return ProvisioningExecutionResponse(

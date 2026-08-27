@@ -2439,3 +2439,191 @@ button {
     flex: 1;
   }
 }
+
+/* Phase 4E: compact Oracle user lifecycle actions */
+.user-list-table-wrap {
+  overflow: visible;
+}
+
+.user-action-menu-wrap {
+  position: relative;
+  display: inline-block;
+}
+
+.user-menu-button[aria-expanded="true"] {
+  background: var(--color-surface-secondary);
+}
+
+.user-action-dropdown {
+  position: absolute;
+  z-index: 40;
+  top: calc(100% + 0.35rem);
+  right: 0;
+  width: 190px;
+  padding: 0.35rem;
+  border: 1px solid var(--color-border);
+  border-radius: 0.7rem;
+  background: var(--color-surface, #18181d);
+  box-shadow: 0 12px 30px rgb(0 0 0 / 0.28);
+  text-align: left;
+  white-space: normal;
+}
+
+.user-action-dropdown button {
+  display: block;
+  width: 100%;
+  padding: 0.6rem 0.7rem;
+  border: 0;
+  border-radius: 0.5rem;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.user-action-dropdown button:hover:not(:disabled) {
+  background: var(--color-surface-secondary);
+}
+
+.user-action-dropdown button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.user-action-dropdown .danger-menu-item {
+  color: var(--color-danger);
+}
+
+.user-action-divider {
+  height: 1px;
+  margin: 0.3rem 0;
+  background: var(--color-border);
+}
+
+.user-action-notice {
+  margin-bottom: 0.8rem;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.user-edit-modal {
+  width: min(100%, 820px);
+}
+
+.user-edit-fields {
+  margin-top: 1rem;
+}
+
+.user-edit-lock-toggle {
+  align-content: start;
+}
+
+.checkbox-row {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.checkbox-row input[type="checkbox"] {
+  width: auto;
+}
+
+.user-edit-role-section,
+.user-edit-system-privileges,
+.user-edit-change-list {
+  margin-top: 1rem;
+}
+
+.user-edit-section-heading {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.7rem;
+}
+
+.user-edit-section-heading h3,
+.user-edit-section-heading p {
+  margin: 0;
+}
+
+.user-edit-section-heading p {
+  margin-top: 0.25rem;
+  color: var(--color-text-secondary);
+  font-size: 0.84rem;
+}
+
+.user-edit-section-heading input {
+  width: min(260px, 100%);
+}
+
+.user-edit-role-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem;
+  max-height: 330px;
+  overflow-y: auto;
+  padding-right: 0.2rem;
+}
+
+.user-edit-change-list {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.user-edit-change-list article {
+  padding: 0.7rem 0.8rem;
+  border: 1px solid var(--color-border);
+  border-radius: 0.65rem;
+}
+
+.user-edit-change-list header {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.user-edit-change-list p,
+.user-edit-change-list small {
+  margin: 0.35rem 0 0;
+}
+
+.user-edit-change-list small {
+  color: var(--color-warning, #e3b341);
+}
+
+.user-edit-request-reference {
+  display: grid;
+  gap: 0.4rem;
+  margin-top: 1rem;
+}
+
+.compact-user-action-modal {
+  width: min(100%, 560px);
+}
+
+.password-reset-form {
+  gap: 0.8rem;
+}
+
+@media (max-width: 900px) {
+  .user-list-table-wrap {
+    overflow-x: auto;
+  }
+
+  .user-edit-role-list {
+    grid-template-columns: 1fr;
+  }
+
+  .user-edit-section-heading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .user-edit-section-heading input {
+    width: 100%;
+  }
+}

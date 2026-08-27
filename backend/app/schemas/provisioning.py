@@ -392,7 +392,7 @@ class ProvisioningExecutionTableStep(BaseModel):
 
 class ProvisioningExecutionLdap(BaseModel):
     enabled: bool = False
-    action: Literal["generated", "not_run", "failed"] | None = None
+    action: Literal["generated", "created", "already_present", "not_run", "failed"] | None = None
     profile_id: str | None = None
     profile_name: str | None = None
     filename: str | None = None
@@ -490,7 +490,7 @@ class ProvisioningDeprovisionPreviewResponse(BaseModel):
 
 
 class OracleUserDeprovisionPreviewItem(BaseModel):
-    component: Literal["account", "table", "history"]
+    component: Literal["account", "table", "ldap", "history"]
     label: str
     planned_action: str
     state: Literal["candidate", "blocked", "no_action", "already_absent"]
@@ -503,6 +503,8 @@ class OracleUserDeprovisionPreviewItem(BaseModel):
     table_name: str | None = None
     match_values: dict[str, str | None] = Field(default_factory=dict)
     existing_rows: int = 0
+    ldap_profile_id: str | None = None
+    ldap_dn: str | None = None
 
 
 class OracleUserDeprovisionPreviewResponse(BaseModel):
@@ -515,6 +517,7 @@ class OracleUserDeprovisionPreviewResponse(BaseModel):
     drop_cascade: bool = False
     lifecycle_run_count: int = 0
     linked_row_count: int = 0
+    linked_ldap_count: int = 0
     blocked_count: int = 0
     execution_ready: bool = False
     confirmation_text: str
@@ -529,7 +532,7 @@ class OracleUserDeprovisionRequest(BaseModel):
 
 
 class OracleUserDeprovisionExecutionItem(BaseModel):
-    component: Literal["account", "table"]
+    component: Literal["account", "table", "ldap"]
     label: str
     status: Literal["succeeded", "failed"]
     affected_rows: int = 0
@@ -542,5 +545,6 @@ class OracleUserDeprovisionResponse(BaseModel):
     username: str
     account_dropped: bool
     deleted_provisioning_rows: int = 0
+    deleted_ldap_entries: int = 0
     items: list[OracleUserDeprovisionExecutionItem] = Field(default_factory=list)
     error: str | None = None

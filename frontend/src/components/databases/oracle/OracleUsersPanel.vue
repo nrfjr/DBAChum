@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import {
   computed,
+  onBeforeUnmount,
   onMounted,
   reactive,
   ref,
@@ -11,6 +12,8 @@ import {
   type OracleDatabaseUser,
   type OracleReferenceUser,
   type OracleCreateUserResult,
+  type OracleUserLifecycleState,
+  type OracleUserEditPreview,
 } from '@/stores/oracleDba'
 import {
   useProvisioningStore,
@@ -178,6 +181,40 @@ const deprovisionConfirmation = ref('')
 const deprovisionRequestReference = ref('')
 const deprovisionResult = ref<OracleUserDeprovisionResult | null>(null)
 
+const actionMenuUsername = ref<string | null>(null)
+const actionNotice = ref<string | null>(null)
+
+const editTargetUsername = ref<string | null>(null)
+const editLoading = ref(false)
+const editExecuting = ref(false)
+const editError = ref<string | null>(null)
+const editState = ref<OracleUserLifecycleState | null>(null)
+const editPreview = ref<OracleUserEditPreview | null>(null)
+const editRoleSearch = ref('')
+const editRequestReference = ref('')
+const editSelectedRoles = ref<string[]>([])
+const editForm = reactive({
+  defaultTablespace: '',
+  temporaryTablespace: '',
+  profile: '',
+  locked: false,
+})
+
+const passwordTargetUsername = ref<string | null>(null)
+const passwordValue = ref('')
+const passwordConfirm = ref('')
+const passwordShow = ref(false)
+const passwordRequestReference = ref('')
+const passwordExecuting = ref(false)
+const passwordError = ref<string | null>(null)
+
+type AccountAction = 'lock' | 'unlock' | 'expire_password'
+const accountActionTargetUsername = ref<string | null>(null)
+const accountAction = ref<AccountAction | null>(null)
+const accountActionRequestReference = ref('')
+const accountActionExecuting = ref(false)
+const accountActionError = ref<string | null>(null)
+
 const provisioningRuns = computed(() =>
   provisioningStore.runsByConnection[props.connectionId] ?? [],
 )
@@ -257,6 +294,255 @@ function cancelRetryPassword() {
   retryPassword.value = ''
   retryPasswordRun.value = null
   retryShowPassword.value = false
+}
+
+function closeActionMenu() {
+  actionMenuUsername.value = null
+}
+
+function toggleActionMenu(user: OracleDatabaseUser, event: Event) {
+  event.stopPropagation()
+  actionMenuUsername.value = actionMenuUsername.value === user.username
+    ? null
+    : user.username
+}
+
+function documentClickClosesActionMenu() {
+  closeActionMenu()
+}
+
+function editRoleSelected(roleName: string) {
+  return editSelectedRoles.value.includes(roleName)
+}
+
+function setEditRoleSelected(roleName: string, checked: boolean) {
+  if (checked) {
+    if (!editSelectedRoles.value.includes(roleName)) {
+      editSelectedRoles.value.push(roleName)
+    }
+  } else {
+    editSelectedRoles.value = editSelectedRoles.value.filter((role) => role !== roleName)
+  }
+  editPreview.value = null
+}
+
+function handleEditRoleToggle(roleName: string, event: Event) {
+  const target = event.target as HTMLInputElement
+  setEditRoleSelected(roleName, target.checked)
+}
+
+const filteredEditRoles = computed(() => {
+  const state = editState.value
+  if (!state) return []
+  const term = editRoleSearch.value.trim().toLowerCase()
+  const current = new Set(state.roles.map((role) => role.name))
+  return [...state.available_roles]
+    .filter((role) => !term || role.name.toLowerCase().includes(term))
+    .sort((a, b) => {
+      const aCurrent = current.has(a.name) ? 0 : 1
+      const bCurrent = current.has(b.name) ? 0 : 1
+      if (aCurrent !== bCurrent) return aCurrent - bCurrent
+      return a.name.localeCompare(b.name)
+    })
+})
+
+function editPayload() {
+  return {
+    roles: [...editSelectedRoles.value],
+    default_tablespace: editForm.defaultTablespace.trim() || null,
+    temporary_tablespace: editForm.temporaryTablespace.trim() || null,
+    profile: editForm.profile.trim() || null,
+    locked: editForm.locked,
+  }
+}
+
+async function openEditUser(user: OracleDatabaseUser) {
+  closeActionMenu()
+  editTargetUsername.value = user.username
+  editLoading.value = true
+  editError.value = null
+  editPreview.value = null
+  editState.value = null
+  editRoleSearch.value = ''
+  editRequestReference.value = ''
+  try {
+    const state = await oracleStore.loadUserLifecycleState(props.connectionId, user.username)
+    editState.value = state
+    editForm.defaultTablespace = state.default_tablespace ?? ''
+    editForm.temporaryTablespace = state.temporary_tablespace ?? ''
+    editForm.profile = state.profile ?? ''
+    editForm.locked = state.locked
+    editSelectedRoles.value = state.roles.map((role) => role.name)
+  } catch (error) {
+    editError.value = error instanceof Error ? error.message : 'Unable to load Oracle user access.'
+  } finally {
+    editLoading.value = false
+  }
+}
+
+async function previewEditUser() {
+  if (!editTargetUsername.value) return
+  editLoading.value = true
+  editError.value = null
+  try {
+    editPreview.value = await oracleStore.previewUserEdit(
+      props.connectionId,
+      editTargetUsername.value,
+      editPayload(),
+    )
+  } catch (error) {
+    editError.value = error instanceof Error ? error.message : 'Unable to preview Oracle user changes.'
+  } finally {
+    editLoading.value = false
+  }
+}
+
+async function executeEditUser() {
+  if (!editTargetUsername.value || !editPreview.value?.ready_to_execute) return
+  editExecuting.value = true
+  editError.value = null
+  try {
+    const result = await oracleStore.editUser(
+      props.connectionId,
+      editTargetUsername.value,
+      {
+        ...editPayload(),
+        request_reference: editRequestReference.value.trim() || null,
+      },
+    )
+    actionNotice.value = `${result.username} access updated · ${result.changes_applied} change(s).`
+    await oracleStore.loadUsers(props.connectionId)
+    closeEditUser()
+  } catch (error) {
+    editError.value = error instanceof Error ? error.message : 'Unable to update Oracle user access.'
+  } finally {
+    editExecuting.value = false
+  }
+}
+
+function closeEditUser() {
+  editTargetUsername.value = null
+  editLoading.value = false
+  editExecuting.value = false
+  editError.value = null
+  editState.value = null
+  editPreview.value = null
+  editRoleSearch.value = ''
+  editRequestReference.value = ''
+  editSelectedRoles.value = []
+}
+
+function generatedPassword() {
+  const letters = 'abcdefghijklmnopqrstuvwxyz'
+  const digits = '0123456789'
+  const letterPart = Array.from({ length: 3 }, () => randomCharacter(letters)).join('')
+  const digitPart = Array.from({ length: 5 }, () => randomCharacter(digits)).join('')
+  return `${letterPart}${digitPart}`
+}
+
+function openPasswordReset(user: OracleDatabaseUser) {
+  closeActionMenu()
+  passwordTargetUsername.value = user.username
+  passwordValue.value = ''
+  passwordConfirm.value = ''
+  passwordShow.value = false
+  passwordRequestReference.value = ''
+  passwordError.value = null
+}
+
+function generateResetPassword() {
+  const value = generatedPassword()
+  passwordValue.value = value
+  passwordConfirm.value = value
+  passwordShow.value = true
+}
+
+async function executePasswordReset() {
+  if (!passwordTargetUsername.value) return
+  passwordError.value = null
+  if (passwordValue.value.length < 8) {
+    passwordError.value = 'Password must contain at least 8 characters.'
+    return
+  }
+  if (passwordValue.value !== passwordConfirm.value) {
+    passwordError.value = 'Password confirmation does not match.'
+    return
+  }
+  passwordExecuting.value = true
+  try {
+    const result = await oracleStore.resetUserPassword(
+      props.connectionId,
+      passwordTargetUsername.value,
+      passwordValue.value,
+      false,
+      passwordRequestReference.value.trim() || null,
+    )
+    passwordValue.value = ''
+    passwordConfirm.value = ''
+    actionNotice.value = `${result.username} password reset successfully.`
+    await oracleStore.loadUsers(props.connectionId)
+    closePasswordReset()
+  } catch (error) {
+    passwordError.value = error instanceof Error ? error.message : 'Unable to reset Oracle password.'
+  } finally {
+    passwordExecuting.value = false
+    passwordValue.value = ''
+    passwordConfirm.value = ''
+  }
+}
+
+function closePasswordReset() {
+  passwordTargetUsername.value = null
+  passwordValue.value = ''
+  passwordConfirm.value = ''
+  passwordShow.value = false
+  passwordRequestReference.value = ''
+  passwordExecuting.value = false
+  passwordError.value = null
+}
+
+function openAccountAction(user: OracleDatabaseUser, action: AccountAction) {
+  closeActionMenu()
+  accountActionTargetUsername.value = user.username
+  accountAction.value = action
+  accountActionRequestReference.value = ''
+  accountActionError.value = null
+}
+
+const accountActionLabel = computed(() => {
+  if (accountAction.value === 'lock') return 'Lock account'
+  if (accountAction.value === 'unlock') return 'Unlock account'
+  if (accountAction.value === 'expire_password') return 'Expire password'
+  return 'Account action'
+})
+
+async function executeAccountAction() {
+  if (!accountActionTargetUsername.value || !accountAction.value) return
+  accountActionExecuting.value = true
+  accountActionError.value = null
+  try {
+    const result = await oracleStore.runUserAccountAction(
+      props.connectionId,
+      accountActionTargetUsername.value,
+      accountAction.value,
+      accountActionRequestReference.value.trim() || null,
+    )
+    actionNotice.value = `${result.username} · ${accountActionLabel.value} completed.`
+    await oracleStore.loadUsers(props.connectionId)
+    closeAccountAction()
+  } catch (error) {
+    accountActionError.value = error instanceof Error ? error.message : 'Unable to update Oracle account state.'
+  } finally {
+    accountActionExecuting.value = false
+  }
+}
+
+function closeAccountAction() {
+  accountActionTargetUsername.value = null
+  accountAction.value = null
+  accountActionRequestReference.value = ''
+  accountActionExecuting.value = false
+  accountActionError.value = null
 }
 
 async function previewUserDeprovision(user: OracleDatabaseUser) {
@@ -410,20 +696,7 @@ function randomCharacter(source: string) {
 }
 
 function generatePassword() {
-  const letters = 'abcdefghijklmnopqrstuvwxyz'
-  const digits = '0123456789'
-
-  const letterPart = Array.from(
-    { length: 3 },
-    () => randomCharacter(letters),
-  ).join('')
-
-  const digitPart = Array.from(
-    { length: 5 },
-    () => randomCharacter(digits),
-  ).join('')
-
-  createForm.password = `${letterPart}${digitPart}`
+  createForm.password = generatedPassword()
   showPassword.value = true
 }
 
@@ -705,12 +978,18 @@ async function createUser() {
 }
 
 onMounted(() => {
+  document.addEventListener('click', documentClickClosesActionMenu)
   oracleStore.loadUsers(
     props.connectionId,
   )
   provisioningStore.loadProfilesForConnection(props.connectionId)
   loadProvisioningHistory()
 })
+
+onBeforeUnmount(() => {
+  document.removeEventListener('click', documentClickClosesActionMenu)
+})
+
 </script>
 
 <template>
@@ -834,7 +1113,15 @@ onMounted(() => {
           </span>
         </div>
 
-        <div class="utility-table-wrap">
+        <div v-if="actionNotice" class="preview-callout user-action-notice">
+          <div>
+            <strong>Oracle user updated</strong>
+            <span>{{ actionNotice }}</span>
+          </div>
+          <button type="button" class="secondary-button compact-button" @click="actionNotice = null">Dismiss</button>
+        </div>
+
+        <div class="utility-table-wrap user-list-table-wrap">
           <table class="utility-table">
             <thead>
               <tr>
@@ -883,16 +1170,56 @@ onMounted(() => {
                 </td>
 
                 <td class="user-actions-cell">
-                  <button
-                    type="button"
-                    class="user-action-button danger-action"
-                    :disabled="deprovisionTargetUsername === user.username && deprovisionLoadingRunId !== null"
-                    :aria-label="`Deprovision ${user.username}`"
-                    :title="`Deprovision ${user.username}`"
-                    @click="previewUserDeprovision(user)"
-                  >
-                    <FontAwesomeIcon icon="trash-can" />
-                  </button>
+                  <div class="user-action-menu-wrap" @click.stop>
+                    <button
+                      type="button"
+                      class="user-action-button user-menu-button"
+                      :aria-expanded="actionMenuUsername === user.username"
+                      :aria-label="`Actions for ${user.username}`"
+                      :title="`Actions for ${user.username}`"
+                      @click="toggleActionMenu(user, $event)"
+                    >
+                      <FontAwesomeIcon icon="ellipsis-vertical" />
+                    </button>
+
+                    <div
+                      v-if="actionMenuUsername === user.username"
+                      class="user-action-dropdown"
+                      role="menu"
+                    >
+                      <button type="button" role="menuitem" @click="openEditUser(user)">
+                        Edit access
+                      </button>
+                      <button type="button" role="menuitem" @click="openPasswordReset(user)">
+                        Change password
+                      </button>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        @click="openAccountAction(user, user.status.toUpperCase().includes('LOCKED') ? 'unlock' : 'lock')"
+                      >
+                        {{ user.status.toUpperCase().includes('LOCKED') ? 'Unlock account' : 'Lock account' }}
+                      </button>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        :disabled="user.status.toUpperCase().includes('EXPIRED')"
+                        @click="openAccountAction(user, 'expire_password')"
+                      >
+                        Expire password
+                      </button>
+                      <div class="user-action-divider"></div>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        class="danger-menu-item"
+                        :disabled="deprovisionTargetUsername === user.username && deprovisionLoadingRunId !== null"
+                        @click="previewUserDeprovision(user); closeActionMenu()"
+                      >
+                        Deprovision
+                      </button>
+                    </div>
+                  </div>
                 </td>
               </tr>
 
@@ -932,7 +1259,7 @@ onMounted(() => {
           <span v-else>Incomplete lifecycle steps were retried; previously completed steps were skipped.</span>
         </div>
         <button
-          v-if="provisioningResult.ldap.action === 'generated' && provisioningResult.ldap.content"
+          v-if="['generated', 'created', 'already_present'].includes(provisioningResult.ldap.action ?? '') && provisioningResult.ldap.content"
           type="button"
           class="secondary-button compact-button"
           @click="downloadProvisioningLdif"
@@ -1029,6 +1356,222 @@ onMounted(() => {
     </section>
 
     <div
+      v-if="editTargetUsername"
+      class="modal-backdrop"
+      @click.self="closeEditUser"
+    >
+      <section
+        class="modal-panel oracle-user-modal user-edit-modal"
+        role="dialog"
+        aria-modal="true"
+        :aria-label="`Edit access for ${editTargetUsername}`"
+      >
+        <div class="modal-header">
+          <div>
+            <h2>Edit {{ editTargetUsername }}</h2>
+            <p v-if="!editPreview">Manage Oracle account settings and role grants. Direct system privileges stay review-only.</p>
+            <p v-else>Review the exact Oracle changes before applying them.</p>
+          </div>
+          <button type="button" class="modal-close" aria-label="Close" :disabled="editExecuting" @click="closeEditUser">×</button>
+        </div>
+
+        <div v-if="editLoading && !editState" class="empty-state">Loading current Oracle access...</div>
+        <p v-if="editError" class="login-error">{{ editError }}</p>
+
+        <template v-if="editState && !editPreview">
+          <div class="preview-summary-grid">
+            <div><span>Status</span><strong>{{ editState.status }}</strong></div>
+            <div><span>Roles</span><strong>{{ editState.roles.length }}</strong></div>
+            <div><span>Direct system privileges</span><strong>{{ editState.system_privileges.length }}</strong></div>
+          </div>
+
+          <div class="connection-form user-edit-fields">
+            <div class="connection-form-row">
+              <label>
+                Default tablespace
+                <input v-model="editForm.defaultTablespace" maxlength="30" @input="editPreview = null" />
+              </label>
+              <label>
+                Temporary tablespace
+                <input v-model="editForm.temporaryTablespace" maxlength="30" @input="editPreview = null" />
+              </label>
+            </div>
+            <div class="connection-form-row">
+              <label>
+                Profile
+                <input v-model="editForm.profile" maxlength="30" @input="editPreview = null" />
+              </label>
+              <label class="user-edit-lock-toggle">
+                <span>Account state</span>
+                <span class="checkbox-row">
+                  <input v-model="editForm.locked" type="checkbox" @change="editPreview = null" />
+                  Keep account locked
+                </span>
+              </label>
+            </div>
+          </div>
+
+          <section class="user-edit-role-section">
+            <div class="user-edit-section-heading">
+              <div>
+                <h3>Roles</h3>
+                <p>Existing roles appear first. New sensitive roles are blocked; existing sensitive roles can be revoked after preview.</p>
+              </div>
+              <input v-model="editRoleSearch" type="search" placeholder="Find role" />
+            </div>
+
+            <div class="user-edit-role-list">
+              <label
+                v-for="role in filteredEditRoles"
+                :key="role.name"
+                class="oracle-role-option"
+                :class="{ blocked: role.sensitive && !editRoleSelected(role.name) }"
+              >
+                <input
+                  type="checkbox"
+                  :checked="editRoleSelected(role.name)"
+                  :disabled="role.sensitive && !editRoleSelected(role.name)"
+                  @change="handleEditRoleToggle(role.name, $event)"
+                />
+                <span>
+                  <strong>{{ role.name }}</strong>
+                  <small>
+                    {{ editRoleSelected(role.name) ? 'Granted' : 'Not granted' }}
+                    <template v-if="role.sensitive"> · sensitive</template>
+                  </small>
+                </span>
+              </label>
+              <div v-if="filteredEditRoles.length === 0" class="empty-state">No matching roles.</div>
+            </div>
+          </section>
+
+          <details v-if="editState.system_privileges.length" class="user-edit-system-privileges">
+            <summary>Direct system privileges · review only</summary>
+            <div class="oracle-privilege-list">
+              <span v-for="privilege in editState.system_privileges" :key="privilege.name">
+                {{ privilege.name }}<template v-if="privilege.admin_option"> · ADMIN OPTION</template>
+              </span>
+            </div>
+          </details>
+
+          <div v-for="warning in editState.warnings" :key="warning" class="utility-warning">{{ warning }}</div>
+
+          <div class="connection-form-actions">
+            <button type="button" class="primary-button" :disabled="editLoading" @click="previewEditUser">
+              {{ editLoading ? 'Building preview...' : 'Review changes' }}
+            </button>
+            <button type="button" class="secondary-button" @click="closeEditUser">Cancel</button>
+          </div>
+        </template>
+
+        <template v-else-if="editState && editPreview">
+          <div v-if="editPreview.changes.length" class="user-edit-change-list">
+            <article v-for="change in editPreview.changes" :key="`${change.component}-${change.action}-${change.label}`">
+              <header>
+                <strong>{{ change.label }}</strong>
+                <span>{{ change.action.toUpperCase() }}</span>
+              </header>
+              <p>{{ change.before ?? '—' }} → {{ change.after ?? '—' }}</p>
+              <small v-if="change.sensitive">Sensitive role change</small>
+            </article>
+          </div>
+          <div v-else class="empty-state">No changes are pending.</div>
+
+          <div v-for="warning in editPreview.warnings" :key="warning" class="utility-warning">{{ warning }}</div>
+
+          <label class="user-edit-request-reference">
+            <span>Request / ticket <small>optional</small></span>
+            <input v-model="editRequestReference" maxlength="100" placeholder="Change or ticket reference" />
+          </label>
+
+          <div class="connection-form-actions">
+            <button
+              type="button"
+              class="primary-button"
+              :disabled="editExecuting || !editPreview.ready_to_execute"
+              @click="executeEditUser"
+            >
+              {{ editExecuting ? 'Applying...' : 'Apply changes' }}
+            </button>
+            <button type="button" class="secondary-button" :disabled="editExecuting" @click="editPreview = null">Back</button>
+          </div>
+        </template>
+      </section>
+    </div>
+
+    <div
+      v-if="passwordTargetUsername"
+      class="modal-backdrop"
+      @click.self="closePasswordReset"
+    >
+      <section class="modal-panel compact-user-action-modal" role="dialog" aria-modal="true" :aria-label="`Change password for ${passwordTargetUsername}`">
+        <div class="modal-header">
+          <div>
+            <h2>Change password</h2>
+            <p>{{ passwordTargetUsername }} · the password is used only for this Oracle ALTER USER operation and is not stored in DBAChum.</p>
+          </div>
+          <button type="button" class="modal-close" aria-label="Close" :disabled="passwordExecuting" @click="closePasswordReset">×</button>
+        </div>
+
+        <div class="connection-form password-reset-form">
+          <label>
+            New password
+            <input v-model="passwordValue" :type="passwordShow ? 'text' : 'password'" minlength="8" maxlength="128" autocomplete="new-password" />
+          </label>
+          <label>
+            Confirm password
+            <input v-model="passwordConfirm" :type="passwordShow ? 'text' : 'password'" minlength="8" maxlength="128" autocomplete="new-password" />
+          </label>
+          <div class="oracle-password-actions">
+            <button type="button" class="secondary-button" @click="generateResetPassword">Generate password</button>
+            <button type="button" class="secondary-button" @click="passwordShow = !passwordShow">{{ passwordShow ? 'Hide password' : 'Show password' }}</button>
+          </div>
+          <label>
+            Request / ticket <span class="optional-label">Optional</span>
+            <input v-model="passwordRequestReference" maxlength="100" placeholder="Change or ticket reference" />
+          </label>
+        </div>
+
+        <p v-if="passwordError" class="login-error">{{ passwordError }}</p>
+        <div class="connection-form-actions">
+          <button type="button" class="primary-button" :disabled="passwordExecuting" @click="executePasswordReset">
+            {{ passwordExecuting ? 'Changing...' : 'Change password' }}
+          </button>
+          <button type="button" class="secondary-button" :disabled="passwordExecuting" @click="closePasswordReset">Cancel</button>
+        </div>
+      </section>
+    </div>
+
+    <div
+      v-if="accountActionTargetUsername && accountAction"
+      class="modal-backdrop"
+      @click.self="closeAccountAction"
+    >
+      <section class="modal-panel compact-user-action-modal" role="dialog" aria-modal="true" :aria-label="`${accountActionLabel} ${accountActionTargetUsername}`">
+        <div class="modal-header">
+          <div>
+            <h2>{{ accountActionLabel }}</h2>
+            <p v-if="accountAction === 'expire_password'">{{ accountActionTargetUsername }} will be required to change the password at the next Oracle login.</p>
+            <p v-else>{{ accountActionTargetUsername }} will be {{ accountAction === 'lock' ? 'prevented from logging in' : 'allowed to log in again, subject to its password state' }}.</p>
+          </div>
+          <button type="button" class="modal-close" aria-label="Close" :disabled="accountActionExecuting" @click="closeAccountAction">×</button>
+        </div>
+
+        <label class="user-edit-request-reference">
+          <span>Request / ticket <small>optional</small></span>
+          <input v-model="accountActionRequestReference" maxlength="100" placeholder="Change or ticket reference" />
+        </label>
+        <p v-if="accountActionError" class="login-error">{{ accountActionError }}</p>
+        <div class="connection-form-actions">
+          <button type="button" class="primary-button" :disabled="accountActionExecuting" @click="executeAccountAction">
+            {{ accountActionExecuting ? 'Applying...' : accountActionLabel }}
+          </button>
+          <button type="button" class="secondary-button" :disabled="accountActionExecuting" @click="closeAccountAction">Cancel</button>
+        </div>
+      </section>
+    </div>
+
+    <div
       v-if="deprovisionTargetUsername"
       class="modal-backdrop"
       @click.self="closeDeprovisionPreview"
@@ -1068,7 +1611,7 @@ onMounted(() => {
             <div>
               <strong>Last execution · {{ deprovisionResult.status.toUpperCase() }}</strong>
               <span v-if="deprovisionResult.error">{{ deprovisionResult.error }}</span>
-              <span v-else>{{ deprovisionResult.deleted_provisioning_rows }} linked row(s) removed.</span>
+              <span v-else>{{ deprovisionResult.deleted_provisioning_rows }} linked row(s) and {{ deprovisionResult.deleted_ldap_entries }} LDAP entr{{ deprovisionResult.deleted_ldap_entries === 1 ? 'y' : 'ies' }} removed.</span>
             </div>
           </div>
 
@@ -1080,6 +1623,10 @@ onMounted(() => {
             <div>
               <span>Linked rows</span>
               <strong>{{ deprovisionPreview.linked_row_count }}</strong>
+            </div>
+            <div>
+              <span>LDAP entries</span>
+              <strong>{{ deprovisionPreview.linked_ldap_count }}</strong>
             </div>
             <div>
               <span>Execution</span>
@@ -1126,6 +1673,9 @@ onMounted(() => {
               <small>{{ item.reason }}</small>
               <small v-if="Object.keys(item.match_values).length" class="deprovision-match-key">
                 Match: {{ formatDeprovisionMatch(item.match_values) }}
+              </small>
+              <small v-if="item.ldap_dn" class="deprovision-match-key">
+                DN: {{ item.ldap_dn }}
               </small>
             </article>
           </div>
@@ -1612,7 +2162,7 @@ onMounted(() => {
             <section class="preview-section">
               <h3>LDAP</h3>
               <p v-if="provisioningPreview.ldap.enabled">
-                {{ provisioningPreview.ldap.profile_name }} · template validated · output
+                {{ provisioningPreview.ldap.profile_name }} · directory entry will be added automatically · LDIF validated as
                 <strong>{{ provisioningPreview.ldap.filename }}</strong>
               </p>
               <p v-else>LDAP is not enabled for this provisioning profile.</p>
@@ -1708,8 +2258,16 @@ onMounted(() => {
               </div>
             </div>
 
+            <div v-if="provisioningResult.ldap.enabled" class="preview-callout">
+              <div>
+                <strong>LDAP · {{ (provisioningResult.ldap.action ?? 'not_run').replace('_', ' ').toUpperCase() }}</strong>
+                <span v-if="provisioningResult.ldap.dn">{{ provisioningResult.ldap.dn }}</span>
+                <span v-if="provisioningResult.ldap.error" class="login-error">{{ provisioningResult.ldap.error }}</span>
+              </div>
+            </div>
+
             <button
-              v-if="provisioningResult.ldap.action === 'generated' && provisioningResult.ldap.content"
+              v-if="['generated', 'created', 'already_present'].includes(provisioningResult.ldap.action ?? '') && provisioningResult.ldap.content"
               type="button"
               class="secondary-button"
               @click="downloadProvisioningLdif"

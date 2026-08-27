@@ -30,6 +30,7 @@ from app.services.database_actions import (
     start_database_action,
 )
 from app.services.database_connections import get_database_connection
+from app.services.ldap_directory import add_ldap_entry_from_ldif
 from app.services.ldap_ldif import (
     DEFAULT_LDIF_TEMPLATE,
     normalize_employee_id,
@@ -562,15 +563,18 @@ async def execute_provisioning_profile(
                     employee_id=employee_id,
                     base_dn=ldap_profile.get("base_dn", ""),
                 )
+                ldap_write = await add_ldap_entry_from_ldif(ldap_profile, ldif_content)
                 ldap_result = ProvisioningExecutionLdap(
                     enabled=True,
-                    action="generated",
+                    action=ldap_write["action"],
                     profile_id=profile["ldap_profile_id"],
                     profile_name=ldap_profile.get("name", "LDAP"),
                     filename=f"{username}.ldif",
                     content=ldif_content,
-                    dn=_extract_ldif_dn(ldif_content),
+                    dn=ldap_write["dn"],
                 )
+                if ldap_write["action"] == "created":
+                    mutated = True
                 await _update_run(
                     database,
                     run_id,

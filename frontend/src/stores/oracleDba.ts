@@ -153,6 +153,72 @@ export interface OracleReferenceUser {
   warnings: string[]
 }
 
+
+export interface OracleManageableRole {
+  name: string
+  sensitive: boolean
+}
+
+export interface OracleUserLifecycleState {
+  username: string
+  status: string
+  locked: boolean
+  expired: boolean
+  default_tablespace: string | null
+  temporary_tablespace: string | null
+  profile: string | null
+  created_at: string | null
+  lock_date: string | null
+  expiry_date: string | null
+  roles: OracleReferenceRole[]
+  system_privileges: OracleReferenceSystemPrivilege[]
+  available_roles: OracleManageableRole[]
+  warnings: string[]
+}
+
+export interface OracleUserEditInput {
+  roles: string[]
+  default_tablespace: string | null
+  temporary_tablespace: string | null
+  profile: string | null
+  locked: boolean
+}
+
+export interface OracleUserEditPreviewItem {
+  component: string
+  action: string
+  label: string
+  before: string | null
+  after: string | null
+  sensitive: boolean
+}
+
+export interface OracleUserEditPreview {
+  username: string
+  generated_at: string
+  ready_to_execute: boolean
+  changes: OracleUserEditPreviewItem[]
+  warnings: string[]
+}
+
+export interface OracleUserEditResult {
+  audit_id: string
+  status: string
+  username: string
+  changes_applied: number
+  after: OracleUserLifecycleState
+  error: string | null
+}
+
+export interface OracleUserLifecycleActionResult {
+  audit_id: string
+  status: string
+  username: string
+  action: string
+  after: OracleUserLifecycleState
+  error: string | null
+}
+
 export interface OracleCreateUserInput {
   username: string
   password: string
@@ -361,6 +427,65 @@ export const useOracleDbaStore =
         } finally {
           this.loadingReference = false
         }
+      },
+
+      async loadUserLifecycleState(id: string, username: string) {
+        return apiRequest<OracleUserLifecycleState>(
+          `/databases/${id}/oracle/users/${encodeURIComponent(username)}/lifecycle`,
+        )
+      },
+
+      async previewUserEdit(id: string, username: string, data: OracleUserEditInput) {
+        return apiRequest<OracleUserEditPreview>(
+          `/databases/${id}/oracle/users/${encodeURIComponent(username)}/edit-preview`,
+          { method: 'POST', body: JSON.stringify(data) },
+        )
+      },
+
+      async editUser(
+        id: string,
+        username: string,
+        data: OracleUserEditInput & { request_reference: string | null },
+      ) {
+        return apiRequest<OracleUserEditResult>(
+          `/databases/${id}/oracle/users/${encodeURIComponent(username)}/edit`,
+          { method: 'POST', body: JSON.stringify(data) },
+        )
+      },
+
+      async resetUserPassword(
+        id: string,
+        username: string,
+        password: string,
+        expireAfterReset: boolean,
+        requestReference: string | null,
+      ) {
+        return apiRequest<OracleUserLifecycleActionResult>(
+          `/databases/${id}/oracle/users/${encodeURIComponent(username)}/reset-password`,
+          {
+            method: 'POST',
+            body: JSON.stringify({
+              password,
+              expire_after_reset: expireAfterReset,
+              request_reference: requestReference,
+            }),
+          },
+        )
+      },
+
+      async runUserAccountAction(
+        id: string,
+        username: string,
+        action: 'lock' | 'unlock' | 'expire_password',
+        requestReference: string | null,
+      ) {
+        return apiRequest<OracleUserLifecycleActionResult>(
+          `/databases/${id}/oracle/users/${encodeURIComponent(username)}/account-action`,
+          {
+            method: 'POST',
+            body: JSON.stringify({ action, request_reference: requestReference }),
+          },
+        )
       },
 
       async createUser(

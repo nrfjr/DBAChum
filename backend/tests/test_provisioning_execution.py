@@ -91,7 +91,7 @@ def preview():
 
 
 @pytest.mark.asyncio
-async def test_execute_provisioning_creates_parent_upserts_step_and_generates_ldif(monkeypatch):
+async def test_execute_provisioning_creates_parent_upserts_step_and_adds_ldap_entry(monkeypatch):
     database = FakeDatabase()
     profile = {
         "_id": ObjectId(PROFILE_ID),
@@ -147,6 +147,10 @@ async def test_execute_provisioning_creates_parent_upserts_step_and_generates_ld
     async def fake_ldap(_database, _profile_id):
         return {"name": "LDAP", "base_dn": "dc=example,dc=com", "ldif_template": "dn: uid=<USERNAME>,<BASE_DN>\nuserPassword: <PASSWORD>"}
 
+    async def fake_ldap_add(_profile, content):
+        assert "abc12345" in content
+        return {"action": "created", "dn": "uid=JPNINO12345,dc=example,dc=com"}
+
     async def fake_start(*_args, **_kwargs):
         return "audit-1"
 
@@ -160,6 +164,7 @@ async def test_execute_provisioning_creates_parent_upserts_step_and_generates_ld
     monkeypatch.setattr(provisioning_execution, "reconcile_oracle_user", fake_reconcile)
     monkeypatch.setattr(provisioning_execution, "upsert_oracle_provisioning_row", fake_upsert)
     monkeypatch.setattr(provisioning_execution, "get_ldap_profile_document", fake_ldap)
+    monkeypatch.setattr(provisioning_execution, "add_ldap_entry_from_ldif", fake_ldap_add)
     monkeypatch.setattr(provisioning_execution, "start_database_action", fake_start)
     monkeypatch.setattr(provisioning_execution, "finish_database_action", fake_finish)
 
@@ -177,7 +182,7 @@ async def test_execute_provisioning_creates_parent_upserts_step_and_generates_ld
     assert result.roles[0].action == "granted"
     assert result.table_steps[0].action == "inserted"
     assert result.table_steps[0].generated_values == {"ID": "77"}
-    assert result.ldap.action == "generated"
+    assert result.ldap.action == "created"
     assert "abc12345" in result.ldap.content
     assert captured["match_values"] == {"USERNAME": "JPNINO12345"}
     assert captured["sequence_columns"] == {"ID": "USER_MASTER_SEQ"}

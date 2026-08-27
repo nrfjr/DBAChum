@@ -254,3 +254,83 @@ class OracleCreateUserResponse(BaseModel):
     ldif_filename: str | None = None
     ldif_content: str | None = None
 
+
+
+class OracleManageableRole(BaseModel):
+    name: str
+    sensitive: bool = False
+
+
+class OracleUserLifecycleStateResponse(BaseModel):
+    username: str
+    status: str
+    locked: bool = False
+    expired: bool = False
+    default_tablespace: str | None = None
+    temporary_tablespace: str | None = None
+    profile: str | None = None
+    created_at: datetime | None = None
+    lock_date: datetime | None = None
+    expiry_date: datetime | None = None
+    roles: list[OracleReferenceRole] = Field(default_factory=list)
+    system_privileges: list[OracleReferenceSystemPrivilege] = Field(default_factory=list)
+    available_roles: list[OracleManageableRole] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+
+
+class OracleUserEditRequest(BaseModel):
+    roles: list[str] = Field(default_factory=list, max_length=200)
+    default_tablespace: str | None = Field(default=None, max_length=30)
+    temporary_tablespace: str | None = Field(default=None, max_length=30)
+    profile: str | None = Field(default=None, max_length=30)
+    locked: bool | None = None
+
+
+class OracleUserEditExecuteRequest(OracleUserEditRequest):
+    request_reference: str | None = Field(default=None, max_length=100)
+
+
+class OracleUserEditPreviewItem(BaseModel):
+    component: str
+    action: str
+    label: str
+    before: str | None = None
+    after: str | None = None
+    sensitive: bool = False
+
+
+class OracleUserEditPreviewResponse(BaseModel):
+    username: str
+    generated_at: datetime
+    ready_to_execute: bool = True
+    changes: list[OracleUserEditPreviewItem] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+
+
+class OracleUserEditResponse(BaseModel):
+    audit_id: str
+    status: str
+    username: str
+    changes_applied: int = 0
+    after: OracleUserLifecycleStateResponse
+    error: str | None = None
+
+
+class OracleUserPasswordResetRequest(BaseModel):
+    password: str = Field(min_length=8, max_length=128)
+    expire_after_reset: bool = False
+    request_reference: str | None = Field(default=None, max_length=100)
+
+
+class OracleUserAccountActionRequest(BaseModel):
+    action: str
+    request_reference: str | None = Field(default=None, max_length=100)
+
+
+class OracleUserLifecycleActionResponse(BaseModel):
+    audit_id: str
+    status: str
+    username: str
+    action: str
+    after: OracleUserLifecycleStateResponse
+    error: str | None = None

@@ -22,8 +22,10 @@ from app.schemas.provisioning import (
 from app.schemas.user import UserResponse
 from app.services.database_actions import finish_database_action, start_database_action
 from app.services.database_connections import get_database_connection
+from app.services.ldap_directory import delete_ldap_entry, find_ldap_entries_for_username
 from app.services.provisioning import (
     effective_match_columns,
+    get_ldap_profile_document,
     list_provisioning_profiles_for_connection,
 )
 from app.services.provisioning_execution import _safe_error
@@ -177,9 +179,8 @@ async def build_oracle_user_deprovision_preview(
 
     items: list[OracleUserDeprovisionPreviewItem] = []
     warnings: list[str] = [
-        "Execution re-checks every linked provisioning-table row immediately before deletion.",
+        "Execution re-checks every linked cleanup target immediately before deletion.",
         "Only enabled provisioning profiles attached to this parent database are inspected.",
-        "LDAP is not deleted automatically because DBAChum provisioning only generates LDIF; it does not own the directory entry.",
     ]
     blocked_reasons: list[str] = []
 
@@ -381,6 +382,83 @@ async def build_oracle_user_deprovision_preview(
                     )
                 )
 
+    seen_ldap_profiles: set[str] = set()
+    for profile_model in profiles:
+        profile = _profile_dict(profile_model)
+        if not profile.get("ldap_enabled"):
+            continue
+        ldap_profile_id = str(profile.get("ldap_profile_id") or "")
+        if not ldap_profile_id or ldap_profile_id in seen_ldap_profiles:
+            continue
+        seen_ldap_profiles.add(ldap_profile_id)
+        profile_id = str(profile.get("id") or profile.get("_id") or "")
+        profile_name = str(profile.get("name") or profile_id or "Provisioning profile")
+        label = f"{profile_name} · LDAP entry"
+        try:
+            ldap_profile = await get_ldap_profile_document(database, ldap_profile_id)
+            matches = await find_ldap_entries_for_username(ldap_profile, username)
+        except Exception as exc:
+            reason = "Live LDAP check failed: " + _safe_error(exc)
+            blocked_reasons.append(label + ": " + reason)
+            items.append(
+                OracleUserDeprovisionPreviewItem(
+                    component="ldap",
+                    label=label,
+                    planned_action="Manual review required",
+                    state="blocked",
+                    reason=reason,
+                    profile_id=profile_id or None,
+                    profile_name=profile_name,
+                    ldap_profile_id=ldap_profile_id,
+                )
+            )
+            continue
+
+        if len(matches) == 0:
+            items.append(
+                OracleUserDeprovisionPreviewItem(
+                    component="ldap",
+                    label=label,
+                    planned_action="No LDAP entry to delete",
+                    state="already_absent",
+                    reason="No LDAP entry matched this username in the enabled LDAP profile.",
+                    profile_id=profile_id or None,
+                    profile_name=profile_name,
+                    ldap_profile_id=ldap_profile_id,
+                )
+            )
+        elif len(matches) == 1:
+            items.append(
+                OracleUserDeprovisionPreviewItem(
+                    component="ldap",
+                    label=label,
+                    planned_action="DELETE LDAP entry",
+                    state="candidate",
+                    reason="Exactly one LDAP entry matched this username.",
+                    profile_id=profile_id or None,
+                    profile_name=profile_name,
+                    ldap_profile_id=ldap_profile_id,
+                    ldap_dn=matches[0],
+                )
+            )
+        else:
+            reason = (
+                f"LDAP lookup matched {len(matches)} entries. DBAChum will not guess which directory entry to delete."
+            )
+            blocked_reasons.append(label + ": " + reason)
+            items.append(
+                OracleUserDeprovisionPreviewItem(
+                    component="ldap",
+                    label=label,
+                    planned_action="Manual review required",
+                    state="blocked",
+                    reason=reason,
+                    profile_id=profile_id or None,
+                    profile_name=profile_name,
+                    ldap_profile_id=ldap_profile_id,
+                )
+            )
+
     if lifecycle_run_count:
         items.append(
             OracleUserDeprovisionPreviewItem(
@@ -397,6 +475,7 @@ async def build_oracle_user_deprovision_preview(
         for item in items
         if item.component == "table" and item.state == "candidate"
     )
+    linked_ldap_count = sum(1 for item in items if item.component == "ldap" and item.state == "candidate")
     blocked_count = sum(1 for item in items if item.state == "blocked")
     execution_ready = account_exists and not protected and blocked_count == 0 and not blocked_reasons
 
@@ -410,6 +489,7 @@ async def build_oracle_user_deprovision_preview(
         drop_cascade=drop_cascade,
         lifecycle_run_count=lifecycle_run_count,
         linked_row_count=linked_row_count,
+        linked_ldap_count=linked_ldap_count,
         blocked_count=blocked_count,
         execution_ready=execution_ready,
         confirmation_text=username,
@@ -462,6 +542,7 @@ async def execute_oracle_user_deprovision(
             "drop_cascade": preview.drop_cascade,
             "lifecycle_run_count": preview.lifecycle_run_count,
             "linked_row_count": preview.linked_row_count,
+            "linked_ldap_count": preview.linked_ldap_count,
         },
         details={
             "confirmation_required": username,
@@ -476,11 +557,22 @@ async def execute_oracle_user_deprovision(
                 for item in preview.items
                 if item.component == "table" and item.state == "candidate"
             ],
+            "ldap_targets": [
+                {
+                    "profile_name": item.profile_name,
+                    "profile_id": item.profile_id,
+                    "ldap_profile_id": item.ldap_profile_id,
+                    "dn": item.ldap_dn,
+                }
+                for item in preview.items
+                if item.component == "ldap" and item.state == "candidate"
+            ],
         },
     )
 
     execution_items: list[OracleUserDeprovisionExecutionItem] = []
     deleted_rows = 0
+    deleted_ldap_entries = 0
     account_dropped = False
 
     # Delete linked provisioning rows first. If any one fails, stop before the
@@ -524,6 +616,7 @@ async def execute_oracle_user_deprovision(
                 after={
                     "account_dropped": False,
                     "deleted_provisioning_rows": deleted_rows,
+                    "deleted_ldap_entries": deleted_ldap_entries,
                 },
                 error=error,
                 details={"execution_items": [entry.model_dump(mode="json") for entry in execution_items]},
@@ -534,6 +627,60 @@ async def execute_oracle_user_deprovision(
                 username=username,
                 account_dropped=False,
                 deleted_provisioning_rows=deleted_rows,
+                deleted_ldap_entries=deleted_ldap_entries,
+                items=execution_items,
+                error=error,
+            )
+
+    # Remove unambiguous LDAP entries only when LDAP is enabled by an active
+    # provisioning profile. Any failure stops before the Oracle account drop.
+    for item in preview.items:
+        if item.component != "ldap" or item.state != "candidate":
+            continue
+        try:
+            ldap_profile = await get_ldap_profile_document(database, item.ldap_profile_id or "")
+            removed = await delete_ldap_entry(ldap_profile, item.ldap_dn or "")
+            if removed:
+                deleted_ldap_entries += 1
+            execution_items.append(
+                OracleUserDeprovisionExecutionItem(
+                    component="ldap",
+                    label=item.label,
+                    status="succeeded",
+                    affected_rows=1 if removed else 0,
+                )
+            )
+        except Exception as exc:
+            error = _safe_error(exc)
+            execution_items.append(
+                OracleUserDeprovisionExecutionItem(
+                    component="ldap",
+                    label=item.label,
+                    status="failed",
+                    affected_rows=0,
+                    error=error,
+                )
+            )
+            status = DatabaseActionStatus.PARTIAL if (deleted_rows or deleted_ldap_entries) else DatabaseActionStatus.FAILED
+            await finish_database_action(
+                database,
+                audit_id,
+                status=status,
+                after={
+                    "account_dropped": False,
+                    "deleted_provisioning_rows": deleted_rows,
+                    "deleted_ldap_entries": deleted_ldap_entries,
+                },
+                error=error,
+                details={"execution_items": [entry.model_dump(mode="json") for entry in execution_items]},
+            )
+            return OracleUserDeprovisionResponse(
+                audit_id=audit_id,
+                status=status.value,
+                username=username,
+                account_dropped=False,
+                deleted_provisioning_rows=deleted_rows,
+                deleted_ldap_entries=deleted_ldap_entries,
                 items=execution_items,
                 error=error,
             )
@@ -564,7 +711,7 @@ async def execute_oracle_user_deprovision(
                 error=error,
             )
         )
-        status = DatabaseActionStatus.PARTIAL if deleted_rows else DatabaseActionStatus.FAILED
+        status = DatabaseActionStatus.PARTIAL if (deleted_rows or deleted_ldap_entries) else DatabaseActionStatus.FAILED
         await finish_database_action(
             database,
             audit_id,
@@ -572,6 +719,7 @@ async def execute_oracle_user_deprovision(
             after={
                 "account_dropped": False,
                 "deleted_provisioning_rows": deleted_rows,
+                "deleted_ldap_entries": deleted_ldap_entries,
             },
             error=error,
             details={"execution_items": [entry.model_dump(mode="json") for entry in execution_items]},
@@ -582,6 +730,7 @@ async def execute_oracle_user_deprovision(
             username=username,
             account_dropped=False,
             deleted_provisioning_rows=deleted_rows,
+            deleted_ldap_entries=deleted_ldap_entries,
             items=execution_items,
             error=error,
         )
@@ -593,6 +742,7 @@ async def execute_oracle_user_deprovision(
         after={
             "account_dropped": account_dropped,
             "deleted_provisioning_rows": deleted_rows,
+            "deleted_ldap_entries": deleted_ldap_entries,
         },
         details={"execution_items": [entry.model_dump(mode="json") for entry in execution_items]},
     )
@@ -602,6 +752,7 @@ async def execute_oracle_user_deprovision(
         username=username,
         account_dropped=True,
         deleted_provisioning_rows=deleted_rows,
+        deleted_ldap_entries=deleted_ldap_entries,
         items=execution_items,
         error=None,
     )
