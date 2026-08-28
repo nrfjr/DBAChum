@@ -22,6 +22,20 @@ async def get_oracle_sessions(
     ) as oracle_connection:
 
         try:
+            try:
+                major_version = int(str(oracle_connection.version).split(".", 1)[0])
+            except (TypeError, ValueError):
+                major_version = None
+
+            # SQL_EXEC_START is not exposed by Oracle 10g V$SESSION.
+            # Preserve the response shape with a typed NULL on legacy
+            # databases while keeping the real timestamp on 11g+.
+            sql_exec_start_expr = (
+                "sql_exec_start"
+                if major_version is not None and major_version >= 11
+                else "CAST(NULL AS DATE)"
+            )
+
             summary = await oracle_connection.fetchone(
                 """
                 SELECT
@@ -70,7 +84,7 @@ async def get_oracle_sessions(
             )
 
             rows = await oracle_connection.fetchall(
-                """
+                f"""
                 SELECT *
                 FROM (
                     SELECT
@@ -83,7 +97,7 @@ async def get_oracle_sessions(
                         program,
                         module,
                         sql_id,
-                        sql_exec_start,
+                        {sql_exec_start_expr} AS sql_exec_start,
                         event,
                         wait_class,
                         blocking_instance,

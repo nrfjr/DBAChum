@@ -21,8 +21,22 @@ async def get_oracle_activity(
     ) as oracle_connection:
 
         try:
+            try:
+                major_version = int(str(oracle_connection.version).split(".", 1)[0])
+            except (TypeError, ValueError):
+                major_version = None
+
+            # SQL_EXEC_START was added after Oracle 10g. Use a typed NULL
+            # on legacy databases so Activity remains available and the
+            # frontend can render the execution-start value as unavailable.
+            sql_exec_start_expr = (
+                "s.sql_exec_start"
+                if major_version is not None and major_version >= 11
+                else "CAST(NULL AS DATE)"
+            )
+
             rows = await oracle_connection.fetchall(
-                """
+                f"""
                 SELECT *
                 FROM (
                     SELECT
@@ -30,7 +44,7 @@ async def get_oracle_activity(
                         s.serial#,
                         s.username,
                         s.sql_id,
-                        s.sql_exec_start,
+                        {sql_exec_start_expr} AS sql_exec_start,
                         s.last_call_et,
                         s.module,
                         s.machine,
