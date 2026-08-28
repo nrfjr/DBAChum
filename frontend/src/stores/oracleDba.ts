@@ -268,6 +268,42 @@ export interface OracleAccessLookupInput {
   privilege?: string
 }
 
+export interface OracleAccessCompareUser {
+  username: string
+  status: string
+  profile: string | null
+  default_tablespace: string | null
+  temporary_tablespace: string | null
+}
+
+export interface OracleAccessCompareItem {
+  key: string
+  label: string
+  powerful: boolean
+  left_sources: OracleAccessGrantSource[]
+  right_sources: OracleAccessGrantSource[]
+}
+
+export interface OracleAccessCompareCategory {
+  common: OracleAccessCompareItem[]
+  left_only: OracleAccessCompareItem[]
+  right_only: OracleAccessCompareItem[]
+}
+
+export interface OracleAccessCompareResult {
+  left: OracleAccessCompareUser
+  right: OracleAccessCompareUser
+  roles: OracleAccessCompareCategory
+  system_privileges: OracleAccessCompareCategory
+  object_privileges: OracleAccessCompareCategory
+  administrative_privileges: OracleAccessCompareCategory
+  common_count: number
+  left_only_count: number
+  right_only_count: number
+  warnings: string[]
+  checked_at: string
+}
+
 export interface OracleUserEditInput {
   roles: string[]
   default_tablespace: string | null
@@ -541,6 +577,16 @@ export const useOracleDbaStore =
         if (input.privilege?.trim()) params.set('privilege', input.privilege.trim())
         return apiRequest<OracleAccessLookupResult>(
           `/databases/${id}/oracle/access-lookup?${params.toString()}`,
+        )
+      },
+
+      async compareUserAccess(id: string, leftUsername: string, rightUsername: string) {
+        const params = new URLSearchParams({
+          left_username: leftUsername.trim(),
+          right_username: rightUsername.trim(),
+        })
+        return apiRequest<OracleAccessCompareResult>(
+          `/databases/${id}/oracle/access-compare?${params.toString()}`,
         )
       },
 

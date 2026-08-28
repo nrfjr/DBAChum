@@ -1,7 +1,10 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import ScrollableDataTable from '@/components/common/ScrollableDataTable.vue'
+import OracleAccessCompareCategory from '@/components/databases/oracle/OracleAccessCompareCategory.vue'
 import {
   useOracleDbaStore,
+  type OracleAccessCompareResult,
   type OracleAccessGrantSource,
   type OracleAccessLookupResult,
 } from '@/stores/oracleDba'
@@ -12,7 +15,10 @@ const props = defineProps<{
 
 const oracleStore = useOracleDbaStore()
 
+type WorkspaceMode = 'lookup' | 'compare'
 type LookupKind = 'role' | 'system_privilege' | 'object'
+
+const workspaceMode = ref<WorkspaceMode>('lookup')
 
 const lookupKind = ref<LookupKind>('role')
 const lookupValue = ref('')
@@ -24,11 +30,24 @@ const loading = ref(false)
 const error = ref<string | null>(null)
 const result = ref<OracleAccessLookupResult | null>(null)
 
+const leftUsername = ref('')
+const rightUsername = ref('')
+const compareFilter = ref('')
+const compareLoading = ref(false)
+const compareError = ref<string | null>(null)
+const compareResult = ref<OracleAccessCompareResult | null>(null)
+
 const canSearch = computed(() => {
   if (lookupKind.value === 'object') {
     return Boolean(owner.value.trim() && objectName.value.trim())
   }
   return Boolean(lookupValue.value.trim())
+})
+
+const canCompare = computed(() => {
+  const left = leftUsername.value.trim().toUpperCase()
+  const right = rightUsername.value.trim().toUpperCase()
+  return Boolean(left && right && left !== right)
 })
 
 const filteredMatches = computed(() => {
@@ -51,6 +70,12 @@ const filteredMatches = computed(() => {
   )
 })
 
+function chooseWorkspace(mode: WorkspaceMode) {
+  workspaceMode.value = mode
+  if (mode === 'lookup') compareError.value = null
+  if (mode === 'compare') error.value = null
+}
+
 function chooseKind(kind: LookupKind) {
   lookupKind.value = kind
   result.value = null
@@ -61,6 +86,7 @@ function chooseKind(kind: LookupKind) {
 function formatSource(source: OracleAccessGrantSource) {
   if (source.kind === 'direct') return 'Direct'
   if (source.kind === 'public') return 'PUBLIC'
+  if (source.kind === 'password_file') return 'Password file'
   if (source.via.length) return `via ${source.via.join(' → ')}`
   return source.kind
 }
@@ -106,6 +132,34 @@ async function runLookup() {
     loading.value = false
   }
 }
+
+async function runCompare() {
+  if (!canCompare.value || compareLoading.value) return
+
+  compareLoading.value = true
+  compareError.value = null
+  compareResult.value = null
+  compareFilter.value = ''
+
+  const left = leftUsername.value.trim().toUpperCase()
+  const right = rightUsername.value.trim().toUpperCase()
+
+  try {
+    compareResult.value = await oracleStore.compareUserAccess(
+      props.connectionId,
+      left,
+      right,
+    )
+    leftUsername.value = compareResult.value.left.username
+    rightUsername.value = compareResult.value.right.username
+  } catch (caught) {
+    compareError.value = caught instanceof Error
+      ? caught.message
+      : 'Unable to compare Oracle user access.'
+  } finally {
+    compareLoading.value = false
+  }
+}
 </script>
 
 <template>
@@ -114,179 +168,199 @@ async function runLookup() {
       <div>
         <h2>Access &amp; Privileges</h2>
         <p>
-          Search effective Oracle access across normal database users. This workspace is read-only.
+          Investigate effective Oracle access across normal database users. This workspace is read-only.
         </p>
       </div>
       <span class="access-read-only-pill">Read only</span>
     </div>
 
-    <div class="access-mode-tabs" role="tablist" aria-label="Access lookup type">
+    <div class="access-workspace-tabs" role="tablist" aria-label="Access workspace">
       <button
         type="button"
-        :class="{ active: lookupKind === 'role' }"
-        @click="chooseKind('role')"
+        :class="{ active: workspaceMode === 'lookup' }"
+        @click="chooseWorkspace('lookup')"
       >
-        Role
+        Access lookup
       </button>
       <button
         type="button"
-        :class="{ active: lookupKind === 'system_privilege' }"
-        @click="chooseKind('system_privilege')"
+        :class="{ active: workspaceMode === 'compare' }"
+        @click="chooseWorkspace('compare')"
       >
-        System privilege
-      </button>
-      <button
-        type="button"
-        :class="{ active: lookupKind === 'object' }"
-        @click="chooseKind('object')"
-      >
-        Object access
+        Compare users
       </button>
     </div>
 
-    <div class="access-search-card">
-      <template v-if="lookupKind === 'role'">
-        <label>
-          <span>Role name</span>
-          <input
-            v-model="lookupValue"
-            type="text"
-            autocomplete="off"
-            placeholder="APP_USER"
-            @keyup.enter="runLookup"
-          />
-          <small>Find users who receive the role directly or through another role.</small>
-        </label>
-      </template>
-
-      <template v-else-if="lookupKind === 'system_privilege'">
-        <label>
-          <span>System privilege</span>
-          <input
-            v-model="lookupValue"
-            type="text"
-            autocomplete="off"
-            placeholder="SELECT ANY TABLE"
-            @keyup.enter="runLookup"
-          />
-          <small>Find direct, role-inherited and PUBLIC effective access.</small>
-        </label>
-      </template>
-
-      <template v-else>
-        <div class="access-object-inputs">
-          <label>
-            <span>Owner</span>
-            <input
-              v-model="owner"
-              type="text"
-              autocomplete="off"
-              placeholder="APP"
-              @keyup.enter="runLookup"
-            />
-          </label>
-          <label>
-            <span>Object</span>
-            <input
-              v-model="objectName"
-              type="text"
-              autocomplete="off"
-              placeholder="ORDERS"
-              @keyup.enter="runLookup"
-            />
-          </label>
-          <label>
-            <span>Privilege <small>optional</small></span>
-            <input
-              v-model="objectPrivilege"
-              type="text"
-              autocomplete="off"
-              placeholder="SELECT"
-              @keyup.enter="runLookup"
-            />
-          </label>
-        </div>
-        <small>
-          Includes explicit object/column grants and applicable broad ANY-style privileges.
-        </small>
-      </template>
-
-      <div class="access-search-actions">
+    <template v-if="workspaceMode === 'lookup'">
+      <div class="access-mode-tabs" role="tablist" aria-label="Access lookup type">
         <button
           type="button"
-          class="primary-button"
-          :disabled="!canSearch || loading"
-          @click="runLookup"
+          :class="{ active: lookupKind === 'role' }"
+          @click="chooseKind('role')"
         >
-          {{ loading ? 'Searching...' : 'Search access' }}
+          Role
+        </button>
+        <button
+          type="button"
+          :class="{ active: lookupKind === 'system_privilege' }"
+          @click="chooseKind('system_privilege')"
+        >
+          System privilege
+        </button>
+        <button
+          type="button"
+          :class="{ active: lookupKind === 'object' }"
+          @click="chooseKind('object')"
+        >
+          Object access
         </button>
       </div>
-    </div>
 
-    <div v-if="error" class="utility-warning access-error">
-      {{ error }}
-    </div>
+      <div class="access-search-card">
+        <template v-if="lookupKind === 'role'">
+          <label>
+            <span>Role name</span>
+            <input
+              v-model="lookupValue"
+              type="text"
+              autocomplete="off"
+              placeholder="APP_USER"
+              @keyup.enter="runLookup"
+            />
+            <small>Find users who receive the role directly or through another role.</small>
+          </label>
+        </template>
 
-    <template v-if="result">
-      <section class="access-result-summary">
-        <div>
-          <span>Target</span>
-          <strong>{{ result.target }}</strong>
-        </div>
-        <div>
-          <span>Matching users</span>
-          <strong>{{ result.unique_user_count }}</strong>
-        </div>
-        <div>
-          <span>Result rows</span>
-          <strong>{{ result.matches.length }}</strong>
-        </div>
-        <div>
-          <span>PUBLIC access</span>
-          <strong>{{ result.public_access ? 'YES' : 'NO' }}</strong>
-        </div>
-      </section>
+        <template v-else-if="lookupKind === 'system_privilege'">
+          <label>
+            <span>System privilege</span>
+            <input
+              v-model="lookupValue"
+              type="text"
+              autocomplete="off"
+              placeholder="SELECT ANY TABLE"
+              @keyup.enter="runLookup"
+            />
+            <small>Find direct, role-inherited and PUBLIC effective access.</small>
+          </label>
+        </template>
 
-      <div v-if="!result.target_exists" class="utility-warning">
-        The requested {{ kindLabel() }} was not found in the available Oracle catalog data.
+        <template v-else>
+          <div class="access-object-inputs">
+            <label>
+              <span>Owner</span>
+              <input
+                v-model="owner"
+                type="text"
+                autocomplete="off"
+                placeholder="APP"
+                @keyup.enter="runLookup"
+              />
+            </label>
+            <label>
+              <span>Object</span>
+              <input
+                v-model="objectName"
+                type="text"
+                autocomplete="off"
+                placeholder="ORDERS"
+                @keyup.enter="runLookup"
+              />
+            </label>
+            <label>
+              <span>Privilege <small>optional</small></span>
+              <input
+                v-model="objectPrivilege"
+                type="text"
+                autocomplete="off"
+                placeholder="SELECT"
+                @keyup.enter="runLookup"
+              />
+            </label>
+          </div>
+          <small>
+            Includes explicit object/column grants and applicable broad ANY-style privileges.
+          </small>
+        </template>
+
+        <div class="access-search-actions">
+          <button
+            type="button"
+            class="primary-button"
+            :disabled="!canSearch || loading"
+            @click="runLookup"
+          >
+            {{ loading ? 'Searching...' : 'Search access' }}
+          </button>
+        </div>
       </div>
 
-      <details v-if="result.powerful" class="access-alert-section">
-        <summary>⚠ Elevated access target</summary>
-        <p>
-          {{ result.target }} matches DBAChum's explicit elevated-access rules. This is a warning, not a security score.
-        </p>
-      </details>
-
-      <div v-if="result.object_type" class="access-object-type">
-        <span>Oracle object type</span>
-        <strong>{{ result.object_type }}</strong>
+      <div v-if="error" class="utility-warning access-error">
+        {{ error }}
       </div>
 
-      <details v-if="result.public_access" class="access-alert-section" open>
-        <summary>PUBLIC grants</summary>
-        <p>
-          This access is granted through PUBLIC and therefore applies to database users generally.
-        </p>
-        <div class="access-chip-row">
-          <span v-for="item in result.public_details" :key="item" class="access-chip">
-            {{ item }}
-          </span>
+      <template v-if="result">
+        <section class="access-result-summary">
+          <div>
+            <span>Target</span>
+            <strong>{{ result.target }}</strong>
+          </div>
+          <div>
+            <span>Matching users</span>
+            <strong>{{ result.unique_user_count }}</strong>
+          </div>
+          <div>
+            <span>Result rows</span>
+            <strong>{{ result.matches.length }}</strong>
+          </div>
+          <div>
+            <span>PUBLIC access</span>
+            <strong>{{ result.public_access ? 'YES' : 'NO' }}</strong>
+          </div>
+        </section>
+
+        <div v-if="!result.target_exists" class="utility-warning">
+          The requested {{ kindLabel() }} was not found in the available Oracle catalog data.
         </div>
-      </details>
 
-      <div class="access-results-toolbar">
-        <input
-          v-model="resultFilter"
-          type="search"
-          placeholder="Filter username, status, privilege or source"
-        />
-        <span>{{ filteredMatches.length }} shown</span>
-      </div>
+        <details v-if="result.powerful" class="access-alert-section">
+          <summary>⚠ Elevated access target</summary>
+          <p>
+            {{ result.target }} matches DBAChum's explicit elevated-access rules. This is a warning, not a security score.
+          </p>
+        </details>
 
-      <div v-if="filteredMatches.length" class="access-results-table">
-        <table>
-          <thead>
+        <div v-if="result.object_type" class="access-object-type">
+          <span>Oracle object type</span>
+          <strong>{{ result.object_type }}</strong>
+        </div>
+
+        <details v-if="result.public_access" class="access-alert-section" open>
+          <summary>PUBLIC grants</summary>
+          <p>
+            This access is granted through PUBLIC and therefore applies to database users generally.
+          </p>
+          <div class="access-chip-row">
+            <span v-for="item in result.public_details" :key="item" class="access-chip">
+              {{ item }}
+            </span>
+          </div>
+        </details>
+
+        <div class="access-results-toolbar">
+          <input
+            v-model="resultFilter"
+            type="search"
+            placeholder="Filter username, status, privilege or source"
+          />
+          <span>{{ filteredMatches.length }} shown</span>
+        </div>
+
+        <ScrollableDataTable
+          :empty="filteredMatches.length === 0"
+          :empty-message="result.target_exists ? 'No matching normal Oracle users found.' : 'No result rows.'"
+        >
+          <template #header>
             <tr>
               <th>User</th>
               <th>Status</th>
@@ -296,41 +370,175 @@ async function runLookup() {
               <th>Source</th>
               <th>Flag</th>
             </tr>
-          </thead>
-          <tbody>
-            <tr
-              v-for="(item, index) in filteredMatches"
-              :key="`${item.username}-${item.basis}-${item.privilege || ''}-${item.column_name || ''}-${index}`"
-            >
-              <td><strong>{{ item.username }}</strong></td>
-              <td>{{ item.status }}</td>
-              <td>{{ item.basis }}</td>
-              <td>{{ item.privilege || '—' }}</td>
-              <td>{{ item.column_name || '—' }}</td>
-              <td>{{ formatSource(item.source) }}</td>
-              <td>{{ item.powerful ? '⚠ Elevated' : '—' }}</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
+          </template>
+          <tr
+            v-for="(item, index) in filteredMatches"
+            :key="`${item.username}-${item.basis}-${item.privilege || ''}-${item.column_name || ''}-${index}`"
+          >
+            <td><strong>{{ item.username }}</strong></td>
+            <td>{{ item.status }}</td>
+            <td>{{ item.basis }}</td>
+            <td>{{ item.privilege || '—' }}</td>
+            <td>{{ item.column_name || '—' }}</td>
+            <td>{{ formatSource(item.source) }}</td>
+            <td>{{ item.powerful ? '⚠ Elevated' : '—' }}</td>
+          </tr>
+        </ScrollableDataTable>
 
-      <div v-else-if="result.target_exists" class="empty-state access-empty-result">
-        No matching normal Oracle users found.
-      </div>
+        <div
+          v-for="warning in result.warnings"
+          :key="warning"
+          class="utility-warning"
+        >
+          {{ warning }}
+        </div>
+      </template>
 
-      <div
-        v-for="warning in result.warnings"
-        :key="warning"
-        class="utility-warning"
-      >
-        {{ warning }}
+      <div v-else-if="!loading && !error" class="access-start-state">
+        <strong>Start with an access question.</strong>
+        <span>For example: who has DBA, who has SELECT ANY TABLE, or who can SELECT APP.ORDERS?</span>
       </div>
     </template>
 
-    <div v-else-if="!loading && !error" class="access-start-state">
-      <strong>Start with an access question.</strong>
-      <span>For example: who has DBA, who has SELECT ANY TABLE, or who can SELECT APP.ORDERS?</span>
-    </div>
+    <template v-else>
+      <div class="access-search-card compare-search-card">
+        <div class="compare-user-inputs">
+          <label>
+            <span>First user</span>
+            <input
+              v-model="leftUsername"
+              type="text"
+              autocomplete="off"
+              placeholder="USER_A"
+              @keyup.enter="runCompare"
+            />
+          </label>
+
+          <div class="compare-versus">VS</div>
+
+          <label>
+            <span>Second user</span>
+            <input
+              v-model="rightUsername"
+              type="text"
+              autocomplete="off"
+              placeholder="USER_B"
+              @keyup.enter="runCompare"
+            />
+          </label>
+        </div>
+        <small>
+          Compare effective roles, system privileges, object/column grants and password-file administrative privileges.
+        </small>
+
+        <div class="access-search-actions">
+          <button
+            type="button"
+            class="primary-button"
+            :disabled="!canCompare || compareLoading"
+            @click="runCompare"
+          >
+            {{ compareLoading ? 'Comparing...' : 'Compare access' }}
+          </button>
+        </div>
+      </div>
+
+      <div v-if="compareError" class="utility-warning access-error">
+        {{ compareError }}
+      </div>
+
+      <template v-if="compareResult">
+        <section class="compare-user-summary">
+          <article>
+            <strong>{{ compareResult.left.username }}</strong>
+            <span>{{ compareResult.left.status }}</span>
+            <small>
+              Profile {{ compareResult.left.profile || '—' }} ·
+              {{ compareResult.left.default_tablespace || '—' }} / {{ compareResult.left.temporary_tablespace || '—' }}
+            </small>
+          </article>
+          <div class="compare-summary-vs">VS</div>
+          <article>
+            <strong>{{ compareResult.right.username }}</strong>
+            <span>{{ compareResult.right.status }}</span>
+            <small>
+              Profile {{ compareResult.right.profile || '—' }} ·
+              {{ compareResult.right.default_tablespace || '—' }} / {{ compareResult.right.temporary_tablespace || '—' }}
+            </small>
+          </article>
+        </section>
+
+        <section class="access-result-summary compare-counts">
+          <div>
+            <span>Common access</span>
+            <strong>{{ compareResult.common_count }}</strong>
+          </div>
+          <div>
+            <span>Only {{ compareResult.left.username }}</span>
+            <strong>{{ compareResult.left_only_count }}</strong>
+          </div>
+          <div>
+            <span>Only {{ compareResult.right.username }}</span>
+            <strong>{{ compareResult.right_only_count }}</strong>
+          </div>
+        </section>
+
+        <div class="access-results-toolbar">
+          <input
+            v-model="compareFilter"
+            type="search"
+            placeholder="Filter compared access or source path"
+          />
+          <span>Applies to all categories</span>
+        </div>
+
+        <div class="compare-categories">
+          <OracleAccessCompareCategory
+            title="Roles"
+            :category="compareResult.roles"
+            :left-username="compareResult.left.username"
+            :right-username="compareResult.right.username"
+            :filter="compareFilter"
+            open
+          />
+          <OracleAccessCompareCategory
+            title="System privileges"
+            :category="compareResult.system_privileges"
+            :left-username="compareResult.left.username"
+            :right-username="compareResult.right.username"
+            :filter="compareFilter"
+            open
+          />
+          <OracleAccessCompareCategory
+            title="Object & column privileges"
+            :category="compareResult.object_privileges"
+            :left-username="compareResult.left.username"
+            :right-username="compareResult.right.username"
+            :filter="compareFilter"
+          />
+          <OracleAccessCompareCategory
+            title="Administrative privileges"
+            :category="compareResult.administrative_privileges"
+            :left-username="compareResult.left.username"
+            :right-username="compareResult.right.username"
+            :filter="compareFilter"
+          />
+        </div>
+
+        <div
+          v-for="warning in compareResult.warnings"
+          :key="warning"
+          class="utility-warning"
+        >
+          {{ warning }}
+        </div>
+      </template>
+
+      <div v-else-if="!compareLoading && !compareError" class="access-start-state">
+        <strong>Compare two Oracle users.</strong>
+        <span>DBAChum will separate common access from grants that only one account receives, including inherited role paths.</span>
+      </div>
+    </template>
   </section>
 </template>
 
@@ -355,12 +563,19 @@ async function runLookup() {
   white-space: nowrap;
 }
 
+.access-workspace-tabs,
 .access-mode-tabs {
   display: flex;
   flex-wrap: wrap;
   gap: .45rem;
 }
 
+.access-workspace-tabs {
+  padding-bottom: .75rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.access-workspace-tabs button,
 .access-mode-tabs button {
   border: 1px solid var(--border);
   border-radius: .65rem;
@@ -370,6 +585,7 @@ async function runLookup() {
   cursor: pointer;
 }
 
+.access-workspace-tabs button.active,
 .access-mode-tabs button.active {
   border-color: var(--accent);
   color: var(--accent);
@@ -401,10 +617,28 @@ async function runLookup() {
   color: var(--text-muted);
 }
 
-.access-object-inputs {
+.access-object-inputs,
+.compare-user-inputs {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: .75rem;
+}
+
+.compare-user-inputs {
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: end;
+}
+
+.compare-versus,
+.compare-summary-vs {
+  color: var(--text-muted);
+  font-size: .8rem;
+  font-weight: 800;
+  letter-spacing: .08em;
+}
+
+.compare-versus {
+  padding: .65rem 0;
 }
 
 .access-search-actions {
@@ -416,6 +650,10 @@ async function runLookup() {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: .7rem;
+}
+
+.compare-counts {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .access-result-summary > div,
@@ -481,39 +719,36 @@ async function runLookup() {
   white-space: nowrap;
 }
 
-.access-results-table {
-  max-height: 34rem;
-  overflow: auto;
+.compare-user-summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  gap: .75rem;
+  align-items: center;
+}
+
+.compare-user-summary article {
+  display: grid;
+  gap: .2rem;
+  padding: .8rem;
   border: 1px solid var(--border);
   border-radius: .75rem;
 }
 
-.access-results-table table {
-  width: 100%;
-  border-collapse: collapse;
+.compare-user-summary article span,
+.compare-user-summary article small {
+  color: var(--text-muted);
 }
 
-.access-results-table th,
-.access-results-table td {
-  padding: .65rem .75rem;
-  border-bottom: 1px solid var(--border);
-  text-align: left;
-  vertical-align: top;
+.compare-summary-vs {
+  text-align: center;
 }
 
-.access-results-table thead th {
-  position: sticky;
-  top: 0;
-  z-index: 1;
-  background: var(--surface);
+.compare-categories {
+  display: grid;
+  gap: .75rem;
 }
 
-.access-results-table tbody tr:last-child td {
-  border-bottom: 0;
-}
-
-.access-start-state,
-.access-empty-result {
+.access-start-state {
   display: grid;
   gap: .25rem;
   padding: 1.2rem;
@@ -536,8 +771,17 @@ async function runLookup() {
   }
 
   .access-object-inputs,
-  .access-result-summary {
+  .access-result-summary,
+  .compare-counts,
+  .compare-user-inputs,
+  .compare-user-summary {
     grid-template-columns: 1fr;
+  }
+
+  .compare-versus,
+  .compare-summary-vs {
+    padding: 0;
+    text-align: left;
   }
 
   .access-results-toolbar {

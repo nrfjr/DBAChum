@@ -362,6 +362,42 @@ class OracleAccessLookupResponse(BaseModel):
     checked_at: datetime
 
 
+class OracleAccessCompareUser(BaseModel):
+    username: str
+    status: str
+    profile: str | None = None
+    default_tablespace: str | None = None
+    temporary_tablespace: str | None = None
+
+
+class OracleAccessCompareItem(BaseModel):
+    key: str
+    label: str
+    powerful: bool = False
+    left_sources: list[OracleAccessGrantSource] = Field(default_factory=list)
+    right_sources: list[OracleAccessGrantSource] = Field(default_factory=list)
+
+
+class OracleAccessCompareCategory(BaseModel):
+    common: list[OracleAccessCompareItem] = Field(default_factory=list)
+    left_only: list[OracleAccessCompareItem] = Field(default_factory=list)
+    right_only: list[OracleAccessCompareItem] = Field(default_factory=list)
+
+
+class OracleAccessCompareResponse(BaseModel):
+    left: OracleAccessCompareUser
+    right: OracleAccessCompareUser
+    roles: OracleAccessCompareCategory
+    system_privileges: OracleAccessCompareCategory
+    object_privileges: OracleAccessCompareCategory
+    administrative_privileges: OracleAccessCompareCategory
+    common_count: int = 0
+    left_only_count: int = 0
+    right_only_count: int = 0
+    warnings: list[str] = Field(default_factory=list)
+    checked_at: datetime
+
+
 class OracleUserEditRequest(BaseModel):
     roles: list[str] = Field(default_factory=list, max_length=200)
     default_tablespace: str | None = Field(default=None, max_length=30)

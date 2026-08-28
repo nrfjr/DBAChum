@@ -27,6 +27,7 @@ from app.schemas.oracle_dba import (
     OracleUsernameAvailabilityResponse,
     OracleUserAccessInspectorResponse,
     OracleAccessLookupResponse,
+    OracleAccessCompareResponse,
 )
 from app.schemas.provisioning import (
     ProvisioningExecuteRequest,
@@ -62,6 +63,7 @@ from app.services.provisioning import list_provisioning_profiles_for_connection
 from app.connectors.oracle_provisioning import normalize_oracle_identifier, oracle_user_exists
 from app.services.oracle_access_inspector import load_oracle_user_access_inspector
 from app.services.oracle_access_lookup import load_oracle_access_lookup
+from app.services.oracle_access_compare import load_oracle_access_compare
 from app.services.oracle_user_lifecycle import (
     load_oracle_user_lifecycle_state,
     build_oracle_user_edit_preview,
@@ -408,6 +410,27 @@ async def get_oracle_access_lookup_endpoint(
         owner=owner,
         object_name=object_name,
         privilege=privilege,
+    )
+
+
+@router.get(
+    "/{connection_id}/oracle/access-compare",
+    response_model=OracleAccessCompareResponse,
+)
+async def get_oracle_access_compare_endpoint(
+    connection_id: str,
+    request: Request,
+    left_username: str = Query(..., min_length=1, max_length=30),
+    right_username: str = Query(..., min_length=1, max_length=30),
+    current_user: UserResponse = Depends(
+        require_permission(Permission.DBA_OPERATE)
+    ),
+):
+    return await load_oracle_access_compare(
+        request.app.state.database,
+        connection_id,
+        left_username,
+        right_username,
     )
 
 
