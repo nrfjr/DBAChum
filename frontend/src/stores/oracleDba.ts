@@ -182,6 +182,60 @@ export interface OracleUserLifecycleState {
   warnings: string[]
 }
 
+export interface OracleAccessGrantSource {
+  kind: 'direct' | 'role' | 'public' | string
+  via: string[]
+  admin_option: boolean
+  default_role: boolean | null
+  grantable: boolean | null
+}
+
+export interface OracleAccessRole {
+  name: string
+  sources: OracleAccessGrantSource[]
+  sensitive: boolean
+  powerful: boolean
+}
+
+export interface OracleAccessSystemPrivilege {
+  name: string
+  sources: OracleAccessGrantSource[]
+  powerful: boolean
+}
+
+export interface OracleAccessObjectPrivilege {
+  owner: string
+  object_name: string
+  privilege: string
+  column_name: string | null
+  sources: OracleAccessGrantSource[]
+}
+
+export interface OracleAccessFinding {
+  kind: string
+  name: string
+  source: string
+  reason: string
+}
+
+export interface OracleUserAccessInspector {
+  username: string
+  status: string
+  default_tablespace: string | null
+  temporary_tablespace: string | null
+  profile: string | null
+  created_at: string | null
+  lock_date: string | null
+  expiry_date: string | null
+  roles: OracleAccessRole[]
+  system_privileges: OracleAccessSystemPrivilege[]
+  object_privileges: OracleAccessObjectPrivilege[]
+  administrative_privileges: string[]
+  powerful_findings: OracleAccessFinding[]
+  warnings: string[]
+  checked_at: string
+}
+
 export interface OracleUserEditInput {
   roles: string[]
   default_tablespace: string | null
@@ -439,6 +493,12 @@ export const useOracleDbaStore =
         } finally {
           this.loadingReference = false
         }
+      },
+
+      async loadUserAccessInspector(id: string, username: string) {
+        return apiRequest<OracleUserAccessInspector>(
+          `/databases/${id}/oracle/users/${encodeURIComponent(username)}/access-inspector`,
+        )
       },
 
       async loadUserLifecycleState(id: string, username: string) {

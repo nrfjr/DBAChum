@@ -24,6 +24,7 @@ from app.schemas.oracle_dba import (
     OracleUserAccountActionRequest,
     OracleUserLifecycleActionResponse,
     OracleUsernameAvailabilityResponse,
+    OracleUserAccessInspectorResponse,
 )
 from app.schemas.provisioning import (
     ProvisioningExecuteRequest,
@@ -57,6 +58,7 @@ from app.services.oracle_dba import (
 )
 from app.services.provisioning import list_provisioning_profiles_for_connection
 from app.connectors.oracle_provisioning import normalize_oracle_identifier, oracle_user_exists
+from app.services.oracle_access_inspector import load_oracle_user_access_inspector
 from app.services.oracle_user_lifecycle import (
     load_oracle_user_lifecycle_state,
     build_oracle_user_edit_preview,
@@ -357,6 +359,25 @@ async def oracle_user_account_action(
 ):
     return await execute_oracle_user_lifecycle_action(
         request.app.state.database, connection_id, username, data, current_user
+    )
+
+
+@router.get(
+    "/{connection_id}/oracle/users/{username}/access-inspector",
+    response_model=OracleUserAccessInspectorResponse,
+)
+async def get_oracle_user_access_inspector_endpoint(
+    connection_id: str,
+    username: str,
+    request: Request,
+    current_user: UserResponse = Depends(
+        require_permission(Permission.DBA_OPERATE)
+    ),
+):
+    return await load_oracle_user_access_inspector(
+        request.app.state.database,
+        connection_id,
+        username,
     )
 
 

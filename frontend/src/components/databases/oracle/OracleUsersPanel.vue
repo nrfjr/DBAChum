@@ -14,6 +14,8 @@ import {
   type OracleCreateUserResult,
   type OracleUserLifecycleState,
   type OracleUserEditPreview,
+  type OracleUserAccessInspector,
+  type OracleAccessGrantSource,
 } from '@/stores/oracleDba'
 import OracleBulkProvisionModal from '@/components/databases/oracle/OracleBulkProvisionModal.vue'
 
@@ -192,6 +194,12 @@ const deprovisionResult = ref<OracleUserDeprovisionResult | null>(null)
 const actionMenuUsername = ref<string | null>(null)
 const actionNotice = ref<string | null>(null)
 
+const inspectorTargetUsername = ref<string | null>(null)
+const inspectorLoading = ref(false)
+const inspectorError = ref<string | null>(null)
+const inspector = ref<OracleUserAccessInspector | null>(null)
+const inspectorObjectSearch = ref('')
+
 const editTargetUsername = ref<string | null>(null)
 const editLoading = ref(false)
 const editExecuting = ref(false)
@@ -318,6 +326,60 @@ function toggleActionMenu(user: OracleDatabaseUser, event: Event) {
 function documentClickClosesActionMenu() {
   closeActionMenu()
   createActionsOpen.value = false
+}
+
+function formatAccessSource(source: OracleAccessGrantSource) {
+  if (source.kind === 'direct') return 'Direct'
+  if (source.kind === 'public') return 'PUBLIC'
+  if (source.via.length) return `via ${source.via.join(' → ')}`
+  return source.kind
+}
+
+const filteredInspectorObjectPrivileges = computed(() => {
+  const value = inspector.value
+  if (!value) return []
+  const term = inspectorObjectSearch.value.trim().toLowerCase()
+  if (!term) return value.object_privileges
+  return value.object_privileges.filter((item) =>
+    [
+      item.owner,
+      item.object_name,
+      item.column_name,
+      item.privilege,
+      ...item.sources.flatMap((source) => source.via),
+    ]
+      .filter(Boolean)
+      .some((candidate) => String(candidate).toLowerCase().includes(term)),
+  )
+})
+
+async function openAccessInspector(user: OracleDatabaseUser) {
+  closeActionMenu()
+  inspectorTargetUsername.value = user.username
+  inspectorLoading.value = true
+  inspectorError.value = null
+  inspector.value = null
+  inspectorObjectSearch.value = ''
+  try {
+    inspector.value = await oracleStore.loadUserAccessInspector(
+      props.connectionId,
+      user.username,
+    )
+  } catch (error) {
+    inspectorError.value = error instanceof Error
+      ? error.message
+      : 'Unable to inspect Oracle access.'
+  } finally {
+    inspectorLoading.value = false
+  }
+}
+
+function closeAccessInspector() {
+  inspectorTargetUsername.value = null
+  inspectorLoading.value = false
+  inspectorError.value = null
+  inspector.value = null
+  inspectorObjectSearch.value = ''
 }
 
 function editRoleSelected(roleName: string) {
@@ -1389,6 +1451,9 @@ onBeforeUnmount(() => {
                       class="user-action-dropdown"
                       role="menu"
                     >
+                      <button type="button" role="menuitem" @click="openAccessInspector(user)">
+                        Inspect access
+                      </button>
                       <button type="button" role="menuitem" @click="openEditUser(user)">
                         Edit access
                       </button>
@@ -1556,6 +1621,135 @@ onBeforeUnmount(() => {
       </div>
 
     </section>
+
+    <div
+      v-if="inspectorTargetUsername"
+      class="modal-backdrop"
+      @click.self="closeAccessInspector"
+    >
+      <section
+        class="modal-panel oracle-user-modal access-inspector-modal"
+        role="dialog"
+        aria-modal="true"
+        :aria-label="`Access inspector for ${inspectorTargetUsername}`"
+      >
+        <div class="modal-header">
+          <div>
+            <h2>Access inspector · {{ inspectorTargetUsername }}</h2>
+            <p>Read-only view of direct and inherited Oracle access. No grants are changed from this screen.</p>
+          </div>
+          <button type="button" class="modal-close" aria-label="Close" @click="closeAccessInspector">×</button>
+        </div>
+
+        <div v-if="inspectorLoading" class="empty-state">Inspecting Oracle roles and privileges...</div>
+        <p v-if="inspectorError" class="login-error">{{ inspectorError }}</p>
+
+        <template v-if="inspector">
+          <div class="access-inspector-summary">
+            <div><span>Status</span><strong>{{ inspector.status }}</strong></div>
+            <div><span>Roles</span><strong>{{ inspector.roles.length }}</strong></div>
+            <div><span>System privileges</span><strong>{{ inspector.system_privileges.length }}</strong></div>
+            <div><span>Object privileges</span><strong>{{ inspector.object_privileges.length }}</strong></div>
+          </div>
+
+          <section class="access-account-summary">
+            <div><span>Default tablespace</span><strong>{{ inspector.default_tablespace || '—' }}</strong></div>
+            <div><span>Temporary tablespace</span><strong>{{ inspector.temporary_tablespace || '—' }}</strong></div>
+            <div><span>Profile</span><strong>{{ inspector.profile || '—' }}</strong></div>
+            <div><span>Created</span><strong>{{ formatDate(inspector.created_at) }}</strong></div>
+          </section>
+
+          <section v-if="inspector.powerful_findings.length" class="access-powerful-section">
+            <div class="user-edit-section-heading">
+              <div>
+                <h3>Elevated access</h3>
+                <p>Explicit flags only — this is not a security score.</p>
+              </div>
+            </div>
+            <div class="access-finding-list">
+              <article v-for="finding in inspector.powerful_findings" :key="`${finding.kind}-${finding.name}-${finding.source}`">
+                <strong>⚠ {{ finding.name }}</strong>
+                <span>{{ finding.source }}</span>
+                <small>{{ finding.reason }}</small>
+              </article>
+            </div>
+          </section>
+
+          <details class="access-inspector-section" open>
+            <summary>Roles · {{ inspector.roles.length }}</summary>
+            <div v-if="inspector.roles.length" class="access-table-wrap">
+              <table>
+                <thead><tr><th>Role</th><th>Source</th><th>Default</th><th>Admin option</th><th>Flag</th></tr></thead>
+                <tbody>
+                  <tr v-for="role in inspector.roles" :key="role.name">
+                    <td><strong>{{ role.name }}</strong></td>
+                    <td>{{ role.sources.map(formatAccessSource).join(', ') }}</td>
+                    <td>{{ role.sources.some((source) => source.default_role === true) ? 'YES' : role.sources.some((source) => source.kind === 'direct') ? 'NO' : '—' }}</td>
+                    <td>{{ role.sources.some((source) => source.kind === 'direct' && source.admin_option) ? 'YES' : 'NO' }}</td>
+                    <td>{{ role.powerful ? '⚠ Elevated' : '—' }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div v-else class="empty-state">No role grants found.</div>
+          </details>
+
+          <details class="access-inspector-section">
+            <summary>System privileges · {{ inspector.system_privileges.length }}</summary>
+            <div v-if="inspector.system_privileges.length" class="access-table-wrap">
+              <table>
+                <thead><tr><th>Privilege</th><th>Source</th><th>Admin option</th><th>Flag</th></tr></thead>
+                <tbody>
+                  <tr v-for="privilege in inspector.system_privileges" :key="privilege.name">
+                    <td><strong>{{ privilege.name }}</strong></td>
+                    <td>{{ privilege.sources.map(formatAccessSource).join(', ') }}</td>
+                    <td>{{ privilege.sources.some((source) => source.kind === 'direct' && source.admin_option) ? 'YES' : 'NO' }}</td>
+                    <td>{{ privilege.powerful ? '⚠ Elevated' : '—' }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div v-else class="empty-state">No system privileges found.</div>
+          </details>
+
+          <details v-if="inspector.administrative_privileges.length" class="access-inspector-section">
+            <summary>Password-file administration · {{ inspector.administrative_privileges.length }}</summary>
+            <div class="oracle-privilege-list">
+              <span v-for="privilege in inspector.administrative_privileges" :key="privilege">⚠ {{ privilege }}</span>
+            </div>
+          </details>
+
+          <details class="access-inspector-section">
+            <summary>Object privileges · {{ inspector.object_privileges.length }}</summary>
+            <div class="access-object-toolbar">
+              <input v-model="inspectorObjectSearch" type="search" placeholder="Filter owner, object, column, privilege or role" />
+              <span>{{ filteredInspectorObjectPrivileges.length }} shown</span>
+            </div>
+            <div v-if="filteredInspectorObjectPrivileges.length" class="access-table-wrap access-object-table">
+              <table>
+                <thead><tr><th>Object</th><th>Column</th><th>Privilege</th><th>Source</th><th>Grantable</th></tr></thead>
+                <tbody>
+                  <tr v-for="item in filteredInspectorObjectPrivileges" :key="`${item.owner}.${item.object_name}.${item.column_name || ''}.${item.privilege}`">
+                    <td><strong>{{ item.owner }}.{{ item.object_name }}</strong></td>
+                    <td>{{ item.column_name || '—' }}</td>
+                    <td>{{ item.privilege }}</td>
+                    <td>{{ item.sources.map(formatAccessSource).join(', ') }}</td>
+                    <td>{{ item.sources.some((source) => source.kind === 'direct' && source.grantable) ? 'YES' : 'NO' }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div v-else class="empty-state">No matching object privileges.</div>
+          </details>
+
+          <div v-for="warning in inspector.warnings" :key="warning" class="utility-warning">{{ warning }}</div>
+
+          <div class="connection-form-actions">
+            <button type="button" class="secondary-button" @click="closeAccessInspector">Close</button>
+          </div>
+        </template>
+      </section>
+    </div>
 
     <div
       v-if="editTargetUsername"
@@ -2525,4 +2719,31 @@ onBeforeUnmount(() => {
 .identity-confirmation > div { display: grid; gap: .15rem; }
 .identity-confirmation span { font-size: .78rem; opacity: .7; }
 @media (max-width: 700px) { .wizard-steps, .identity-confirmation { grid-template-columns: 1fr; } }
+
+.access-inspector-modal { width: min(100%, 78rem); }
+.access-inspector-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .7rem; }
+.access-inspector-summary > div, .access-account-summary > div { display: grid; gap: .2rem; padding: .7rem; border: 1px solid var(--border-color); border-radius: .65rem; }
+.access-inspector-summary span, .access-account-summary span { font-size: .78rem; opacity: .7; }
+.access-account-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .7rem; }
+.access-powerful-section { display: grid; gap: .65rem; }
+.access-finding-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .6rem; }
+.access-finding-list article { display: grid; gap: .2rem; padding: .7rem; border: 1px solid var(--color-danger); border-radius: .65rem; }
+.access-finding-list article span, .access-finding-list article small { opacity: .78; }
+.access-inspector-section { border: 1px solid var(--border-color); border-radius: .7rem; overflow: hidden; }
+.access-inspector-section > summary { cursor: pointer; padding: .75rem .85rem; font-weight: 700; background: var(--color-surface-secondary); }
+.access-inspector-section > .oracle-privilege-list { padding: .8rem; }
+.access-table-wrap { max-height: 24rem; overflow: auto; }
+.access-table-wrap table { width: 100%; border-collapse: collapse; }
+.access-table-wrap th, .access-table-wrap td { padding: .6rem .75rem; text-align: left; border-bottom: 1px solid var(--border-color); vertical-align: top; }
+.access-table-wrap thead th { position: sticky; top: 0; z-index: 1; background: var(--color-surface); }
+.access-table-wrap tbody tr:last-child td { border-bottom: 0; }
+.access-object-toolbar { display: flex; align-items: center; gap: .7rem; padding: .7rem .8rem; border-top: 1px solid var(--border-color); }
+.access-object-toolbar input { min-width: min(32rem, 70vw); }
+.access-object-toolbar span { font-size: .8rem; opacity: .72; white-space: nowrap; }
+@media (max-width: 800px) {
+  .access-inspector-summary, .access-account-summary, .access-finding-list { grid-template-columns: 1fr; }
+  .access-object-toolbar { align-items: stretch; flex-direction: column; }
+  .access-object-toolbar input { min-width: 0; width: 100%; }
+}
+
 </style>

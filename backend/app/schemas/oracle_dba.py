@@ -284,6 +284,60 @@ class OracleUserLifecycleStateResponse(BaseModel):
     warnings: list[str] = Field(default_factory=list)
 
 
+class OracleAccessGrantSource(BaseModel):
+    kind: str
+    via: list[str] = Field(default_factory=list)
+    admin_option: bool = False
+    default_role: bool | None = None
+    grantable: bool | None = None
+
+
+class OracleAccessRole(BaseModel):
+    name: str
+    sources: list[OracleAccessGrantSource] = Field(default_factory=list)
+    sensitive: bool = False
+    powerful: bool = False
+
+
+class OracleAccessSystemPrivilege(BaseModel):
+    name: str
+    sources: list[OracleAccessGrantSource] = Field(default_factory=list)
+    powerful: bool = False
+
+
+class OracleAccessObjectPrivilege(BaseModel):
+    owner: str
+    object_name: str
+    privilege: str
+    column_name: str | None = None
+    sources: list[OracleAccessGrantSource] = Field(default_factory=list)
+
+
+class OracleAccessFinding(BaseModel):
+    kind: str
+    name: str
+    source: str
+    reason: str
+
+
+class OracleUserAccessInspectorResponse(BaseModel):
+    username: str
+    status: str
+    default_tablespace: str | None = None
+    temporary_tablespace: str | None = None
+    profile: str | None = None
+    created_at: datetime | None = None
+    lock_date: datetime | None = None
+    expiry_date: datetime | None = None
+    roles: list[OracleAccessRole] = Field(default_factory=list)
+    system_privileges: list[OracleAccessSystemPrivilege] = Field(default_factory=list)
+    object_privileges: list[OracleAccessObjectPrivilege] = Field(default_factory=list)
+    administrative_privileges: list[str] = Field(default_factory=list)
+    powerful_findings: list[OracleAccessFinding] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    checked_at: datetime
+
+
 class OracleUserEditRequest(BaseModel):
     roles: list[str] = Field(default_factory=list, max_length=200)
     default_tablespace: str | None = Field(default=None, max_length=30)
