@@ -28,6 +28,16 @@ from app.schemas.oracle_dba import (
     OracleUserAccessInspectorResponse,
     OracleAccessLookupResponse,
     OracleAccessCompareResponse,
+    OracleRoleListResponse,
+    OracleRoleDetailResponse,
+    OracleRoleCreateRequest,
+    OracleRoleChangeRequest,
+    OracleRoleChangePreviewResponse,
+    OracleRoleCreateResponse,
+    OracleRoleChangeResponse,
+    OracleRoleDropRequest,
+    OracleRoleDropPreviewResponse,
+    OracleRoleDropResponse,
 )
 from app.schemas.provisioning import (
     ProvisioningExecuteRequest,
@@ -64,6 +74,16 @@ from app.connectors.oracle_provisioning import normalize_oracle_identifier, orac
 from app.services.oracle_access_inspector import load_oracle_user_access_inspector
 from app.services.oracle_access_lookup import load_oracle_access_lookup
 from app.services.oracle_access_compare import load_oracle_access_compare
+from app.services.oracle_role_management import (
+    load_oracle_roles,
+    load_oracle_role_detail,
+    build_oracle_role_create_preview,
+    execute_oracle_role_create,
+    build_oracle_role_change_preview,
+    execute_oracle_role_change,
+    build_oracle_role_drop_preview,
+    execute_oracle_role_drop,
+)
 from app.services.oracle_user_lifecycle import (
     load_oracle_user_lifecycle_state,
     build_oracle_user_edit_preview,
@@ -431,6 +451,124 @@ async def get_oracle_access_compare_endpoint(
         connection_id,
         left_username,
         right_username,
+    )
+
+
+@router.get(
+    "/{connection_id}/oracle/roles",
+    response_model=OracleRoleListResponse,
+)
+async def get_oracle_roles_endpoint(
+    connection_id: str,
+    request: Request,
+    current_user: UserResponse = Depends(require_permission(Permission.DBA_OPERATE)),
+):
+    return await load_oracle_roles(request.app.state.database, connection_id)
+
+
+@router.post(
+    "/{connection_id}/oracle/roles/create-preview",
+    response_model=OracleRoleChangePreviewResponse,
+)
+async def preview_oracle_role_create_endpoint(
+    connection_id: str,
+    data: OracleRoleCreateRequest,
+    request: Request,
+    current_user: UserResponse = Depends(require_permission(Permission.DBA_OPERATE)),
+):
+    return await build_oracle_role_create_preview(request.app.state.database, connection_id, data)
+
+
+
+@router.get(
+    "/{connection_id}/oracle/roles/{role_name}",
+    response_model=OracleRoleDetailResponse,
+)
+async def get_oracle_role_detail_endpoint(
+    connection_id: str,
+    role_name: str,
+    request: Request,
+    current_user: UserResponse = Depends(require_permission(Permission.DBA_OPERATE)),
+):
+    return await load_oracle_role_detail(request.app.state.database, connection_id, role_name)
+
+
+@router.post(
+    "/{connection_id}/oracle/roles",
+    response_model=OracleRoleCreateResponse,
+    status_code=201,
+)
+async def create_oracle_role_endpoint(
+    connection_id: str,
+    data: OracleRoleCreateRequest,
+    request: Request,
+    current_user: UserResponse = Depends(require_permission(Permission.DBA_OPERATE)),
+):
+    return await execute_oracle_role_create(
+        request.app.state.database, connection_id, data, current_user
+    )
+
+
+@router.post(
+    "/{connection_id}/oracle/roles/{role_name}/change-preview",
+    response_model=OracleRoleChangePreviewResponse,
+)
+async def preview_oracle_role_change_endpoint(
+    connection_id: str,
+    role_name: str,
+    data: OracleRoleChangeRequest,
+    request: Request,
+    current_user: UserResponse = Depends(require_permission(Permission.DBA_OPERATE)),
+):
+    return await build_oracle_role_change_preview(
+        request.app.state.database, connection_id, role_name, data
+    )
+
+
+@router.post(
+    "/{connection_id}/oracle/roles/{role_name}/change",
+    response_model=OracleRoleChangeResponse,
+)
+async def change_oracle_role_endpoint(
+    connection_id: str,
+    role_name: str,
+    data: OracleRoleChangeRequest,
+    request: Request,
+    current_user: UserResponse = Depends(require_permission(Permission.DBA_OPERATE)),
+):
+    return await execute_oracle_role_change(
+        request.app.state.database, connection_id, role_name, data, current_user
+    )
+
+
+@router.get(
+    "/{connection_id}/oracle/roles/{role_name}/drop-preview",
+    response_model=OracleRoleDropPreviewResponse,
+)
+async def preview_oracle_role_drop_endpoint(
+    connection_id: str,
+    role_name: str,
+    request: Request,
+    current_user: UserResponse = Depends(require_permission(Permission.DBA_OPERATE)),
+):
+    return await build_oracle_role_drop_preview(
+        request.app.state.database, connection_id, role_name
+    )
+
+
+@router.post(
+    "/{connection_id}/oracle/roles/{role_name}/drop",
+    response_model=OracleRoleDropResponse,
+)
+async def drop_oracle_role_endpoint(
+    connection_id: str,
+    role_name: str,
+    data: OracleRoleDropRequest,
+    request: Request,
+    current_user: UserResponse = Depends(require_permission(Permission.DBA_OPERATE)),
+):
+    return await execute_oracle_role_drop(
+        request.app.state.database, connection_id, role_name, data, current_user
     )
 
 

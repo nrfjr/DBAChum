@@ -398,6 +398,159 @@ class OracleAccessCompareResponse(BaseModel):
     checked_at: datetime
 
 
+class OracleRoleSummary(BaseModel):
+    name: str
+    password_required: bool = False
+    oracle_maintained: bool = False
+    protected: bool = False
+    powerful: bool = False
+    manageable: bool = True
+    member_count: int = 0
+    child_role_count: int = 0
+    system_privilege_count: int = 0
+    object_privilege_count: int = 0
+
+
+class OracleRoleListResponse(BaseModel):
+    roles: list[OracleRoleSummary] = Field(default_factory=list)
+    system_privileges_catalog: list[str] = Field(default_factory=list)
+    object_privileges_catalog: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    checked_at: datetime
+
+
+class OracleRoleMember(BaseModel):
+    username: str
+    status: str
+    admin_option: bool = False
+    default_role: bool = False
+    protected: bool = False
+
+
+class OracleRoleParent(BaseModel):
+    name: str
+    admin_option: bool = False
+
+
+class OracleRoleChild(BaseModel):
+    name: str
+    admin_option: bool = False
+    protected: bool = False
+    powerful: bool = False
+    manageable: bool = True
+
+
+class OracleRoleSystemPrivilege(BaseModel):
+    name: str
+    admin_option: bool = False
+    powerful: bool = False
+
+
+class OracleRoleObjectPrivilege(BaseModel):
+    owner: str
+    object_name: str
+    privilege: str
+    column_name: str | None = None
+    grantable: bool = False
+
+
+class OracleRoleDetailResponse(BaseModel):
+    name: str
+    password_required: bool = False
+    oracle_maintained: bool = False
+    protected: bool = False
+    powerful: bool = False
+    manageable: bool = True
+    members: list[OracleRoleMember] = Field(default_factory=list)
+    parent_roles: list[OracleRoleParent] = Field(default_factory=list)
+    child_roles: list[OracleRoleChild] = Field(default_factory=list)
+    system_privileges: list[OracleRoleSystemPrivilege] = Field(default_factory=list)
+    object_privileges: list[OracleRoleObjectPrivilege] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    checked_at: datetime
+
+
+class OracleRoleCreateRequest(BaseModel):
+    role_name: str = Field(min_length=1, max_length=30)
+    request_reference: str | None = Field(default=None, max_length=100)
+
+
+class OracleRoleChangeRequest(BaseModel):
+    operation: str = Field(min_length=1, max_length=40)
+    value: str | None = Field(default=None, max_length=128)
+    username: str | None = Field(default=None, max_length=30)
+    owner: str | None = Field(default=None, max_length=30)
+    object_name: str | None = Field(default=None, max_length=30)
+    privilege: str | None = Field(default=None, max_length=128)
+    request_reference: str | None = Field(default=None, max_length=100)
+
+    @model_validator(mode="after")
+    def validate_operation_fields(self):
+        operations = {
+            "grant_to_user",
+            "revoke_from_user",
+            "grant_child_role",
+            "revoke_child_role",
+            "grant_system_privilege",
+            "revoke_system_privilege",
+            "grant_object_privilege",
+            "revoke_object_privilege",
+        }
+        if self.operation not in operations:
+            raise ValueError("Unsupported Oracle role operation.")
+        if self.operation in {"grant_to_user", "revoke_from_user"} and not (self.username or self.value):
+            raise ValueError("A username is required for this role operation.")
+        if self.operation in {"grant_child_role", "revoke_child_role"} and not self.value:
+            raise ValueError("A child role is required for this role operation.")
+        if self.operation in {"grant_system_privilege", "revoke_system_privilege"} and not (self.privilege or self.value):
+            raise ValueError("A system privilege is required for this role operation.")
+        if self.operation in {"grant_object_privilege", "revoke_object_privilege"}:
+            if not self.owner or not self.object_name or not (self.privilege or self.value):
+                raise ValueError("Object owner, object name, and privilege are required.")
+        return self
+
+
+class OracleRoleChangePreviewResponse(BaseModel):
+    operation: str
+    role_name: str
+    target: str
+    statement: str
+    ready_to_execute: bool = True
+    powerful: bool = False
+    warnings: list[str] = Field(default_factory=list)
+    generated_at: datetime | None = None
+
+
+class OracleRoleCreateResponse(BaseModel):
+    audit_id: str
+    status: str
+    role: OracleRoleDetailResponse
+
+
+class OracleRoleChangeResponse(BaseModel):
+    audit_id: str
+    status: str
+    role: OracleRoleDetailResponse
+
+
+class OracleRoleDropRequest(BaseModel):
+    confirm_role_name: str = Field(min_length=1, max_length=30)
+    request_reference: str | None = Field(default=None, max_length=100)
+
+
+class OracleRoleDropPreviewResponse(BaseModel):
+    role: OracleRoleDetailResponse
+    statement: str
+    ready_to_execute: bool = True
+    warnings: list[str] = Field(default_factory=list)
+
+
+class OracleRoleDropResponse(BaseModel):
+    audit_id: str
+    status: str
+    role_name: str
+
+
 class OracleUserEditRequest(BaseModel):
     roles: list[str] = Field(default_factory=list, max_length=200)
     default_tablespace: str | None = Field(default=None, max_length=30)

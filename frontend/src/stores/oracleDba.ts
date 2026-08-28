@@ -304,6 +304,117 @@ export interface OracleAccessCompareResult {
   checked_at: string
 }
 
+export interface OracleRoleSummary {
+  name: string
+  password_required: boolean
+  oracle_maintained: boolean
+  protected: boolean
+  powerful: boolean
+  manageable: boolean
+  member_count: number
+  child_role_count: number
+  system_privilege_count: number
+  object_privilege_count: number
+}
+
+export interface OracleRoleListResult {
+  roles: OracleRoleSummary[]
+  system_privileges_catalog: string[]
+  object_privileges_catalog: string[]
+  warnings: string[]
+  checked_at: string
+}
+
+export interface OracleRoleMember {
+  username: string
+  status: string
+  admin_option: boolean
+  default_role: boolean
+  protected: boolean
+}
+
+export interface OracleRoleChild {
+  name: string
+  admin_option: boolean
+  protected: boolean
+  powerful: boolean
+  manageable: boolean
+}
+
+export interface OracleRoleSystemPrivilege {
+  name: string
+  admin_option: boolean
+  powerful: boolean
+}
+
+export interface OracleRoleObjectPrivilege {
+  owner: string
+  object_name: string
+  privilege: string
+  column_name: string | null
+  grantable: boolean
+}
+
+export interface OracleRoleDetail extends Omit<OracleRoleSummary, 'member_count' | 'child_role_count' | 'system_privilege_count' | 'object_privilege_count'> {
+  members: OracleRoleMember[]
+  parent_roles: { name: string; admin_option: boolean }[]
+  child_roles: OracleRoleChild[]
+  system_privileges: OracleRoleSystemPrivilege[]
+  object_privileges: OracleRoleObjectPrivilege[]
+  warnings: string[]
+  checked_at: string
+}
+
+export type OracleRoleOperation =
+  | 'grant_to_user'
+  | 'revoke_from_user'
+  | 'grant_child_role'
+  | 'revoke_child_role'
+  | 'grant_system_privilege'
+  | 'revoke_system_privilege'
+  | 'grant_object_privilege'
+  | 'revoke_object_privilege'
+
+export interface OracleRoleChangeInput {
+  operation: OracleRoleOperation
+  value?: string | null
+  username?: string | null
+  owner?: string | null
+  object_name?: string | null
+  privilege?: string | null
+  request_reference?: string | null
+}
+
+export interface OracleRoleChangePreview {
+  operation: string
+  role_name: string
+  target: string
+  statement: string
+  ready_to_execute: boolean
+  powerful: boolean
+  warnings: string[]
+  generated_at: string | null
+}
+
+export interface OracleRoleActionResult {
+  audit_id: string
+  status: string
+  role: OracleRoleDetail
+}
+
+export interface OracleRoleDropPreview {
+  role: OracleRoleDetail
+  statement: string
+  ready_to_execute: boolean
+  warnings: string[]
+}
+
+export interface OracleRoleDropResult {
+  audit_id: string
+  status: string
+  role_name: string
+}
+
 export interface OracleUserEditInput {
   roles: string[]
   default_tablespace: string | null
@@ -587,6 +698,71 @@ export const useOracleDbaStore =
         })
         return apiRequest<OracleAccessCompareResult>(
           `/databases/${id}/oracle/access-compare?${params.toString()}`,
+        )
+      },
+
+      async loadRoles(id: string) {
+        return apiRequest<OracleRoleListResult>(
+          `/databases/${id}/oracle/roles`,
+        )
+      },
+
+      async loadRoleDetail(id: string, roleName: string) {
+        return apiRequest<OracleRoleDetail>(
+          `/databases/${id}/oracle/roles/${encodeURIComponent(roleName)}`,
+        )
+      },
+
+      async previewRoleCreate(id: string, roleName: string, requestReference: string | null = null) {
+        return apiRequest<OracleRoleChangePreview>(
+          `/databases/${id}/oracle/roles/create-preview`,
+          {
+            method: 'POST',
+            body: JSON.stringify({ role_name: roleName, request_reference: requestReference }),
+          },
+        )
+      },
+
+      async createRole(id: string, roleName: string, requestReference: string | null = null) {
+        return apiRequest<OracleRoleActionResult>(
+          `/databases/${id}/oracle/roles`,
+          {
+            method: 'POST',
+            body: JSON.stringify({ role_name: roleName, request_reference: requestReference }),
+          },
+        )
+      },
+
+      async previewRoleChange(id: string, roleName: string, input: OracleRoleChangeInput) {
+        return apiRequest<OracleRoleChangePreview>(
+          `/databases/${id}/oracle/roles/${encodeURIComponent(roleName)}/change-preview`,
+          { method: 'POST', body: JSON.stringify(input) },
+        )
+      },
+
+      async changeRole(id: string, roleName: string, input: OracleRoleChangeInput) {
+        return apiRequest<OracleRoleActionResult>(
+          `/databases/${id}/oracle/roles/${encodeURIComponent(roleName)}/change`,
+          { method: 'POST', body: JSON.stringify(input) },
+        )
+      },
+
+      async previewRoleDrop(id: string, roleName: string) {
+        return apiRequest<OracleRoleDropPreview>(
+          `/databases/${id}/oracle/roles/${encodeURIComponent(roleName)}/drop-preview`,
+        )
+      },
+
+      async dropRole(id: string, roleName: string, confirmRoleName: string, requestReference: string | null = null) {
+        return apiRequest<OracleRoleDropResult>(
+          `/databases/${id}/oracle/roles/${encodeURIComponent(roleName)}/drop`,
+          {
+            method: 'POST',
+            body: JSON.stringify({
+              confirm_role_name: confirmRoleName,
+              request_reference: requestReference,
+            }),
+          },
         )
       },
 

@@ -27,6 +27,24 @@
   --color-warning: #ad7d2b;
   --color-danger: #bc5963;
 
+  /*
+   * Compatibility aliases for reusable/feature-scoped components.
+   * Keep these mapped to the canonical theme tokens so modals, cards,
+   * tables, and controls inherit both light and dark themes correctly.
+   */
+  --surface: var(--color-surface);
+  --surface-muted: var(--color-surface-secondary);
+  --text: var(--color-text);
+  --text-muted: var(--color-text-secondary);
+  --border: var(--color-border);
+  --border-color: var(--color-border);
+  --primary: var(--color-purple);
+  --accent: var(--color-purple);
+  --accent-soft: var(--color-purple-soft);
+  --success: var(--color-success);
+  --warning: var(--color-warning);
+  --danger: var(--color-danger);
+
   --sidebar-width: 230px;
   --topbar-height: 78px;
 

@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue'
 import ScrollableDataTable from '@/components/common/ScrollableDataTable.vue'
 import OracleAccessCompareCategory from '@/components/databases/oracle/OracleAccessCompareCategory.vue'
+import OracleRoleManagementPanel from '@/components/databases/oracle/OracleRoleManagementPanel.vue'
 import {
   useOracleDbaStore,
   type OracleAccessCompareResult,
@@ -15,7 +16,7 @@ const props = defineProps<{
 
 const oracleStore = useOracleDbaStore()
 
-type WorkspaceMode = 'lookup' | 'compare'
+type WorkspaceMode = 'lookup' | 'compare' | 'roles'
 type LookupKind = 'role' | 'system_privilege' | 'object'
 
 const workspaceMode = ref<WorkspaceMode>('lookup')
@@ -74,6 +75,7 @@ function chooseWorkspace(mode: WorkspaceMode) {
   workspaceMode.value = mode
   if (mode === 'lookup') compareError.value = null
   if (mode === 'compare') error.value = null
+  if (mode === 'roles') { error.value = null; compareError.value = null }
 }
 
 function chooseKind(kind: LookupKind) {
@@ -168,10 +170,10 @@ async function runCompare() {
       <div>
         <h2>Access &amp; Privileges</h2>
         <p>
-          Investigate effective Oracle access across normal database users. This workspace is read-only.
+          Investigate effective Oracle access and safely manage custom Oracle roles.
         </p>
       </div>
-      <span class="access-read-only-pill">Read only</span>
+      <span class="access-read-only-pill">{{ workspaceMode === 'roles' ? 'Audited DBA actions' : 'Read only' }}</span>
     </div>
 
     <div class="access-workspace-tabs" role="tablist" aria-label="Access workspace">
@@ -188,6 +190,13 @@ async function runCompare() {
         @click="chooseWorkspace('compare')"
       >
         Compare users
+      </button>
+      <button
+        type="button"
+        :class="{ active: workspaceMode === 'roles' }"
+        @click="chooseWorkspace('roles')"
+      >
+        Roles
       </button>
     </div>
 
@@ -400,7 +409,7 @@ async function runCompare() {
       </div>
     </template>
 
-    <template v-else>
+    <template v-else-if="workspaceMode === 'compare'">
       <div class="access-search-card compare-search-card">
         <div class="compare-user-inputs">
           <label>
@@ -539,6 +548,10 @@ async function runCompare() {
         <span>DBAChum will separate common access from grants that only one account receives, including inherited role paths.</span>
       </div>
     </template>
+
+    <div v-show="workspaceMode === 'roles'" class="access-workspace-content">
+      <OracleRoleManagementPanel :connection-id="connectionId" :active="workspaceMode === 'roles'" />
+    </div>
   </section>
 </template>
 
