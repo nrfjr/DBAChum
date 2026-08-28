@@ -6,6 +6,7 @@ import type { DatabaseEngine } from '@/stores/connections'
 defineProps<{
   connectionId: string
   engine: DatabaseEngine
+  active?: boolean
 }>()
 </script>
 
@@ -13,5 +14,6 @@ defineProps<{
   <OracleUsersPanel
     v-if="engine === 'oracle'"
     :connection-id="connectionId"
+    :active="active"
   />
 </template>

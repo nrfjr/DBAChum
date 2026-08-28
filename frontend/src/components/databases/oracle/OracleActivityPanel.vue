@@ -7,6 +7,7 @@ import {
 import {
   useOracleDbaStore,
 } from '@/stores/oracleDba'
+import ScrollableDataTable from '@/components/common/ScrollableDataTable.vue'
 
 const props = defineProps<{
   connectionId: string
@@ -93,12 +94,13 @@ onMounted(() => {
         </div>
       </div>
 
-      <div
+      <ScrollableDataTable
         v-else
-        class="utility-table-wrap"
+        :empty="activity.items.length === 0"
+        empty-message="No active SQL right now."
+        max-height="34rem"
       >
-        <table class="utility-table">
-          <thead>
+        <template #header>
             <tr>
               <th>SID</th>
               <th>User</th>
@@ -108,9 +110,7 @@ onMounted(() => {
               <th>Wait</th>
               <th>SQL</th>
             </tr>
-          </thead>
-
-          <tbody>
+        </template>
             <tr
               v-for="
                 item in activity.items
@@ -160,19 +160,7 @@ onMounted(() => {
                 }}
               </td>
             </tr>
-
-            <tr
-              v-if="
-                activity.items.length === 0
-              "
-            >
-              <td colspan="7">
-                No active SQL right now.
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
+      </ScrollableDataTable>
     </template>
   </section>
 </template>

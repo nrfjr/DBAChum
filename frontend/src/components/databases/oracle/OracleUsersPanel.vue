@@ -5,6 +5,7 @@ import {
   onMounted,
   reactive,
   ref,
+  watch,
 } from 'vue'
 
 import {
@@ -18,6 +19,7 @@ import {
   type OracleAccessGrantSource,
 } from '@/stores/oracleDba'
 import OracleBulkProvisionModal from '@/components/databases/oracle/OracleBulkProvisionModal.vue'
+import ScrollableDataTable from '@/components/common/ScrollableDataTable.vue'
 
 import {
   useProvisioningStore,
@@ -30,6 +32,7 @@ import {
 
 const props = defineProps<{
   connectionId: string
+  active?: boolean
 }>()
 
 const oracleStore = useOracleDbaStore()
@@ -192,6 +195,7 @@ const deprovisionRequestReference = ref('')
 const deprovisionResult = ref<OracleUserDeprovisionResult | null>(null)
 
 const actionMenuUsername = ref<string | null>(null)
+const actionMenuPosition = ref({ top: 0, left: 0 })
 const actionNotice = ref<string | null>(null)
 
 const inspectorTargetUsername = ref<string | null>(null)
@@ -318,15 +322,48 @@ function closeActionMenu() {
 
 function toggleActionMenu(user: OracleDatabaseUser, event: Event) {
   event.stopPropagation()
-  actionMenuUsername.value = actionMenuUsername.value === user.username
-    ? null
-    : user.username
+
+  if (actionMenuUsername.value === user.username) {
+    closeActionMenu()
+    return
+  }
+
+  const button = event.currentTarget as HTMLElement | null
+  if (button) {
+    const rect = button.getBoundingClientRect()
+    const menuWidth = 190
+    const menuHeightEstimate = 300
+    const gap = 6
+    const viewportPadding = 8
+    const left = Math.min(
+      Math.max(viewportPadding, rect.right - menuWidth),
+      Math.max(viewportPadding, window.innerWidth - menuWidth - viewportPadding),
+    )
+    const belowTop = rect.bottom + gap
+    const top = belowTop + menuHeightEstimate <= window.innerHeight
+      ? belowTop
+      : Math.max(viewportPadding, rect.top - menuHeightEstimate - gap)
+
+    actionMenuPosition.value = { top, left }
+  }
+
+  actionMenuUsername.value = user.username
 }
 
 function documentClickClosesActionMenu() {
   closeActionMenu()
   createActionsOpen.value = false
 }
+
+watch(
+  () => props.active,
+  (active) => {
+    if (active === false) {
+      closeActionMenu()
+      createActionsOpen.value = false
+    }
+  },
+)
 
 function formatAccessSource(source: OracleAccessGrantSource) {
   if (source.kind === 'direct') return 'Direct'
@@ -1235,6 +1272,7 @@ async function createUser() {
 
 onMounted(() => {
   document.addEventListener('click', documentClickClosesActionMenu)
+  window.addEventListener('scroll', closeActionMenu, true)
   oracleStore.loadUsers(
     props.connectionId,
   )
@@ -1244,6 +1282,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   document.removeEventListener('click', documentClickClosesActionMenu)
+  window.removeEventListener('scroll', closeActionMenu, true)
 })
 
 </script>
@@ -1385,9 +1424,13 @@ onBeforeUnmount(() => {
           <button type="button" class="secondary-button compact-button" @click="actionNotice = null">Dismiss</button>
         </div>
 
-        <div class="utility-table-wrap user-list-table-wrap">
-          <table class="utility-table">
-            <thead>
+        <ScrollableDataTable
+          :empty="filteredUsers.length === 0"
+          empty-message="No matching database accounts."
+          max-height="38rem"
+          @scroll="closeActionMenu"
+        >
+          <template #header>
               <tr>
                 <th>Username</th>
                 <th>Status</th>
@@ -1398,9 +1441,7 @@ onBeforeUnmount(() => {
                 <th>Expiry</th>
                 <th class="user-actions-column">Actions</th>
               </tr>
-            </thead>
-
-            <tbody>
+          </template>
               <tr
                 v-for="user in filteredUsers"
                 :key="user.username"
@@ -1446,11 +1487,20 @@ onBeforeUnmount(() => {
                       <FontAwesomeIcon icon="ellipsis-vertical" />
                     </button>
 
-                    <div
-                      v-if="actionMenuUsername === user.username"
-                      class="user-action-dropdown"
-                      role="menu"
-                    >
+                    <Teleport to="body">
+                      <div
+                        v-if="actionMenuUsername === user.username"
+                        class="user-action-dropdown"
+                        role="menu"
+                        :style="{
+                          position: 'fixed',
+                          top: `${actionMenuPosition.top}px`,
+                          left: `${actionMenuPosition.left}px`,
+                          right: 'auto',
+                          zIndex: 1000,
+                        }"
+                        @click.stop
+                      >
                       <button type="button" role="menuitem" @click="openAccessInspector(user)">
                         Inspect access
                       </button>
@@ -1485,19 +1535,13 @@ onBeforeUnmount(() => {
                       >
                         Deprovision
                       </button>
-                    </div>
+                      </div>
+                    </Teleport>
                   </div>
                 </td>
               </tr>
 
-              <tr v-if="filteredUsers.length === 0">
-                <td colspan="8">
-                  No matching database accounts.
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
+        </ScrollableDataTable>
       </template>
     </template>
 
@@ -1543,9 +1587,14 @@ onBeforeUnmount(() => {
         No provisioning lifecycle runs have been recorded for this database yet.
       </div>
 
-      <div v-else class="utility-table-wrap provisioning-history-table">
-        <table class="utility-table">
-          <thead>
+      <ScrollableDataTable
+        v-else
+        class="provisioning-history-table"
+        :empty="provisioningRuns.length === 0"
+        empty-message="No provisioning lifecycle runs have been recorded for this database yet."
+        max-height="30rem"
+      >
+        <template #header>
             <tr>
               <th>User</th>
               <th>Profile</th>
@@ -1555,8 +1604,7 @@ onBeforeUnmount(() => {
               <th>Started</th>
               <th>Retry</th>
             </tr>
-          </thead>
-          <tbody>
+        </template>
             <tr v-for="run in provisioningRuns" :key="run.run_id">
               <td>
                 <strong>{{ run.username }}</strong>
@@ -1584,9 +1632,7 @@ onBeforeUnmount(() => {
                 <span v-else>—</span>
               </td>
             </tr>
-          </tbody>
-        </table>
-      </div>
+      </ScrollableDataTable>
 
       <div v-if="retryPasswordRun" class="provisioning-retry-password">
         <div>

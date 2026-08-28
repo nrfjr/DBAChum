@@ -1,4 +1,8 @@
 <script setup lang="ts">
+const emit = defineEmits<{
+  scroll: [event: Event]
+}>()
+
 withDefaults(
   defineProps<{
     loading?: boolean
@@ -26,6 +30,7 @@ withDefaults(
     v-else
     class="reusable-table-shell"
     :style="{ maxHeight }"
+    @scroll="emit('scroll', $event)"
   >
     <table class="reusable-data-table">
       <thead>

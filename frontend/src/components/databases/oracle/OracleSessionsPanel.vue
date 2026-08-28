@@ -9,6 +9,7 @@ import {
   useOracleDbaStore,
   type OracleSession,
 } from '@/stores/oracleDba'
+import ScrollableDataTable from '@/components/common/ScrollableDataTable.vue'
 
 const props = defineProps<{
   connectionId: string
@@ -208,9 +209,12 @@ onMounted(() => {
           </button>
         </div>
 
-        <div class="utility-table-wrap">
-          <table class="utility-table">
-            <thead>
+        <ScrollableDataTable
+          :empty="filteredSessions.length === 0"
+          empty-message="No matching sessions."
+          max-height="34rem"
+        >
+          <template #header>
               <tr>
                 <th>SID</th>
                 <th>User</th>
@@ -222,9 +226,7 @@ onMounted(() => {
                 </th>
                 <th>Blocking SID</th>
               </tr>
-            </thead>
-
-            <tbody>
+          </template>
               <tr
                 v-for="
                   session in filteredSessions
@@ -274,19 +276,7 @@ onMounted(() => {
                   }}
                 </td>
               </tr>
-
-              <tr
-                v-if="
-                  filteredSessions.length === 0
-                "
-              >
-                <td colspan="7">
-                  No matching sessions.
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
+        </ScrollableDataTable>
       </template>
     </template>
   </section>

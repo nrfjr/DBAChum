@@ -7,6 +7,7 @@ import {
 import {
   useOracleDbaStore,
 } from '@/stores/oracleDba'
+import ScrollableDataTable from '@/components/common/ScrollableDataTable.vue'
 
 const props = defineProps<{
   connectionId: string
@@ -167,14 +168,13 @@ onMounted(() => {
       <section class="utility-section">
         <h3>Tablespaces</h3>
 
-        <div
-          v-if="
-            storage.tablespaces_available
-          "
-          class="utility-table-wrap"
+        <ScrollableDataTable
+          v-if="storage.tablespaces_available"
+          :empty="storage.tablespaces.length === 0"
+          empty-message="No tablespaces returned."
+          max-height="34rem"
         >
-          <table class="utility-table">
-            <thead>
+          <template #header>
               <tr>
                 <th>Tablespace</th>
                 <th>Type</th>
@@ -183,9 +183,7 @@ onMounted(() => {
                 <th>Capacity</th>
                 <th>Usage</th>
               </tr>
-            </thead>
-
-            <tbody>
+          </template>
               <tr
                 v-for="
                   tablespace
@@ -229,9 +227,7 @@ onMounted(() => {
                   }}%
                 </td>
               </tr>
-            </tbody>
-          </table>
-        </div>
+        </ScrollableDataTable>
       </section>
     </template>
   </section>

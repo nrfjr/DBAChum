@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useDatabasesStore } from '@/stores/databases'
 
@@ -51,6 +51,32 @@ type DatabaseTab =
   | 'access'
 
 const activeTab = ref<DatabaseTab>('overview')
+
+const visitedTabs = reactive<Record<DatabaseTab, boolean>>({
+  overview: true,
+  history: false,
+  sessions: false,
+  storage: false,
+  activity: false,
+  users: false,
+  access: false,
+})
+
+function selectTab(tab: DatabaseTab) {
+  visitedTabs[tab] = true
+  activeTab.value = tab
+}
+
+function resetVisitedTabs() {
+  activeTab.value = 'overview'
+  for (const tab of Object.keys(visitedTabs) as DatabaseTab[]) {
+    visitedTabs[tab] = tab === 'overview'
+  }
+}
+
+watch(connectionId, () => {
+  resetVisitedTabs()
+})
 
 const supportsDbaUtilities = computed(() =>
   ['oracle', 'sqlserver', 'mysql'].includes(
@@ -174,31 +200,31 @@ onMounted(async () => {
       <nav class="database-tabs">
         <button :class="{
           active: activeTab === 'overview',
-        }" @click="activeTab = 'overview'">
+        }" @click="selectTab('overview')">
           Overview
         </button>
 
         <button :class="{
           active: activeTab === 'history',
-        }" @click="activeTab = 'history'">
+        }" @click="selectTab('history')">
           History
         </button>
 
         <button :disabled="!supportsDbaUtilities" :class="{
           active: activeTab === 'sessions',
-        }" @click="activeTab = 'sessions'">
+        }" @click="selectTab('sessions')">
           Sessions
         </button>
 
         <button :disabled="!supportsDbaUtilities" :class="{
           active: activeTab === 'storage',
-        }" @click="activeTab = 'storage'">
+        }" @click="selectTab('storage')">
           Storage
         </button>
 
         <button :disabled="!supportsDbaUtilities" :class="{
           active: activeTab === 'activity',
-        }" @click="activeTab = 'activity'">
+        }" @click="selectTab('activity')">
           Activity
         </button>
 
@@ -207,7 +233,7 @@ onMounted(async () => {
           :class="{
             active: activeTab === 'users',
           }"
-          @click="activeTab = 'users'"
+          @click="selectTab('users')"
         >
           Users &amp; Schemas
         </button>
@@ -217,7 +243,7 @@ onMounted(async () => {
           :class="{
             active: activeTab === 'access',
           }"
-          @click="activeTab = 'access'"
+          @click="selectTab('access')"
         >
           Access &amp; Privileges
         </button>
@@ -260,25 +286,55 @@ onMounted(async () => {
         </div>
       </section>
 
-      <DatabaseHistoryPanel v-else-if="activeTab === 'history'" :connection-id="connection.id" />
+      <!--
+        Panels are lazy-mounted the first time their tab is opened, then kept
+        alive with v-show. This preserves filters, form inputs and search
+        results while avoiding repeat API loads on every tab switch.
+      -->
+      <DatabaseHistoryPanel
+        v-if="visitedTabs.history"
+        v-show="activeTab === 'history'"
+        :key="`history-${connection.id}`"
+        :connection-id="connection.id"
+      />
 
-      <DatabaseSessionsPanel v-else-if="activeTab === 'sessions'" :connection-id="connection.id"
-        :engine="connection.engine" />
-
-      <DatabaseStoragePanel v-else-if="activeTab === 'storage'" :connection-id="connection.id"
-        :engine="connection.engine" />
-
-      <DatabaseActivityPanel v-else-if="activeTab === 'activity'" :connection-id="connection.id"
-        :engine="connection.engine" />
-
-      <DatabaseUsersPanel
-        v-else-if="activeTab === 'users'"
+      <DatabaseSessionsPanel
+        v-if="visitedTabs.sessions"
+        v-show="activeTab === 'sessions'"
+        :key="`sessions-${connection.id}`"
         :connection-id="connection.id"
         :engine="connection.engine"
       />
 
+      <DatabaseStoragePanel
+        v-if="visitedTabs.storage"
+        v-show="activeTab === 'storage'"
+        :key="`storage-${connection.id}`"
+        :connection-id="connection.id"
+        :engine="connection.engine"
+      />
+
+      <DatabaseActivityPanel
+        v-if="visitedTabs.activity"
+        v-show="activeTab === 'activity'"
+        :key="`activity-${connection.id}`"
+        :connection-id="connection.id"
+        :engine="connection.engine"
+      />
+
+      <DatabaseUsersPanel
+        v-if="visitedTabs.users"
+        v-show="activeTab === 'users'"
+        :key="`users-${connection.id}`"
+        :connection-id="connection.id"
+        :engine="connection.engine"
+        :active="activeTab === 'users'"
+      />
+
       <DatabaseAccessPanel
-        v-else-if="activeTab === 'access'"
+        v-if="visitedTabs.access"
+        v-show="activeTab === 'access'"
+        :key="`access-${connection.id}`"
         :connection-id="connection.id"
         :engine="connection.engine"
       />
