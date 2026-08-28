@@ -2,6 +2,7 @@ from fastapi import (
     APIRouter,
     Depends,
     File,
+    Query,
     Request,
     UploadFile,
     Response,
@@ -25,6 +26,7 @@ from app.schemas.oracle_dba import (
     OracleUserLifecycleActionResponse,
     OracleUsernameAvailabilityResponse,
     OracleUserAccessInspectorResponse,
+    OracleAccessLookupResponse,
 )
 from app.schemas.provisioning import (
     ProvisioningExecuteRequest,
@@ -59,6 +61,7 @@ from app.services.oracle_dba import (
 from app.services.provisioning import list_provisioning_profiles_for_connection
 from app.connectors.oracle_provisioning import normalize_oracle_identifier, oracle_user_exists
 from app.services.oracle_access_inspector import load_oracle_user_access_inspector
+from app.services.oracle_access_lookup import load_oracle_access_lookup
 from app.services.oracle_user_lifecycle import (
     load_oracle_user_lifecycle_state,
     build_oracle_user_edit_preview,
@@ -378,6 +381,33 @@ async def get_oracle_user_access_inspector_endpoint(
         request.app.state.database,
         connection_id,
         username,
+    )
+
+
+@router.get(
+    "/{connection_id}/oracle/access-lookup",
+    response_model=OracleAccessLookupResponse,
+)
+async def get_oracle_access_lookup_endpoint(
+    connection_id: str,
+    request: Request,
+    kind: str = Query(..., max_length=32),
+    value: str | None = Query(default=None, max_length=128),
+    owner: str | None = Query(default=None, max_length=30),
+    object_name: str | None = Query(default=None, max_length=30),
+    privilege: str | None = Query(default=None, max_length=128),
+    current_user: UserResponse = Depends(
+        require_permission(Permission.DBA_OPERATE)
+    ),
+):
+    return await load_oracle_access_lookup(
+        request.app.state.database,
+        connection_id,
+        kind=kind,
+        value=value,
+        owner=owner,
+        object_name=object_name,
+        privilege=privilege,
     )
 
 

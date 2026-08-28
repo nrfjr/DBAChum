@@ -338,6 +338,30 @@ class OracleUserAccessInspectorResponse(BaseModel):
     checked_at: datetime
 
 
+class OracleAccessLookupMatch(BaseModel):
+    username: str
+    status: str
+    basis: str
+    privilege: str | None = None
+    column_name: str | None = None
+    source: OracleAccessGrantSource
+    powerful: bool = False
+
+
+class OracleAccessLookupResponse(BaseModel):
+    lookup_type: str
+    target: str
+    target_exists: bool = True
+    object_type: str | None = None
+    matches: list[OracleAccessLookupMatch] = Field(default_factory=list)
+    unique_user_count: int = 0
+    public_access: bool = False
+    public_details: list[str] = Field(default_factory=list)
+    powerful: bool = False
+    warnings: list[str] = Field(default_factory=list)
+    checked_at: datetime
+
+
 class OracleUserEditRequest(BaseModel):
     roles: list[str] = Field(default_factory=list, max_length=200)
     default_tablespace: str | None = Field(default=None, max_length=30)

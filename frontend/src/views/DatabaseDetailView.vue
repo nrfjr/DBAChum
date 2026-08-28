@@ -8,6 +8,7 @@ import DatabaseStoragePanel from '@/components/databases/DatabaseStoragePanel.vu
 import DatabaseActivityPanel from '@/components/databases/DatabaseActivityPanel.vue'
 import DatabaseHistoryPanel from '@/components/databases/DatabaseHistoryPanel.vue'
 import DatabaseUsersPanel from '@/components/databases/DatabaseUsersPanel.vue'
+import DatabaseAccessPanel from '@/components/databases/DatabaseAccessPanel.vue'
 import { useServersStore } from '@/stores/servers'
 import { useAuthStore } from '@/stores/auth'
 import { hasPermission } from '@/core/permissions'
@@ -47,6 +48,7 @@ type DatabaseTab =
   | 'storage'
   | 'activity'
   | 'users'
+  | 'access'
 
 const activeTab = ref<DatabaseTab>('overview')
 
@@ -57,6 +59,14 @@ const supportsDbaUtilities = computed(() =>
 )
 
 const supportsUsersAndSchemas = computed(() =>
+  connection.value?.engine === 'oracle' &&
+  hasPermission(
+    authStore.user?.role,
+    'database:operate',
+  ),
+)
+
+const supportsAccessAndPrivileges = computed(() =>
   connection.value?.engine === 'oracle' &&
   hasPermission(
     authStore.user?.role,
@@ -201,6 +211,16 @@ onMounted(async () => {
         >
           Users &amp; Schemas
         </button>
+
+        <button
+          v-if="supportsAccessAndPrivileges"
+          :class="{
+            active: activeTab === 'access',
+          }"
+          @click="activeTab = 'access'"
+        >
+          Access &amp; Privileges
+        </button>
       </nav>
 
       <section v-if="activeTab === 'overview'" class="database-preview-grid database-detail-metrics">
@@ -253,6 +273,12 @@ onMounted(async () => {
 
       <DatabaseUsersPanel
         v-else-if="activeTab === 'users'"
+        :connection-id="connection.id"
+        :engine="connection.engine"
+      />
+
+      <DatabaseAccessPanel
+        v-else-if="activeTab === 'access'"
         :connection-id="connection.id"
         :engine="connection.engine"
       />

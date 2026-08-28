@@ -236,6 +236,38 @@ export interface OracleUserAccessInspector {
   checked_at: string
 }
 
+export interface OracleAccessLookupMatch {
+  username: string
+  status: string
+  basis: string
+  privilege: string | null
+  column_name: string | null
+  source: OracleAccessGrantSource
+  powerful: boolean
+}
+
+export interface OracleAccessLookupResult {
+  lookup_type: 'role' | 'system_privilege' | 'object' | string
+  target: string
+  target_exists: boolean
+  object_type: string | null
+  matches: OracleAccessLookupMatch[]
+  unique_user_count: number
+  public_access: boolean
+  public_details: string[]
+  powerful: boolean
+  warnings: string[]
+  checked_at: string
+}
+
+export interface OracleAccessLookupInput {
+  kind: 'role' | 'system_privilege' | 'object'
+  value?: string
+  owner?: string
+  object_name?: string
+  privilege?: string
+}
+
 export interface OracleUserEditInput {
   roles: string[]
   default_tablespace: string | null
@@ -498,6 +530,17 @@ export const useOracleDbaStore =
       async loadUserAccessInspector(id: string, username: string) {
         return apiRequest<OracleUserAccessInspector>(
           `/databases/${id}/oracle/users/${encodeURIComponent(username)}/access-inspector`,
+        )
+      },
+
+      async loadAccessLookup(id: string, input: OracleAccessLookupInput) {
+        const params = new URLSearchParams({ kind: input.kind })
+        if (input.value?.trim()) params.set('value', input.value.trim())
+        if (input.owner?.trim()) params.set('owner', input.owner.trim())
+        if (input.object_name?.trim()) params.set('object_name', input.object_name.trim())
+        if (input.privilege?.trim()) params.set('privilege', input.privilege.trim())
+        return apiRequest<OracleAccessLookupResult>(
+          `/databases/${id}/oracle/access-lookup?${params.toString()}`,
         )
       },
 
