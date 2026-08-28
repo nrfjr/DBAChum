@@ -366,6 +366,19 @@ export interface BulkProvisionExecutionResult {
   rows: BulkProvisionExecutionRow[]
 }
 
+export interface BulkProvisionExportRow {
+  row: number
+  employee_id: string
+  first_name: string
+  middle_name: string
+  last_name: string
+  username: string
+  initial_password: string
+  status: string
+  run_or_audit: string
+  error: string
+}
+
 export interface ProvisioningSourceOption {
   key: string
   label: string
@@ -473,6 +486,22 @@ async function apiFormRequest<T>(path: string, form: FormData): Promise<T> {
   return response.json() as Promise<T>
 }
 
+async function apiBlobRequest(path: string, options: RequestInit = {}): Promise<Blob> {
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    ...options,
+    credentials: 'include',
+    headers: {
+      ...(options.body ? { 'Content-Type': 'application/json' } : {}),
+      ...options.headers,
+    },
+  })
+  if (!response.ok) {
+    const body = await response.json().catch(() => null)
+    throw new Error(body?.error?.message ?? `Request failed with status ${response.status}`)
+  }
+  return response.blob()
+}
+
 
 export const useProvisioningStore = defineStore('provisioning', {
   state: () => ({
@@ -576,6 +605,17 @@ export const useProvisioningStore = defineStore('provisioning', {
         `/databases/${connectionId}/oracle/provisioning-profiles/${profileId}/execute`,
         { method: 'POST', body: JSON.stringify(data) },
       )
+    },
+
+    async downloadBulkTemplateXlsx(connectionId: string) {
+      return apiBlobRequest(`/databases/${connectionId}/oracle/bulk-provision/template.xlsx`)
+    },
+
+    async exportBulkResultsXlsx(connectionId: string, rows: BulkProvisionExportRow[]) {
+      return apiBlobRequest(`/databases/${connectionId}/oracle/bulk-provision/results.xlsx`, {
+        method: 'POST',
+        body: JSON.stringify({ rows }),
+      })
     },
 
     async importBulkFile(connectionId: string, file: File) {

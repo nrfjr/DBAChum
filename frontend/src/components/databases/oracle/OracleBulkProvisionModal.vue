@@ -4,6 +4,7 @@ import { computed, ref } from 'vue'
 import {
   useProvisioningStore,
   type BulkProvisionExecutionResult,
+  type BulkProvisionExportRow,
   type BulkProvisionImportResult,
   type BulkProvisionPreviewResult,
   type BulkProvisionRequest,
@@ -29,6 +30,8 @@ const requestor = ref('')
 const requestReference = ref('')
 const remarks = ref('')
 const showResultPasswords = ref(false)
+const templateDownloadOpen = ref(false)
+const resultDownloadOpen = ref(false)
 
 const profiles = computed(() => provisioningStore.profilesByConnection[props.connectionId] ?? [])
 const canContinueImport = computed(() => Boolean(importResult.value && importResult.value.invalid_count === 0))
@@ -37,20 +40,35 @@ function close() {
   if (!loading.value) emit('close')
 }
 
-function downloadTemplate() {
-  const csv = [
-    'employee_id,first_name,middle_name,last_name,password,reference_user',
-    '12345,Juan,M,Santos,,',
-  ].join('\r\n')
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
+function saveBlob(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob)
   const anchor = document.createElement('a')
   anchor.href = url
-  anchor.download = 'dbachum-bulk-user-template.csv'
+  anchor.download = filename
   document.body.appendChild(anchor)
   anchor.click()
   anchor.remove()
   URL.revokeObjectURL(url)
+}
+
+function downloadTemplateCsv() {
+  templateDownloadOpen.value = false
+  const csv = [
+    'employee_id,first_name,middle_name,last_name,password,reference_user',
+    '001234,Juan,M,Santos,,',
+  ].join('\r\n')
+  saveBlob(new Blob([csv], { type: 'text/csv;charset=utf-8' }), 'dbachum-bulk-user-template.csv')
+}
+
+async function downloadTemplateXlsx() {
+  templateDownloadOpen.value = false
+  error.value = null
+  try {
+    const blob = await provisioningStore.downloadBulkTemplateXlsx(props.connectionId)
+    saveBlob(blob, 'dbachum-bulk-user-template.xlsx')
+  } catch (caught) {
+    error.value = caught instanceof Error ? caught.message : 'Unable to download XLSX template.'
+  }
 }
 
 function rowInputRows(): BulkProvisionRowInput[] {
@@ -219,29 +237,50 @@ function passwordForRow(rowNumber: number) {
   return importResult.value?.rows.find((row) => row.row_number === rowNumber)?.password ?? ''
 }
 
+function exportRows(): BulkProvisionExportRow[] {
+  const importedRows = importResult.value?.rows ?? []
+  const importedByRow = new Map(importedRows.map((row) => [row.row_number, row]))
+  return (execution.value?.rows ?? []).map((row) => {
+    const imported = importedByRow.get(row.row_number)
+    return {
+      row: row.row_number,
+      employee_id: imported?.employee_id ?? '',
+      first_name: imported?.first_name ?? '',
+      middle_name: imported?.middle_name ?? '',
+      last_name: imported?.last_name ?? '',
+      username: row.username ?? '',
+      initial_password: passwordForRow(row.row_number),
+      status: row.status,
+      run_or_audit: row.run_id ?? row.audit_id ?? '',
+      error: row.error ?? '',
+    }
+  })
+}
+
 function downloadResultsCsv() {
+  resultDownloadOpen.value = false
   if (!execution.value) return
   const quote = (value: string) => `"${value.replaceAll('"', '""')}"`
+  const headers = ['row', 'employee_id', 'first_name', 'middle_name', 'last_name', 'username', 'initial_password', 'status', 'run_or_audit', 'error']
   const lines = [
-    ['row', 'username', 'initial_password', 'status', 'run_or_audit', 'error'].join(','),
-    ...execution.value.rows.map((row) => [
-      String(row.row_number),
-      row.username ?? '',
-      passwordForRow(row.row_number),
-      row.status,
-      row.run_id ?? row.audit_id ?? '',
-      row.error ?? '',
-    ].map(quote).join(',')),
+    headers.join(','),
+    ...exportRows().map((row) => headers.map((key) => quote(String(row[key as keyof BulkProvisionExportRow] ?? ''))).join(',')),
   ]
-  const blob = new Blob([lines.join('\r\n')], { type: 'text/csv;charset=utf-8' })
-  const url = URL.createObjectURL(blob)
-  const anchor = document.createElement('a')
-  anchor.href = url
-  anchor.download = `dbachum-bulk-provision-results-${new Date().toISOString().slice(0, 10)}.csv`
-  document.body.appendChild(anchor)
-  anchor.click()
-  anchor.remove()
-  URL.revokeObjectURL(url)
+  const filename = `dbachum-bulk-provision-results-${new Date().toISOString().slice(0, 10)}.csv`
+  saveBlob(new Blob([lines.join('\r\n')], { type: 'text/csv;charset=utf-8' }), filename)
+}
+
+async function downloadResultsXlsx() {
+  resultDownloadOpen.value = false
+  if (!execution.value) return
+  error.value = null
+  try {
+    const blob = await provisioningStore.exportBulkResultsXlsx(props.connectionId, exportRows())
+    const filename = `dbachum-bulk-provision-results-${new Date().toISOString().slice(0, 10)}.xlsx`
+    saveBlob(blob, filename)
+  } catch (caught) {
+    error.value = caught instanceof Error ? caught.message : 'Unable to export XLSX results.'
+  }
 }
 </script>
 
@@ -280,7 +319,13 @@ function downloadResultsCsv() {
             <input type="file" accept=".xlsx,.csv" :disabled="loading" @change="handleFile" />
             <small v-if="selectedFilename">{{ selectedFilename }}</small>
           </label>
-          <button type="button" class="secondary-button" :disabled="loading" @click="downloadTemplate">Download CSV template</button>
+          <div class="compact-dropdown">
+            <button type="button" class="secondary-button" :disabled="loading" @click="templateDownloadOpen = !templateDownloadOpen">Download template ▾</button>
+            <div v-if="templateDownloadOpen" class="compact-dropdown-menu">
+              <button type="button" @click="downloadTemplateCsv">CSV</button>
+              <button type="button" @click="downloadTemplateXlsx">XLSX</button>
+            </div>
+          </div>
         </div>
 
         <div v-if="loading" class="empty-state">Reading and validating spreadsheet...</div>
@@ -389,7 +434,13 @@ function downloadResultsCsv() {
         </div>
         <div class="bulk-result-password-actions">
           <button type="button" class="secondary-button" @click="showResultPasswords = !showResultPasswords">{{ showResultPasswords ? 'Hide passwords' : 'Show passwords' }}</button>
-          <button type="button" class="secondary-button" @click="downloadResultsCsv">Download result CSV</button>
+          <div class="compact-dropdown">
+            <button type="button" class="secondary-button" @click="resultDownloadOpen = !resultDownloadOpen">Download results ▾</button>
+            <div v-if="resultDownloadOpen" class="compact-dropdown-menu">
+              <button type="button" @click="downloadResultsCsv">CSV</button>
+              <button type="button" @click="downloadResultsXlsx">XLSX</button>
+            </div>
+          </div>
           <small>Passwords exist only in this open bulk session and are not added to DBAChum lifecycle/audit records.</small>
         </div>
         <div class="utility-table-wrap bulk-preview-table">
@@ -418,6 +469,11 @@ function downloadResultsCsv() {
 .bulk-file-row { display: flex; align-items: end; gap: .75rem; flex-wrap: wrap; margin-bottom: 1rem; }
 .bulk-file-picker { display: grid; gap: .4rem; margin-bottom: 0; min-width: min(520px, 100%); }
 .bulk-preview-table { max-height: 430px; overflow: auto; margin-top: 1rem; }
+.bulk-preview-table thead th { position: sticky; top: 0; z-index: 1; background: var(--color-surface); }
+.compact-dropdown { position: relative; display: inline-block; }
+.compact-dropdown-menu { position: absolute; right: 0; top: calc(100% + .3rem); z-index: 8; min-width: 9rem; padding: .3rem; border: 1px solid var(--border-color); border-radius: .6rem; background: var(--color-surface); box-shadow: 0 .6rem 1.6rem rgba(0, 0, 0, .14); }
+.compact-dropdown-menu button { display: block; width: 100%; padding: .55rem .65rem; border: 0; border-radius: .45rem; background: transparent; color: inherit; text-align: left; cursor: pointer; }
+.compact-dropdown-menu button:hover { background: var(--color-surface-secondary); }
 .bulk-row-invalid { background: color-mix(in srgb, var(--color-danger) 7%, transparent); }
 .bulk-cell-invalid { outline: 1px solid var(--color-danger); outline-offset: -2px; }
 .bulk-row-error { display: block; max-width: 280px; margin-top: .25rem; }

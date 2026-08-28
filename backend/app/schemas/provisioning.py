@@ -603,6 +603,23 @@ class BulkProvisionRequest(BaseModel):
         return self
 
 
+class BulkProvisionExportRow(BaseModel):
+    row: int = Field(ge=1)
+    employee_id: str = Field(default="", max_length=100)
+    first_name: str = Field(default="", max_length=100)
+    middle_name: str = Field(default="", max_length=100)
+    last_name: str = Field(default="", max_length=100)
+    username: str = Field(default="", max_length=30)
+    initial_password: str = Field(default="", max_length=128)
+    status: str = Field(default="", max_length=32)
+    run_or_audit: str = Field(default="", max_length=128)
+    error: str = Field(default="", max_length=2000)
+
+
+class BulkProvisionExportRequest(BaseModel):
+    rows: list[BulkProvisionExportRow] = Field(min_length=1, max_length=500)
+
+
 class BulkProvisionPreviewRow(BaseModel):
     row_number: int
     employee_id: str

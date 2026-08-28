@@ -4,6 +4,7 @@ from fastapi import (
     File,
     Request,
     UploadFile,
+    Response,
 )
 
 from app.schemas.oracle_dba import (
@@ -42,6 +43,7 @@ from app.schemas.provisioning import (
     BulkProvisionRequest,
     BulkProvisionPreviewResponse,
     BulkProvisionExecutionResponse,
+    BulkProvisionExportRequest,
 )
 from app.schemas.user import UserResponse
 from app.services.oracle_dba import (
@@ -67,6 +69,8 @@ from app.services.bulk_provisioning import (
     execute_bulk_provisioning,
     import_bulk_provision_file,
     preview_bulk_provisioning,
+    build_bulk_template_xlsx,
+    build_bulk_results_xlsx,
 )
 from app.services.provisioning_execution import execute_provisioning_profile
 from app.services.deprovisioning import (
@@ -169,6 +173,42 @@ async def get_oracle_username_availability(
         username=normalized,
         available=not exists,
         message=None if not exists else "This Oracle username already exists.",
+    )
+
+
+@router.get(
+    "/{connection_id}/oracle/bulk-provision/template.xlsx",
+)
+async def download_oracle_bulk_provision_template(
+    connection_id: str,
+    current_user: UserResponse = Depends(
+        require_permission(Permission.DBA_OPERATE)
+    ),
+):
+    content = build_bulk_template_xlsx()
+    return Response(
+        content=content,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": 'attachment; filename="dbachum-bulk-user-template.xlsx"'},
+    )
+
+
+@router.post(
+    "/{connection_id}/oracle/bulk-provision/results.xlsx",
+)
+async def download_oracle_bulk_provision_results(
+    connection_id: str,
+    data: BulkProvisionExportRequest,
+    current_user: UserResponse = Depends(
+        require_permission(Permission.DBA_OPERATE)
+    ),
+):
+    rows = [item.model_dump() for item in data.rows]
+    content = build_bulk_results_xlsx(rows)
+    return Response(
+        content=content,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": 'attachment; filename="dbachum-bulk-provision-results.xlsx"'},
     )
 
 

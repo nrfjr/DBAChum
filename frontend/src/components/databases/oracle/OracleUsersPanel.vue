@@ -169,6 +169,9 @@ const createForm = reactive<CreateUserForm>(emptyCreateForm())
 const createFieldErrors = reactive<Record<string, string>>({})
 const usernameChecking = ref(false)
 const bulkCreateOpen = ref(false)
+const createActionsOpen = ref(false)
+const resultPassword = ref('')
+const summaryCopyNotice = ref('')
 
 const historyOpen = ref(false)
 const historyLoading = ref(false)
@@ -314,6 +317,7 @@ function toggleActionMenu(user: OracleDatabaseUser, event: Event) {
 
 function documentClickClosesActionMenu() {
   closeActionMenu()
+  createActionsOpen.value = false
 }
 
 function editRoleSelected(roleName: string) {
@@ -655,14 +659,23 @@ function resetCreate() {
   previewLoading.value = false
   provisioningExecuting.value = false
   showPassword.value = false
+  resultPassword.value = ''
+  summaryCopyNotice.value = ''
+}
+
+function toggleCreateActions(event: Event) {
+  event.stopPropagation()
+  createActionsOpen.value = !createActionsOpen.value
 }
 
 function openCreate() {
+  createActionsOpen.value = false
   resetCreate()
   createOpen.value = true
 }
 
 function openBulkCreate() {
+  createActionsOpen.value = false
   bulkCreateOpen.value = true
 }
 
@@ -690,35 +703,41 @@ function setCreateFieldError(field: string, message: string | null) {
   else delete createFieldErrors[field]
 }
 
+function validPersonNameInput(value: string, required: boolean) {
+  const raw = value.trim()
+  if (!raw) return !required
+  if (/\d/.test(raw)) return false
+  return Boolean(normalizePersonName(raw))
+}
+
 function validateIdentityFields() {
   let valid = true
-  const fields: Array<[keyof Pick<CreateUserForm, 'employeeId' | 'firstName' | 'middleName' | 'lastName'>, string, boolean]> = [
-    ['employeeId', 'Employee ID', true],
+  const employeeId = createForm.employeeId.trim()
+  if (!employeeId) {
+    setCreateFieldError('employeeId', 'Employee ID is required.')
+    valid = false
+  } else if (!/^[A-Za-z0-9]+$/.test(employeeId)) {
+    setCreateFieldError('employeeId', 'Employee ID must contain letters and numbers only.')
+    valid = false
+  } else {
+    setCreateFieldError('employeeId', null)
+  }
+
+  const nameFields: Array<[keyof Pick<CreateUserForm, 'firstName' | 'middleName' | 'lastName'>, string, boolean]> = [
     ['firstName', 'First name', true],
     ['middleName', 'Middle name', false],
     ['lastName', 'Last name', true],
   ]
-
-  for (const [field, label, required] of fields) {
+  for (const [field, label, required] of nameFields) {
     const raw = createForm[field].trim()
-    if (required && !raw) {
+    if (!raw && required) {
       setCreateFieldError(field, `${label} is required.`)
       valid = false
-      continue
-    }
-    if (!raw) {
-      setCreateFieldError(field, null)
-      continue
-    }
-    if (field === 'employeeId') {
-      if (!/^[A-Za-z0-9]+$/.test(raw)) {
-        setCreateFieldError(field, 'Employee ID must contain letters and numbers only.')
-        valid = false
-      } else {
-        setCreateFieldError(field, null)
-      }
-    } else if (!/^[A-Za-z ]+$/.test(raw)) {
-      setCreateFieldError(field, `${label} must contain letters and spaces only.`)
+    } else if (/\d/.test(raw)) {
+      setCreateFieldError(field, `${label} cannot contain numbers.`)
+      valid = false
+    } else if (raw && !normalizePersonName(raw)) {
+      setCreateFieldError(field, `${label} must contain at least one letter.`)
       valid = false
     } else {
       setCreateFieldError(field, null)
@@ -730,12 +749,10 @@ function validateIdentityFields() {
 const identityReady = computed(() =>
   Boolean(
     createForm.employeeId.trim()
-      && createForm.firstName.trim()
-      && createForm.lastName.trim()
       && /^[A-Za-z0-9]+$/.test(createForm.employeeId.trim())
-      && /^[A-Za-z ]+$/.test(createForm.firstName.trim())
-      && /^[A-Za-z ]+$/.test(createForm.lastName.trim())
-      && (!createForm.middleName.trim() || /^[A-Za-z ]+$/.test(createForm.middleName.trim())),
+      && validPersonNameInput(createForm.firstName, true)
+      && validPersonNameInput(createForm.lastName, true)
+      && validPersonNameInput(createForm.middleName, false),
   ),
 )
 
@@ -980,6 +997,42 @@ function handleRoleToggle(
   setRoleSelected(roleName, target.checked)
 }
 
+const resultUsername = computed(() =>
+  provisioningResult.value?.username ?? createResult.value?.username ?? createForm.username,
+)
+
+const resultFullName = computed(() =>
+  [createForm.firstName, createForm.middleName, createForm.lastName]
+    .map((value) => value.trim())
+    .filter(Boolean)
+    .join(' '),
+)
+
+const requesterSummary = computed(() => [
+  `${createForm.employeeId} ${resultFullName.value}`.trim(),
+  `Username: ${resultUsername.value.toUpperCase()}`,
+  `Password: ${resultPassword.value}`,
+].join('\n'))
+
+async function copyRequesterSummary() {
+  summaryCopyNotice.value = ''
+  const text = requesterSummary.value
+  try {
+    await navigator.clipboard.writeText(text)
+    summaryCopyNotice.value = 'Copied.'
+  } catch {
+    const textarea = document.createElement('textarea')
+    textarea.value = text
+    textarea.style.position = 'fixed'
+    textarea.style.opacity = '0'
+    document.body.appendChild(textarea)
+    textarea.select()
+    document.execCommand('copy')
+    textarea.remove()
+    summaryCopyNotice.value = 'Copied.'
+  }
+}
+
 async function executeProvisioning() {
   if (!createForm.provisioningProfileId || !provisioningPreview.value) {
     return
@@ -988,6 +1041,7 @@ async function executeProvisioning() {
   createError.value = null
   provisioningExecuting.value = true
 
+  const submittedPassword = createForm.password
   try {
     provisioningResult.value = await provisioningStore.executeForConnection(
       props.connectionId,
@@ -1010,7 +1064,10 @@ async function executeProvisioning() {
       },
     )
 
-    // Never keep the submitted password in component state after execution.
+    resultPassword.value = provisioningResult.value.account.password_applied
+      ? submittedPassword
+      : ''
+    // Never keep the submitted password in the editable form after execution.
     createForm.password = ''
     createStep.value = 'success'
     await oracleStore.loadUsers(props.connectionId)
@@ -1038,6 +1095,8 @@ function createAnotherUser() {
   provisioningPreview.value = null
   provisioningResult.value = null
   showPassword.value = false
+  resultPassword.value = ''
+  summaryCopyNotice.value = ''
 }
 
 function downloadProvisioningLdif() {
@@ -1061,6 +1120,7 @@ function downloadProvisioningLdif() {
 
 async function createUser() {
   createError.value = null
+  const submittedPassword = createForm.password
 
   try {
     createResult.value = await oracleStore.createUser(
@@ -1095,7 +1155,8 @@ async function createUser() {
       },
     )
 
-    // Do not retain the submitted database password in component state.
+    resultPassword.value = submittedPassword
+    // Do not retain the submitted database password in the editable form.
     createForm.password = ''
     createStep.value = 'success'
 
@@ -1136,21 +1197,21 @@ onBeforeUnmount(() => {
       </div>
 
       <div class="utility-toolbar-actions">
-        <button
-          type="button"
-          class="primary-button"
-          @click="openCreate"
-        >
-          Create user
-        </button>
-
-        <button
-          type="button"
-          class="secondary-button"
-          @click="openBulkCreate"
-        >
-          Bulk create
-        </button>
+        <div class="toolbar-create-dropdown">
+          <button
+            type="button"
+            class="primary-button"
+            aria-haspopup="menu"
+            :aria-expanded="createActionsOpen"
+            @click="toggleCreateActions"
+          >
+            Create ▾
+          </button>
+          <div v-if="createActionsOpen" class="toolbar-create-menu" role="menu" @click.stop>
+            <button type="button" role="menuitem" @click="openCreate">Create user</button>
+            <button type="button" role="menuitem" @click="openBulkCreate">Batch user</button>
+          </div>
+        </div>
 
         <button
           type="button"
@@ -1982,7 +2043,7 @@ onBeforeUnmount(() => {
           <div class="username-generation-block" :class="{ 'field-invalid': createFieldErrors.username }">
             <div>
               <strong>Generated username</strong>
-              <small>DBAChum uses first initial + optional middle initial + last name + employee ID.</small>
+              <small>DBAChum uses first initial + optional middle initial + concatenated last name + exact employee ID. Punctuation is removed and the username is always uppercase.</small>
             </div>
             <input
               :value="createForm.username"
@@ -2146,39 +2207,24 @@ onBeforeUnmount(() => {
           v-else-if="createStep === 'review'"
           class="oracle-user-review"
         >
-          <div class="oracle-user-review-summary">
-            <div>
-              <span>New account</span>
+          <details class="wizard-review-details">
+            <summary>
+              <span>Identity &amp; account</span>
               <strong>{{ createForm.username }}</strong>
+            </summary>
+            <div class="oracle-user-review-summary">
+              <div><span>Employee</span><strong>{{ createForm.employeeId }} · {{ [createForm.firstName, createForm.middleName, createForm.lastName].filter(Boolean).join(' ') }}</strong></div>
+              <div><span>Provisioning</span><strong>{{ selectedProvisioningProfile?.name ?? 'No provisioning' }}</strong></div>
+              <div><span>Reference user</span><strong>{{ reference?.username ?? 'None' }}</strong></div>
+              <div><span>Default tablespace</span><strong>{{ createForm.defaultTablespace || 'Database default' }}</strong></div>
+              <div><span>Temporary tablespace</span><strong>{{ createForm.temporaryTablespace || 'Database default' }}</strong></div>
+              <div><span>Profile</span><strong>{{ createForm.profile || 'Database default' }}</strong></div>
             </div>
+          </details>
 
-            <div>
-              <span>Provisioning</span>
-              <strong>{{ selectedProvisioningProfile?.name ?? 'No provisioning' }}</strong>
-            </div>
-
-            <div>
-              <span>Reference user</span>
-              <strong>{{ reference?.username ?? 'None' }}</strong>
-            </div>
-
-            <div>
-              <span>Default tablespace</span>
-              <strong>{{ createForm.defaultTablespace || 'Database default' }}</strong>
-            </div>
-
-            <div>
-              <span>Temporary tablespace</span>
-              <strong>{{ createForm.temporaryTablespace || 'Database default' }}</strong>
-            </div>
-
-            <div>
-              <span>Profile</span>
-              <strong>{{ createForm.profile || 'Database default' }}</strong>
-            </div>
-          </div>
-
-          <section v-if="reference" class="oracle-role-review role-preview-summary">
+          <details v-if="reference" class="wizard-review-details role-preview-summary">
+            <summary><span>Roles to grant</span><strong>{{ selectedRoles.length }}</strong></summary>
+            <section class="oracle-role-review">
             <div>
               <h3>Roles to grant</h3>
               <p>The role selection was made in Access. Go Back if it needs to change.</p>
@@ -2187,7 +2233,8 @@ onBeforeUnmount(() => {
             <div v-else class="oracle-privilege-list">
               <span v-for="roleName in selectedRoles" :key="roleName">{{ roleName }}</span>
             </div>
-          </section>
+            </section>
+          </details>
 
           <section v-if="provisioningPreview" class="oracle-provisioning-preview">
             <div class="preview-callout">
@@ -2195,22 +2242,18 @@ onBeforeUnmount(() => {
               <span>Click Provision once to execute this parent account and its application provisioning lifecycle.</span>
             </div>
 
-            <div class="preview-summary-grid">
-              <div>
-                <span>Oracle account</span>
-                <strong>{{ provisioningPreview.account_exists ? 'Existing → ALTER / reconcile' : 'Not found → CREATE' }}</strong>
+            <details class="wizard-review-details">
+              <summary><span>Oracle execution plan</span><strong>{{ provisioningPreview.account_action.toUpperCase() }}</strong></summary>
+              <div class="preview-summary-grid">
+                <div><span>Oracle account</span><strong>{{ provisioningPreview.account_exists ? 'Existing → ALTER / reconcile' : 'Not found → CREATE' }}</strong></div>
+                <div><span>Parent database</span><strong>{{ provisioningPreview.schema_connection_name }}</strong></div>
+                <div><span>Requester IP</span><strong>{{ provisioningPreview.requester_ip || 'Unavailable' }}</strong></div>
               </div>
-              <div>
-                <span>Parent database</span>
-                <strong>{{ provisioningPreview.schema_connection_name }}</strong>
-              </div>
-              <div>
-                <span>Requester IP</span>
-                <strong>{{ provisioningPreview.requester_ip || 'Unavailable' }}</strong>
-              </div>
-            </div>
+            </details>
 
-            <section class="preview-section">
+            <details class="wizard-review-details">
+              <summary><span>Application provisioning</span><strong>{{ provisioningPreview.table_steps.length }} step(s)</strong></summary>
+              <section class="preview-section">
               <h3>Application upsert steps</h3>
               <article
                 v-for="step in provisioningPreview.table_steps"
@@ -2241,15 +2284,19 @@ onBeforeUnmount(() => {
                 </div>
               </article>
               <p v-if="provisioningPreview.table_steps.length === 0" class="empty-state">No application-table steps are configured.</p>
-            </section>
+              </section>
+            </details>
 
-            <section v-if="provisioningPreview.ldap.enabled" class="preview-section">
+            <details v-if="provisioningPreview.ldap.enabled" class="wizard-review-details">
+              <summary><span>LDAP</span><strong>{{ provisioningPreview.ldap.profile_name }}</strong></summary>
+              <section class="preview-section">
               <h3>LDAP</h3>
               <p>
                 {{ provisioningPreview.ldap.profile_name }} · directory entry will be added automatically · LDIF validated as
                 <strong>{{ provisioningPreview.ldap.filename }}</strong>
               </p>
-            </section>
+              </section>
+            </details>
 
             <div v-if="provisioningPreview.warnings.length" class="utility-warning oracle-create-warning">
               <ul>
@@ -2311,6 +2358,18 @@ onBeforeUnmount(() => {
           v-else
           class="oracle-user-success"
         >
+          <section v-if="resultPassword" class="requester-result-summary">
+            <div>
+              <strong>Requester summary</strong>
+              <small>Copy this while the result is open. The password is not written to lifecycle audit/history.</small>
+            </div>
+            <pre>{{ requesterSummary }}</pre>
+            <div class="requester-summary-actions">
+              <button type="button" class="secondary-button" @click="copyRequesterSummary">Copy summary</button>
+              <small v-if="summaryCopyNotice">{{ summaryCopyNotice }}</small>
+            </div>
+          </section>
+
           <template v-if="provisioningResult">
             <strong>{{ provisioningResult.username }}</strong>
             <p>
@@ -2408,6 +2467,20 @@ onBeforeUnmount(() => {
 
 
 <style scoped>
+.toolbar-create-dropdown { position: relative; display: inline-block; }
+.toolbar-create-menu { position: absolute; right: 0; top: calc(100% + .35rem); z-index: 15; min-width: 10rem; padding: .35rem; border: 1px solid var(--border-color); border-radius: .65rem; background: var(--color-surface); box-shadow: 0 .7rem 1.8rem rgba(0, 0, 0, .14); }
+.toolbar-create-menu button { display: block; width: 100%; border: 0; border-radius: .45rem; padding: .6rem .7rem; text-align: left; color: inherit; background: transparent; cursor: pointer; }
+.toolbar-create-menu button:hover { background: var(--color-surface-secondary); }
+.wizard-review-details { border: 1px solid var(--border-color); border-radius: .7rem; overflow: hidden; }
+.wizard-review-details > summary { display: flex; justify-content: space-between; gap: 1rem; align-items: center; padding: .75rem .85rem; cursor: pointer; list-style: none; }
+.wizard-review-details > summary::-webkit-details-marker { display: none; }
+.wizard-review-details > summary::after { content: '▾'; opacity: .65; margin-left: auto; }
+.wizard-review-details[open] > summary::after { transform: rotate(180deg); }
+.wizard-review-details > .oracle-user-review-summary, .wizard-review-details > .preview-summary-grid, .wizard-review-details > .preview-section, .wizard-review-details > .oracle-role-review { padding: 0 .85rem .85rem; }
+.requester-result-summary { display: grid; gap: .7rem; padding: .9rem; border: 1px solid var(--border-color); border-radius: .75rem; }
+.requester-result-summary > div:first-child { display: grid; gap: .2rem; }
+.requester-result-summary pre { margin: 0; padding: .8rem; border-radius: .6rem; background: var(--color-surface-secondary); white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; }
+.requester-summary-actions { display: flex; align-items: center; gap: .7rem; }
 .oracle-provisioning-preview { display: grid; gap: 1rem; margin-top: 1rem; }
 .preview-callout { display: flex; flex-direction: column; gap: .2rem; padding: .8rem; border: 1px solid var(--border-color); border-radius: .7rem; }
 .preview-summary-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .75rem; }

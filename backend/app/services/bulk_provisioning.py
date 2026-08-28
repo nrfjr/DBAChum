@@ -7,7 +7,8 @@ import string
 from typing import Iterable
 
 from fastapi import UploadFile
-from openpyxl import load_workbook
+from openpyxl import Workbook, load_workbook
+from openpyxl.styles import Font
 
 from app.connectors.oracle_provisioning import (
     find_existing_oracle_users,
@@ -73,6 +74,30 @@ def _cell_text(value: object) -> str:
     return str(value).strip()
 
 
+def _xlsx_employee_id_text(cell) -> str:
+    """Preserve employee IDs as text, including zero-padded Excel formats.
+
+    If Excel already stored 0289 as a plain General numeric value 289, the
+    original leading zero is unrecoverable. The downloadable XLSX template
+    therefore formats employee_id as Text.
+    """
+    value = cell.value
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, (int, float)):
+        number_format = str(getattr(cell, "number_format", "") or "").strip()
+        # Common ID format: 000000. Preserve the width represented by zeros.
+        if number_format and set(number_format) <= {"0"} and "." not in number_format:
+            width = len(number_format)
+            try:
+                return str(int(value)).zfill(width)
+            except (TypeError, ValueError):
+                pass
+    return _cell_text(value)
+
+
 def _generate_password() -> str:
     letters = string.ascii_lowercase
     digits = string.digits
@@ -82,11 +107,16 @@ def _generate_password() -> str:
 
 
 def _validate_name(raw: str, field_label: str, *, required: bool) -> tuple[str, str | None]:
+    # Punctuation in human names is accepted and removed by normalization for
+    # username generation (e.g. John-Doe, O'Connor, Last-name). Digits are
+    # treated as input mistakes rather than silently stripped.
     cleaned = normalize_person_name(raw)
     if required and not cleaned:
         return "", f"{field_label} is required."
-    if raw and cleaned and raw.strip() != cleaned:
-        return cleaned, f"{field_label} must contain letters and spaces only."
+    if raw and any(character.isdigit() for character in raw):
+        return cleaned or "", f"{field_label} cannot contain numbers."
+    if raw and not cleaned:
+        return "", f"{field_label} must contain at least one letter."
     return cleaned or "", None
 
 
@@ -136,12 +166,24 @@ def _rows_from_xlsx(contents: bytes) -> tuple[list[str], list[list[object]]]:
         ) from exc
     try:
         sheet = workbook.worksheets[0]
-        iterator = sheet.iter_rows(values_only=True)
-        header_row = next(iterator, None)
-        if header_row is None:
+        iterator = sheet.iter_rows(values_only=False)
+        header_cells = next(iterator, None)
+        if header_cells is None:
             return [], []
-        headers = [str(item or "") for item in header_row]
-        rows = [list(row) for row in iterator]
+        headers = [str(cell.value or "") for cell in header_cells]
+        employee_id_index = next(
+            (index for index, header in enumerate(headers) if _normalize_header(header) == "employee_id"),
+            None,
+        )
+        rows: list[list[object]] = []
+        for cells in iterator:
+            converted: list[object] = []
+            for index, cell in enumerate(cells):
+                if employee_id_index is not None and index == employee_id_index:
+                    converted.append(_xlsx_employee_id_text(cell))
+                else:
+                    converted.append(_cell_text(cell.value))
+            rows.append(converted)
         return headers, rows
     finally:
         workbook.close()
@@ -305,6 +347,53 @@ async def import_bulk_provision_file(
         rows=parsed,
     )
 
+
+
+def build_bulk_template_xlsx() -> bytes:
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "Users"
+    headers = ["employee_id", "first_name", "middle_name", "last_name", "password", "reference_user"]
+    sheet.append(headers)
+    sheet.append(["001234", "Juan", "M", "Santos", "", ""])
+    for cell in sheet[1]:
+        cell.font = Font(bold=True)
+    # Employee IDs are identifiers, not numbers. Text format protects leading zeros.
+    for cell in sheet["A"]:
+        cell.number_format = "@"
+    widths = {"A": 18, "B": 20, "C": 20, "D": 24, "E": 20, "F": 22}
+    for column, width in widths.items():
+        sheet.column_dimensions[column].width = width
+    buffer = io.BytesIO()
+    workbook.save(buffer)
+    workbook.close()
+    return buffer.getvalue()
+
+
+def build_bulk_results_xlsx(rows: list[dict[str, object]]) -> bytes:
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "Provisioning results"
+    headers = [
+        "row", "employee_id", "first_name", "middle_name", "last_name",
+        "username", "initial_password", "status", "run_or_audit", "error",
+    ]
+    sheet.append(headers)
+    for item in rows:
+        sheet.append([item.get(header, "") for header in headers])
+    for cell in sheet[1]:
+        cell.font = Font(bold=True)
+    for cell in sheet["B"]:
+        cell.number_format = "@"
+    for cell in sheet["G"]:
+        cell.number_format = "@"
+    widths = [8, 18, 20, 20, 24, 32, 20, 14, 36, 50]
+    for index, width in enumerate(widths, start=1):
+        sheet.column_dimensions[sheet.cell(row=1, column=index).column_letter].width = width
+    buffer = io.BytesIO()
+    workbook.save(buffer)
+    workbook.close()
+    return buffer.getvalue()
 
 def _effective_reference(data: BulkProvisionRequest, row) -> str | None:
     value = data.common_reference_user if data.use_common_reference else row.reference_user

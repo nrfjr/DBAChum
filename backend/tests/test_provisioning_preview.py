@@ -34,6 +34,29 @@ def test_generate_username_keeps_employee_id_digits_and_normalizes_enye():
     assert username == "JPNINO12345"
 
 
+
+
+def test_generate_username_preserves_leading_zero_and_sanitizes_compound_names():
+    username = provisioning_preview.generate_provisioning_username(
+        first_name="John-Doe Michael",
+        middle_name=None,
+        last_name="O'Connor-Smith Dela Cruz",
+        employee_id="0289",
+    )
+
+    assert username == "JOCONNORSMITHDELACRUZ0289"
+
+
+def test_generate_username_uses_middle_initial_when_present():
+    username = provisioning_preview.generate_provisioning_username(
+        first_name="Mary Anne",
+        middle_name="Jane-Marie",
+        last_name="Last-name",
+        employee_id="00123",
+    )
+
+    assert username == "MJLASTNAME00123"
+
 @pytest.mark.asyncio
 async def test_preview_resolves_sequence_requester_ip_and_redacts_password(monkeypatch):
     profile = {
