@@ -2828,3 +2828,183 @@ button {
     flex-direction: column;
   }
 }
+
+/* Phase 5C — read-only SSH host monitoring */
+.server-card-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.server-card-heading h2 {
+  margin: 0 0 .25rem;
+}
+
+.server-card-heading p {
+  margin: 0;
+  color: var(--text-muted);
+}
+
+.server-ssh-card {
+  min-width: 0;
+}
+
+.compact-detail-list {
+  margin-top: .8rem;
+}
+
+.mono-wrap {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  overflow-wrap: anywhere;
+}
+
+.ssh-trust-panel {
+  display: grid;
+  gap: .6rem;
+  margin-top: 1rem;
+  padding: .85rem;
+  border: 1px solid var(--color-warning, #d49a1f);
+  border-radius: .75rem;
+  background: var(--surface);
+}
+
+.ssh-trust-panel p,
+.ssh-trust-panel small {
+  margin: 0;
+  color: var(--text-muted);
+}
+
+.ssh-trust-panel code {
+  overflow-wrap: anywhere;
+}
+
+.server-monitoring-section {
+  display: grid;
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.server-monitoring-actions {
+  display: flex;
+  align-items: center;
+  gap: .75rem;
+}
+
+.server-last-checked {
+  color: var(--text-muted);
+  font-size: .85rem;
+}
+
+.server-health-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: .75rem;
+}
+
+.server-monitoring-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(16rem, 1fr);
+  gap: 1rem;
+}
+
+.server-monitoring-warnings {
+  padding: .8rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: .75rem;
+  background: var(--surface);
+}
+
+.server-monitoring-warnings ul {
+  margin: .4rem 0 0 1.1rem;
+  padding: 0;
+  color: var(--text-muted);
+}
+
+.filesystem-usage,
+.service-state-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: .2rem .55rem;
+  border-radius: 999px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.filesystem-usage[data-state='healthy'] {
+  background: rgba(34, 197, 94, .12);
+  color: #15803d;
+}
+
+.filesystem-usage[data-state='warning'] {
+  background: rgba(245, 158, 11, .14);
+  color: #b45309;
+}
+
+.filesystem-usage[data-state='critical'] {
+  background: rgba(239, 68, 68, .14);
+  color: #b91c1c;
+}
+
+.service-state-pill {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  text-transform: capitalize;
+}
+
+.service-state-pill[data-state='running'] {
+  background: rgba(34, 197, 94, .12);
+  color: #15803d;
+}
+
+.service-state-pill[data-state='degraded'],
+.service-state-pill[data-state='maintenance'] {
+  background: rgba(245, 158, 11, .14);
+  color: #b45309;
+}
+
+.failed-service-list {
+  display: grid;
+  gap: .45rem;
+  margin-top: .8rem;
+}
+
+.failed-service-list code {
+  padding: .4rem .55rem;
+  border: 1px solid var(--border);
+  border-radius: .45rem;
+  overflow-wrap: anywhere;
+}
+
+.server-process-section {
+  min-width: 0;
+}
+
+.server-process-command {
+  min-width: 22rem;
+  max-width: 48rem;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 1000px) {
+  .server-health-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .server-monitoring-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .server-health-metrics {
+    grid-template-columns: 1fr;
+  }
+
+  .server-card-heading,
+  .server-monitoring-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}

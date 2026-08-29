@@ -123,6 +123,8 @@ async def server_to_response(database, server: dict) -> ServerResponse:
         notes=server.get("notes"),
         ssh_profile_id=ssh_profile_id,
         ssh_profile_name=ssh_profile_name,
+        ssh_host_key_fingerprint=server.get("ssh_host_key_fingerprint"),
+        ssh_host_key_trusted_at=server.get("ssh_host_key_trusted_at"),
         database_connection_ids=database_connection_ids,
         enabled=server.get("enabled", True),
         database_count=len(database_connection_ids),
@@ -179,6 +181,7 @@ async def create_server(database, data: ServerCreate):
 
 async def update_server(database, server_id: str, data: ServerUpdate):
     object_id = parse_server_id(server_id)
+    existing = await get_server(database, server_id)
     await _validate_ssh_profile(database, data.ssh_profile_id)
     await _validate_database_connection_ids(database, data.database_connection_ids)
 
@@ -186,10 +189,22 @@ async def update_server(database, server_id: str, data: ServerUpdate):
     document["name_key"] = normalize_server_name(data.name)
     document["updated_at"] = datetime.now(timezone.utc)
 
+    endpoint_changed = (
+        existing.get("hostname") != data.hostname
+        or existing.get("ip_address") != data.ip_address
+        or existing.get("ssh_profile_id") != data.ssh_profile_id
+    )
+    update_document: dict = {"$set": document}
+    if endpoint_changed:
+        update_document["$unset"] = {
+            "ssh_host_key_fingerprint": "",
+            "ssh_host_key_trusted_at": "",
+        }
+
     try:
         result = await database.servers.update_one(
             {"_id": object_id},
-            {"$set": document},
+            update_document,
         )
     except DuplicateKeyError:
         raise AppError(

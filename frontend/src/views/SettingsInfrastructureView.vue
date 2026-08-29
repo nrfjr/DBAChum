@@ -366,7 +366,7 @@ onMounted(async () => {
       </div>
 
       <div class="notice-card">
-        These profiles are the credential foundation for Phase 5C SSH monitoring and the built-in terminal. Saving a profile does not open an SSH connection yet.
+        These profiles are the credential foundation for SSH monitoring and future infrastructure operations. Saving a profile does not open an SSH connection by itself.
       </div>
 
       <input v-model="sshFilter" class="table-filter-input" placeholder="Search profile, username or notes..." />

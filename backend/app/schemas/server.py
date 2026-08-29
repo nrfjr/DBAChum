@@ -78,5 +78,7 @@ class ServerResponse(ServerBase):
     id: str
     database_count: int = 0
     ssh_profile_name: str | None = None
+    ssh_host_key_fingerprint: str | None = None
+    ssh_host_key_trusted_at: datetime | None = None
     created_at: datetime
     updated_at: datetime

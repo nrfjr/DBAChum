@@ -11,6 +11,7 @@ from app.api.v1.endpoints import (
     mysql_dba,
     sqlserver_dba,
     servers,
+    server_monitoring,
     ssh_access,
     users,
 )
@@ -28,5 +29,6 @@ api_router.include_router(provisioning.router)
 api_router.include_router(sqlserver_dba.router)
 api_router.include_router(mysql_dba.router)
 api_router.include_router(servers.router)
+api_router.include_router(server_monitoring.router)
 api_router.include_router(ssh_access.router)
 api_router.include_router(users.router)

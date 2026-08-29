@@ -29,6 +29,8 @@ export interface Server {
   notes: string | null
   ssh_profile_id: string | null
   ssh_profile_name: string | null
+  ssh_host_key_fingerprint: string | null
+  ssh_host_key_trusted_at: string | null
   database_connection_ids: string[]
   enabled: boolean
   database_count: number
