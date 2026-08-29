@@ -23,6 +23,8 @@ const sectionTitle = computed(() => {
       return 'LDAP'
     case 'settings-users':
       return 'Users'
+    case 'settings-infrastructure':
+      return 'Infrastructure'
     default:
       return 'Settings'
   }
@@ -44,6 +46,10 @@ const canManageProvisioning = computed(
 
 const canManageLdap = computed(
   () => hasPermission(authStore.user?.role, 'ldap:manage'),
+)
+
+const canManageInfrastructure = computed(
+  () => hasPermission(authStore.user?.role, 'servers:manage'),
 )
 
 const canAccessConnections = computed(() =>
@@ -73,6 +79,9 @@ const canAccessConnections = computed(() =>
       </RouterLink>
       <RouterLink v-if="canManageLdap" to="/settings/ldap">
         LDAP
+      </RouterLink>
+      <RouterLink v-if="canManageInfrastructure" to="/settings/infrastructure">
+        Infrastructure
       </RouterLink>
       <RouterLink v-if="canManageUsers" to="/settings/users">
         Users

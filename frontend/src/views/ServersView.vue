@@ -1,250 +1,71 @@
 <script setup lang="ts">
-import {
-  computed,
-  onMounted,
-  reactive,
-  ref,
-} from 'vue'
+import { computed, onMounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
 
-import {
-  useServersStore,
-  type Server,
-  type ServerInput,
-  type ServerOsFamily,
-} from '@/stores/servers'
-
-import {
-  useAuthStore,
-} from '@/stores/auth'
-
-import {
-  hasPermission,
-} from '@/core/permissions'
-
+import { useServersStore, type ServerOsFamily, type ServerType } from '@/stores/servers'
+import { useAuthStore } from '@/stores/auth'
+import { hasPermission } from '@/core/permissions'
 
 const serversStore = useServersStore()
-
-const formOpen = ref(false)
-const editingId = ref<string | null>(null)
-const formError = ref<string | null>(null)
-
-
-interface ServerForm {
-  name: string
-  hostname: string
-  ip_address: string
-
-  os_family: ServerOsFamily
-  os_version: string
-
-  environment: string
-  owner: string
-
-  tags: string
-  notes: string
-
-  enabled: boolean
-}
-
-
-function emptyForm(): ServerForm {
-  return {
-    name: '',
-    hostname: '',
-    ip_address: '',
-
-    os_family: 'linux',
-    os_version: '',
-
-    environment: '',
-    owner: '',
-
-    tags: '',
-    notes: '',
-
-    enabled: true,
-  }
-}
-
-
-const form = reactive<ServerForm>(
-  emptyForm()
-)
-
-const isEditing = computed(
-  () => editingId.value !== null
-)
-
 const authStore = useAuthStore()
+const router = useRouter()
 
+const canManageServers = computed(() => hasPermission(authStore.user?.role, 'servers:manage'))
 
-const canManageServers = computed(
-  () =>
-    hasPermission(
-      authStore.user?.role,
-      'servers:manage',
-    ),
+const search = ref('')
+const environmentFilter = ref('')
+const typeFilter = ref<'' | ServerType>('')
+
+const environments = computed(() =>
+  [...new Set(
+    serversStore.servers
+      .map((server) => server.environment)
+      .filter((value): value is string => Boolean(value)),
+  )].sort((a, b) => a.localeCompare(b)),
 )
 
+const filteredServers = computed(() => {
+  const q = search.value.trim().toLowerCase()
 
-function resetForm() {
-  Object.assign(
-    form,
-    emptyForm(),
-  )
+  return serversStore.servers.filter((server) => {
+    if (environmentFilter.value && server.environment !== environmentFilter.value) return false
+    if (typeFilter.value && server.server_type !== typeFilter.value) return false
+    if (!q) return true
 
-  editingId.value = null
-  formError.value = null
-}
-
-
-function openAddServer() {
-  resetForm()
-  formOpen.value = true
-}
-
-
-function closeForm() {
-  formOpen.value = false
-  resetForm()
-}
-
-
-function editServer(server: Server) {
-  editingId.value = server.id
-
-  Object.assign(form, {
-    name: server.name,
-    hostname: server.hostname,
-    ip_address:
-      server.ip_address ?? '',
-
-    os_family:
+    return [
+      server.name,
+      server.hostname,
+      server.ip_address,
+      server.environment,
+      server.owner,
+      server.server_type,
       server.os_family,
-
-    os_version:
-      server.os_version ?? '',
-
-    environment:
-      server.environment ?? '',
-
-    owner:
-      server.owner ?? '',
-
-    tags:
-      server.tags.join(', '),
-
-    notes:
-      server.notes ?? '',
-
-    enabled:
-      server.enabled,
+      ...server.tags,
+    ]
+      .filter(Boolean)
+      .some((value) => String(value).toLowerCase().includes(q))
   })
+})
 
-  formOpen.value = true
-}
-
-
-function buildPayload(): ServerInput {
+function serverTypeLabel(value: ServerType) {
   return {
-    name: form.name.trim(),
-    hostname: form.hostname.trim(),
-
-    ip_address:
-      form.ip_address.trim() || null,
-
-    os_family:
-      form.os_family,
-
-    os_version:
-      form.os_version.trim() || null,
-
-    environment:
-      form.environment.trim() || null,
-
-    owner:
-      form.owner.trim() || null,
-
-    tags:
-      form.tags
-        .split(',')
-        .map((tag) => tag.trim())
-        .filter(Boolean),
-
-    notes:
-      form.notes.trim() || null,
-
-    enabled:
-      form.enabled,
-  }
+    database: 'Database server',
+    application: 'Application server',
+    utility: 'Utility server',
+    other: 'Other',
+  }[value]
 }
 
-
-async function saveServer() {
-  formError.value = null
-
-  try {
-    const payload = buildPayload()
-
-    if (editingId.value) {
-      await serversStore.update(
-        editingId.value,
-        payload,
-      )
-    } else {
-      await serversStore.create(
-        payload,
-      )
-    }
-
-    closeForm()
-
-  } catch (error) {
-    formError.value =
-      error instanceof Error
-        ? error.message
-        : 'Unable to save server.'
-  }
+function osLabel(value: ServerOsFamily) {
+  return { windows: 'Windows', linux: 'Linux', aix: 'AIX', unix: 'Unix', other: 'Other' }[value]
 }
 
-
-async function removeServer(
-  server: Server,
-) {
-  if (
-    !window.confirm(
-      `Delete "${server.name}"?`,
-    )
-  ) {
-    return
-  }
-
-  await serversStore.remove(
-    server.id
-  )
+function openServer(id: string) {
+  router.push({ name: 'server-detail', params: { id } })
 }
-
-
-function osLabel(
-  os: ServerOsFamily,
-) {
-  switch (os) {
-    case 'windows':
-      return 'Windows'
-    case 'linux':
-      return 'Linux'
-    case 'aix':
-      return 'AIX'
-    case 'unix':
-      return 'Unix'
-    case 'other':
-      return 'Other'
-  }
-}
-
 
 onMounted(() => {
-  serversStore.load()
+  if (serversStore.servers.length === 0) serversStore.load()
 })
 </script>
 
@@ -252,326 +73,70 @@ onMounted(() => {
   <section class="page-header">
     <div>
       <h1>Servers</h1>
-
-      <p>
-        Infrastructure hosting monitored
-        databases.
-      </p>
+      <p>Operational infrastructure workspace. Configuration and credentials live under Settings → Infrastructure.</p>
     </div>
-
-<button
-  v-if="canManageServers"
-  type="button"
-  class="primary-button"
-  @click="openAddServer"
->
-  Add server
-</button>
+    <RouterLink v-if="canManageServers" class="secondary-button" to="/settings/infrastructure">Infrastructure settings</RouterLink>
   </section>
 
-  <p
-    v-if="serversStore.loading"
-    class="empty-state"
-  >
-    Loading servers...
-  </p>
-
-  <p
-    v-else-if="serversStore.error"
-    class="login-error"
-  >
-    {{ serversStore.error }}
-  </p>
-
-  <div
-    v-else-if="
-      serversStore.servers.length === 0
-    "
-    class="database-empty-state"
-  >
-    <h2>No servers yet</h2>
-
-    <p>
-      Add infrastructure and associate
-      database connections with it.
-    </p>
+  <div class="server-workspace-filters">
+    <input v-model="search" placeholder="Search server, hostname, owner or tag..." />
+    <select v-model="environmentFilter">
+      <option value="">All environments</option>
+      <option v-for="environment in environments" :key="environment" :value="environment">{{ environment }}</option>
+    </select>
+    <select v-model="typeFilter">
+      <option value="">All server types</option>
+      <option value="database">Database server</option>
+      <option value="application">Application server</option>
+      <option value="utility">Utility server</option>
+      <option value="other">Other</option>
+    </select>
+    <button type="button" class="secondary-button" :disabled="serversStore.loading" @click="serversStore.load()">
+      {{ serversStore.loading ? 'Refreshing...' : 'Refresh' }}
+    </button>
   </div>
 
-  <div
-    v-else
-    class="server-grid"
-  >
-    <article
-      v-for="server in serversStore.servers"
+  <p v-if="serversStore.error" class="login-error">{{ serversStore.error }}</p>
+
+  <div v-if="serversStore.loading && serversStore.servers.length === 0" class="database-empty-state">
+    <h2>Loading servers...</h2>
+  </div>
+
+  <div v-else-if="filteredServers.length === 0" class="database-empty-state">
+    <h2>No server assets found</h2>
+    <p>Add or update server assets from Settings → Infrastructure.</p>
+  </div>
+
+  <div v-else class="server-grid">
+    <button
+      v-for="server in filteredServers"
       :key="server.id"
-      class="server-card"
+      type="button"
+      class="server-card server-card-button"
+      @click="openServer(server.id)"
     >
       <div class="server-card-header">
         <div>
-          <strong>
-            {{ server.name }}
-          </strong>
-
-          <span>
-            {{ osLabel(server.os_family) }}
-            <template v-if="server.os_version">
-              · {{ server.os_version }}
-            </template>
-          </span>
+          <strong>{{ server.name }}</strong>
+          <span>{{ serverTypeLabel(server.server_type) }} · {{ osLabel(server.os_family) }}<template v-if="server.os_version"> · {{ server.os_version }}</template></span>
         </div>
-
-        <span>
-          {{
-            server.enabled
-              ? 'Enabled'
-              : 'Disabled'
-          }}
-        </span>
+        <span>{{ server.enabled ? 'Enabled' : 'Disabled' }}</span>
       </div>
 
-      <div>
-        {{ server.hostname }}
-
-        <template v-if="server.ip_address">
-          · {{ server.ip_address }}
-        </template>
+      <div class="server-card-host">
+        {{ server.hostname }}<template v-if="server.ip_address"> · {{ server.ip_address }}</template>
       </div>
 
       <div class="server-metadata">
-        <span>
-          Environment:
-          {{ server.environment ?? '—' }}
-        </span>
-
-        <span>
-          Owner:
-          {{ server.owner ?? '—' }}
-        </span>
-
-        <span>
-          Databases:
-          {{ server.database_count }}
-        </span>
+        <span>Environment: {{ server.environment ?? '—' }}</span>
+        <span>Owner: {{ server.owner ?? '—' }}</span>
+        <span>Databases: {{ server.database_count }}</span>
+        <span>SSH: {{ server.ssh_profile_name ?? 'Not configured' }}</span>
       </div>
 
-      <div
-        v-if="server.tags.length"
-        class="server-tags"
-      >
-        <span
-          v-for="tag in server.tags"
-          :key="tag"
-        >
-          {{ tag }}
-        </span>
+      <div v-if="server.tags.length" class="server-tags">
+        <span v-for="tag in server.tags" :key="tag">{{ tag }}</span>
       </div>
-
-      <div class="connection-actions">
-        <button
-  v-if="canManageServers"
-  type="button"
-  class="secondary-button"
-  @click="editServer(server)"
->
-  Edit
-</button>
-
-        <button
-  v-if="canManageServers"
-  type="button"
-  class="secondary-button"
-  @click="removeServer(server)"
->
-  Delete
-</button>
-      </div>
-    </article>
-  </div>
-
-  <div
-    v-if="formOpen"
-    class="modal-backdrop"
-    @click.self="closeForm"
-  >
-    <section
-      class="modal-panel"
-      role="dialog"
-      aria-modal="true"
-    >
-      <div class="modal-header">
-        <div>
-          <h2>
-            {{
-              isEditing
-                ? 'Edit server'
-                : 'Add server'
-            }}
-          </h2>
-
-          <p>
-            Infrastructure inventory.
-          </p>
-        </div>
-
-        <button
-          type="button"
-          class="modal-close"
-          @click="closeForm"
-        >
-          ×
-        </button>
-      </div>
-
-      <form
-        class="connection-form"
-        @submit.prevent="saveServer"
-      >
-        <label>
-          Server name
-
-          <input
-            v-model="form.name"
-            required
-            placeholder="Oracle PROD 01"
-          />
-        </label>
-
-        <label>
-          Hostname
-
-          <input
-            v-model="form.hostname"
-            required
-            placeholder="dbprod01"
-          />
-        </label>
-
-        <label>
-          IP address
-
-          <input
-            v-model="form.ip_address"
-            placeholder="192.168.1.10"
-          />
-        </label>
-
-        <label>
-          Operating system
-
-          <select
-            v-model="form.os_family"
-          >
-            <option value="windows">
-              Windows
-            </option>
-
-            <option value="linux">
-              Linux
-            </option>
-
-            <option value="aix">
-              AIX
-            </option>
-
-            <option value="unix">
-              Unix
-            </option>
-
-            <option value="other">
-              Other
-            </option>
-          </select>
-        </label>
-
-        <label>
-          OS version
-
-          <input
-            v-model="form.os_version"
-            placeholder="RHEL 9"
-          />
-        </label>
-
-        <label>
-          Environment
-
-          <input
-            v-model="form.environment"
-            placeholder="Production"
-          />
-        </label>
-
-        <label>
-          Owner / team
-
-          <input
-            v-model="form.owner"
-            placeholder="Database Administrator"
-          />
-        </label>
-
-        <label>
-          Tags
-
-          <input
-            v-model="form.tags"
-            placeholder="oracle, production, erp"
-          />
-
-          <small>
-            Separate tags with commas.
-          </small>
-        </label>
-
-        <label>
-          Notes
-
-          <textarea
-            v-model="form.notes"
-            rows="4"
-          />
-        </label>
-
-        <label class="connection-checkbox">
-          <input
-            v-model="form.enabled"
-            type="checkbox"
-          />
-
-          Enable this server
-        </label>
-
-        <p
-          v-if="formError"
-          class="login-error"
-        >
-          {{ formError }}
-        </p>
-
-        <div class="connection-form-actions">
-          <button
-            type="submit"
-            class="primary-button"
-            :disabled="serversStore.saving"
-          >
-            {{
-              serversStore.saving
-                ? 'Saving...'
-                : isEditing
-                  ? 'Save changes'
-                  : 'Add server'
-            }}
-          </button>
-
-          <button
-            type="button"
-            class="secondary-button"
-            @click="closeForm"
-          >
-            Cancel
-          </button>
-        </div>
-      </form>
-    </section>
+    </button>
   </div>
 </template>

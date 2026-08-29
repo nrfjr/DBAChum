@@ -28,6 +28,10 @@ const canAccessSettings = computed(() =>
   hasPermission(
     authStore.user?.role,
     'users:manage',
+  ) ||
+  hasPermission(
+    authStore.user?.role,
+    'servers:manage',
   ),
 )
 

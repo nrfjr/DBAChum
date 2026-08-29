@@ -56,6 +56,17 @@ async def create_indexes(
         name="ix_database_connections_server_ids",
     )
 
+    await database.servers.create_index(
+        "ssh_profile_id",
+        name="ix_servers_ssh_profile_id",
+    )
+
+    await database.ssh_access_profiles.create_index(
+        "name_key",
+        unique=True,
+        name="uq_ssh_access_profiles_name_key",
+    )
+
 
     await database.database_action_audit.create_index(
         [

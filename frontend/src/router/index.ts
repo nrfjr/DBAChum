@@ -12,9 +12,11 @@ import DatabaseDetailView from '@/views/DatabaseDetailView.vue'
 import SettingsView from '@/views/SettingsView.vue'
 import SettingsConnectionsView from '@/views/SettingsConnectionsView.vue'
 import ServersView from '@/views/ServersView.vue'
+import ServerDetailView from '@/views/ServerDetailView.vue'
 import SettingsUsersView from '@/views/SettingsUsersView.vue'
 import SettingsProvisioningView from '@/views/SettingsProvisioningView.vue'
 import SettingsLdapView from '@/views/SettingsLdapView.vue'
+import SettingsInfrastructureView from '@/views/SettingsInfrastructureView.vue'
 import { hasPermission, } from '@/core/permissions'
 
 
@@ -66,6 +68,14 @@ const router = createRouter({
       component: ServersView,
       meta: {
         title: 'Servers',
+      },
+    },
+    {
+      path: '/servers/:id',
+      name: 'server-detail',
+      component: ServerDetailView,
+      meta: {
+        title: 'Server',
       },
     },
 
@@ -134,6 +144,14 @@ const router = createRouter({
 
           meta: {
             permission: 'ldap:manage',
+          },
+        },
+        {
+          path: 'infrastructure',
+          name: 'settings-infrastructure',
+          component: SettingsInfrastructureView,
+          meta: {
+            permission: 'servers:manage',
           },
         },
       ],
