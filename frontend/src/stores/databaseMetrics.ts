@@ -9,6 +9,90 @@ import type {
 } from '@/stores/databases'
 
 
+export interface OracleMetricSystemDeltas {
+  cpu_centiseconds?: number | null
+  cpu_time_seconds?: number | null
+  execute_count?: number | null
+  logical_reads?: number | null
+  physical_reads?: number | null
+  user_commits?: number | null
+  user_rollbacks?: number | null
+  redo_bytes?: number | null
+  hard_parses?: number | null
+}
+
+export interface OracleMetricTopSql {
+  sql_id: string
+  child_number: number
+  plan_hash_value?: number
+  parsing_schema_name?: string | null
+  module?: string | null
+  last_active_time?: string | null
+  baseline?: boolean
+  delta_cpu_time_us?: number | null
+  delta_elapsed_time_us?: number | null
+  delta_executions?: number | null
+  delta_buffer_gets?: number | null
+  delta_disk_reads?: number | null
+  delta_rows_processed?: number | null
+}
+
+export interface OracleMetricTopSession {
+  sid: number
+  serial_number: number
+  username?: string | null
+  sql_id?: string | null
+  status?: string | null
+  module?: string | null
+  machine?: string | null
+  event?: string | null
+  wait_class?: string | null
+  active_seconds?: number | null
+  blocking_session?: number | null
+  cpu_time_seconds?: number | null
+  baseline?: boolean
+}
+
+export interface OracleMetricTopWait {
+  event: string
+  waits?: number | null
+  wait_time_seconds?: number | null
+  baseline?: boolean
+}
+
+export interface OracleMetricTablespace {
+  name: string
+  contents?: string | null
+  status?: string | null
+  used_bytes?: number | null
+  capacity_bytes?: number | null
+  used_percent?: number | null
+}
+
+export interface OracleMetricStorage {
+  tablespaces?: OracleMetricTablespace[]
+  fra?: {
+    destination?: string | null
+    limit_bytes?: number | null
+    used_bytes?: number | null
+    reclaimable_bytes?: number | null
+    number_of_files?: number | null
+    used_percent?: number | null
+  } | null
+}
+
+export interface OracleMetricSample {
+  database_name?: string | null
+  service_name?: string | null
+  instance_name?: string | null
+  version?: string | null
+  system_deltas?: OracleMetricSystemDeltas
+  top_sql?: OracleMetricTopSql[]
+  top_sessions?: OracleMetricTopSession[]
+  top_waits?: OracleMetricTopWait[]
+  storage?: OracleMetricStorage
+}
+
 export interface DatabaseMetricSample {
   collected_at: string
   checked_at: string | null
@@ -25,6 +109,16 @@ export interface DatabaseMetricSample {
 
   warnings: string[]
   error: string | null
+  oracle?: OracleMetricSample | null
+}
+
+export interface OracleMetricSqlText {
+  sql_id: string
+  child_number: number
+  sql_text: string
+  parsing_schema_name?: string | null
+  module?: string | null
+  last_seen_at?: string | null
 }
 
 
@@ -40,6 +134,7 @@ export interface DatabaseMetricHistory {
   count: number
 
   items: DatabaseMetricSample[]
+  oracle_sql_texts: OracleMetricSqlText[]
 }
 
 

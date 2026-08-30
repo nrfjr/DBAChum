@@ -108,3 +108,42 @@ async def test_protected_child_role_cannot_be_added_to_custom_role(monkeypatch):
         )
 
     assert caught.value.code == "ORACLE_PROTECTED_CHILD_ROLE_ADD_BLOCKED"
+
+
+@pytest.mark.asyncio
+async def test_role_catalog_is_lightweight_and_does_not_scan_all_grants(monkeypatch):
+    class FakeConnection:
+        def __init__(self):
+            self.sql = []
+
+        async def fetchall(self, sql, parameters=None):
+            normalized = " ".join(sql.lower().split())
+            self.sql.append(normalized)
+            if "from dba_roles" in normalized:
+                return [
+                    ("APP_READ", "NO", "N"),
+                    ("DBA", "NO", "Y"),
+                ]
+            if "from system_privilege_map" in normalized:
+                return [("CREATE SESSION",)]
+            if "from table_privilege_map" in normalized:
+                return [("SELECT",)]
+            raise AssertionError(f"Unexpected heavy role-list query: {sql}")
+
+    fake_connection = FakeConnection()
+
+    @asynccontextmanager
+    async def fake_open(_connection):
+        yield fake_connection
+
+    monkeypatch.setattr(roles, "open_oracle_connection", fake_open)
+
+    result = await roles.get_oracle_roles({})
+
+    assert [item["name"] for item in result["roles"]] == ["APP_READ", "DBA"]
+    assert result["roles"][0]["manageable"] is True
+    assert result["roles"][1]["manageable"] is False
+    assert not any("dba_role_privs" in sql for sql in fake_connection.sql)
+    assert not any("dba_sys_privs" in sql for sql in fake_connection.sql)
+    assert not any("dba_tab_privs" in sql for sql in fake_connection.sql)
+    assert not any("dba_col_privs" in sql for sql in fake_connection.sql)

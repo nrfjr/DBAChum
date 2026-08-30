@@ -4,6 +4,7 @@ import pytest
 
 from app.core.collections import (
     METRICS_COLLECTION_NAME,
+    ORACLE_SQL_TEXT_COLLECTION_NAME,
 )
 from app.services import database_metrics
 
@@ -79,10 +80,16 @@ class FakeDatabase:
     def __init__(
         self,
         items,
+        sql_texts=None,
     ):
         self.history = (
             FakeHistoryCollection(
                 items
+            )
+        )
+        self.sql_texts = (
+            FakeHistoryCollection(
+                sql_texts or []
             )
         )
 
@@ -90,12 +97,11 @@ class FakeDatabase:
         self,
         name,
     ):
-        assert (
-            name
-            == METRICS_COLLECTION_NAME
-        )
-
-        return self.history
+        if name == METRICS_COLLECTION_NAME:
+            return self.history
+        if name == ORACLE_SQL_TEXT_COLLECTION_NAME:
+            return self.sql_texts
+        raise AssertionError(name)
 
 
 @pytest.mark.asyncio
@@ -311,3 +317,52 @@ async def test_history_can_return_empty_window(
         .limit_value
         == 50
     )
+
+
+@pytest.mark.asyncio
+async def test_oracle_history_returns_sql_text_cache_for_sampled_sql(monkeypatch):
+    collected_at = datetime(2026, 8, 30, 6, 0, tzinfo=timezone.utc)
+    sample = {
+        "collected_at": collected_at,
+        "status": "online",
+        "active": 1,
+        "oracle": {
+            "top_sql": [
+                {"sql_id": "abc123", "child_number": 0, "delta_cpu_time_us": 2000}
+            ]
+        },
+    }
+    database = FakeDatabase(
+        [sample],
+        sql_texts=[
+            {
+                "sql_id": "abc123",
+                "child_number": 0,
+                "sql_text": "select 1 from dual",
+                "last_seen_at": collected_at,
+            }
+        ],
+    )
+
+    async def fake_get_connection(_database, _requested_id):
+        return {"engine": "oracle"}
+
+    monkeypatch.setattr(
+        database_metrics,
+        "get_database_connection",
+        fake_get_connection,
+    )
+
+    result = await database_metrics.get_database_metric_history(
+        database,
+        "connection-1",
+        hours=1,
+        limit=100,
+    )
+
+    assert result["oracle_sql_texts"][0]["sql_id"] == "abc123"
+    assert result["oracle_sql_texts"][0]["sql_text"] == "select 1 from dual"
+    assert database.sql_texts.last_filter == {
+        "connection_id": "connection-1",
+        "sql_id": {"$in": ["abc123"]},
+    }

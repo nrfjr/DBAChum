@@ -366,8 +366,6 @@ watch(
           <template #header>
             <tr>
               <th>Role</th>
-              <th>Users</th>
-              <th>Grants</th>
               <th>Status</th>
             </tr>
           </template>
@@ -382,8 +380,6 @@ watch(
               <strong>{{ role.name }}</strong>
               <small v-if="role.powerful">⚠ Elevated</small>
             </td>
-            <td>{{ role.member_count }}</td>
-            <td>{{ role.child_role_count + role.system_privilege_count + role.object_privilege_count }}</td>
             <td>
               <span :class="role.manageable ? 'role-manageable' : 'role-protected'">
                 {{ role.manageable ? 'Custom / manageable' : 'Inspect only' }}

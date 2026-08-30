@@ -186,33 +186,20 @@ async def _catalog_object_privileges(oracle_connection) -> tuple[list[str], str 
 
 
 async def get_oracle_roles(connection: dict) -> dict:
+    """Return the lightweight role catalog used by the Roles workspace.
+
+    The role list intentionally does *not* scan DBA_ROLE_PRIVS, DBA_SYS_PRIVS,
+    DBA_TAB_PRIVS or DBA_COL_PRIVS. Those potentially large catalogs belong to
+    the per-role detail request that runs only after a DBA selects a role.
+    """
     warnings: list[str] = []
     async with open_oracle_connection(connection) as oracle_connection:
         try:
             role_rows, maintained_available = await _load_role_rows(oracle_connection)
-            grants = await oracle_connection.fetchall(
-                "SELECT grantee, granted_role FROM dba_role_privs"
-            )
-            user_rows = await oracle_connection.fetchall(
-                "SELECT username FROM dba_users"
-            )
-            sys_rows = await oracle_connection.fetchall(
-                "SELECT grantee, privilege FROM dba_sys_privs"
-            )
-            try:
-                tab_rows = await oracle_connection.fetchall(
-                    "SELECT grantee, owner, table_name, privilege FROM dba_tab_privs"
-                )
-            except oracledb.Error as exc:
-                tab_rows = []
-                warnings.append("Object privilege counts are unavailable: " + oracle_error_message(exc))
-            try:
-                col_rows = await oracle_connection.fetchall(
-                    "SELECT grantee, owner, table_name, column_name, privilege FROM dba_col_privs"
-                )
-            except oracledb.Error:
-                col_rows = []
 
+            # These two small Oracle catalogs are kept here because the role
+            # action form uses them as datalist suggestions. They do not scan
+            # every grant in the database.
             sys_catalog, sys_warning = await _catalog_system_privileges(oracle_connection)
             if sys_warning:
                 warnings.append(sys_warning)
@@ -226,39 +213,10 @@ async def get_oracle_roles(connection: dict) -> dict:
                 status_code=400,
             ) from exc
 
-    role_names = {str(row[0]).upper() for row in role_rows}
-    database_users = {str(row[0]).upper() for row in user_rows}
-    member_counts: dict[str, int] = defaultdict(int)
-    child_counts: dict[str, int] = defaultdict(int)
-    for grantee, granted_role in grants:
-        grantee_name = str(grantee).upper()
-        granted_name = str(granted_role).upper()
-        if grantee_name in role_names:
-            child_counts[grantee_name] += 1
-        elif grantee_name in database_users:
-            member_counts[granted_name] += 1
-
-    sys_counts: dict[str, int] = defaultdict(int)
-    for grantee, _ in sys_rows:
-        sys_counts[str(grantee).upper()] += 1
-
-    object_counts: dict[str, int] = defaultdict(int)
-    for row in [*tab_rows, *col_rows]:
-        object_counts[str(row[0]).upper()] += 1
-
-    roles = []
-    for row in role_rows:
-        role = _role_from_row(row, maintained_available)
-        name = role["name"]
-        role.update(
-            {
-                "member_count": member_counts[name],
-                "child_role_count": child_counts[name],
-                "system_privilege_count": sys_counts[name],
-                "object_privilege_count": object_counts[name],
-            }
-        )
-        roles.append(role)
+    roles = [
+        _role_from_row(row, maintained_available)
+        for row in role_rows
+    ]
 
     return {
         "roles": roles,
@@ -267,6 +225,7 @@ async def get_oracle_roles(connection: dict) -> dict:
         "warnings": warnings,
         "checked_at": datetime.now(timezone.utc),
     }
+
 
 
 async def _get_role_metadata(oracle_connection, role_name: str) -> dict:

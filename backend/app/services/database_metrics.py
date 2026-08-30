@@ -1,8 +1,65 @@
 from datetime import datetime, timedelta, timezone
 
-from app.core.collections import METRICS_COLLECTION_NAME
+from app.core.collections import (
+    METRICS_COLLECTION_NAME,
+    ORACLE_SQL_TEXT_COLLECTION_NAME,
+)
 from app.core.config import settings
 from app.services.database_connections import get_database_connection
+
+
+MAX_SQL_TEXT_ROWS = 2000
+
+
+def _oracle_sql_ids(items: list[dict]) -> list[str]:
+    """Return the unique SQL IDs represented by the returned history window."""
+    seen: set[str] = set()
+    result: list[str] = []
+
+    for sample in items:
+        oracle = sample.get("oracle") or {}
+        for item in oracle.get("top_sql") or []:
+            sql_id = item.get("sql_id")
+            if not sql_id:
+                continue
+            normalized = str(sql_id)
+            if normalized in seen:
+                continue
+            seen.add(normalized)
+            result.append(normalized)
+            if len(result) >= MAX_SQL_TEXT_ROWS:
+                return result
+
+    return result
+
+
+async def _load_oracle_sql_texts(
+    database,
+    connection_id: str,
+    items: list[dict],
+) -> list[dict]:
+    sql_ids = _oracle_sql_ids(items)
+    if not sql_ids:
+        return []
+
+    cursor = (
+        database[ORACLE_SQL_TEXT_COLLECTION_NAME]
+        .find(
+            {
+                "connection_id": connection_id,
+                "sql_id": {"$in": sql_ids},
+            },
+            {
+                "_id": 0,
+                "connection_id": 0,
+                "expires_at": 0,
+                "first_seen_at": 0,
+            },
+        )
+        .sort("last_seen_at", -1)
+        .limit(MAX_SQL_TEXT_ROWS)
+    )
+    return await cursor.to_list(None)
 
 
 async def get_database_metric_history(
@@ -21,7 +78,6 @@ async def get_database_metric_history(
     hours = min(max(int(hours), 1), 24)
 
     to_at = datetime.now(timezone.utc)
-
     from_at = to_at - timedelta(hours=hours)
 
     collection = database[METRICS_COLLECTION_NAME]
@@ -50,12 +106,17 @@ async def get_database_metric_history(
 
     items = await cursor.to_list(None)
 
-    # Mongo returned newest → oldest
-    # because we want the newest N points.
-    #
-    # Charts want chronological order,
-    # so reverse them before returning.
+    # Mongo returned newest → oldest because we want the newest N points.
+    # Charts and range aggregation want chronological order.
     items.reverse()
+
+    oracle_sql_texts: list[dict] = []
+    if connection["engine"] == "oracle" and items:
+        oracle_sql_texts = await _load_oracle_sql_texts(
+            database,
+            connection_id,
+            items,
+        )
 
     return {
         "connection_id": connection_id,
@@ -65,4 +126,5 @@ async def get_database_metric_history(
         "sample_interval_seconds": settings.metrics_collector_interval_seconds,
         "count": len(items),
         "items": items,
+        "oracle_sql_texts": oracle_sql_texts,
     }

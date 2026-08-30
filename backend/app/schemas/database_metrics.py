@@ -28,10 +28,19 @@ class DatabaseMetricSampleResponse(BaseModel):
 
     error: str | None = None
 
-    # Phase 6A Oracle-specific telemetry. Kept as a structured mapping for the
-    # collector foundation; Phase 6B will add dedicated history response
-    # schemas once the visualization shape is finalized.
+    # Oracle-specific collector payload used by the 24-hour history UI.
+    # The raw per-sample shape remains flexible so older telemetry samples
+    # can still be rendered as Phase 6 evolves.
     oracle: dict | None = None
+
+
+class OracleSqlTextResponse(BaseModel):
+    sql_id: str
+    child_number: int = 0
+    sql_text: str
+    parsing_schema_name: str | None = None
+    module: str | None = None
+    last_seen_at: datetime | None = None
 
 
 class DatabaseMetricHistoryResponse(BaseModel):
@@ -42,3 +51,4 @@ class DatabaseMetricHistoryResponse(BaseModel):
     sample_interval_seconds: int
     count: int
     items: list[DatabaseMetricSampleResponse] = Field(default_factory=list)
+    oracle_sql_texts: list[OracleSqlTextResponse] = Field(default_factory=list)
