@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import { useUiStore } from '@/stores/ui'
@@ -8,6 +8,7 @@ import { useTerminalSessionsStore } from '@/stores/terminalSessions'
 
 import { useAuthStore } from '@/stores/auth'
 import { hasPermission } from '@/core/permissions'
+import { useAlertsStore } from '@/stores/alerts'
 
 const route = useRoute()
 const uiStore = useUiStore()
@@ -17,6 +18,8 @@ const pageTitle = computed(() => String(route.meta.title ?? 'DBAChum'))
 const router = useRouter()
 const authStore = useAuthStore()
 const terminalStore = useTerminalSessionsStore()
+const alertsStore = useAlertsStore()
+let alertSummaryTimer: ReturnType<typeof setInterval> | undefined
 
 const pageSubtitle = computed(() =>
   String(route.meta.subtitle ?? 'Database administration workspace.'),
@@ -64,6 +67,7 @@ const navigation = computed(() => {
       label: 'Alerts',
       path: '/alerts',
       icon: 'bell',
+      badge: alertsStore.summary.active,
     },
     {
       label: 'Settings',
@@ -86,6 +90,17 @@ async function logout() {
     name: 'login',
   })
 }
+
+onMounted(() => {
+  void alertsStore.loadSummary()
+  alertSummaryTimer = setInterval(() => {
+    void alertsStore.loadSummary()
+  }, 30_000)
+})
+
+onUnmounted(() => {
+  if (alertSummaryTimer) clearInterval(alertSummaryTimer)
+})
 
 </script>
 
@@ -112,8 +127,9 @@ async function logout() {
             <FontAwesomeIcon :icon="item.icon" />
           </span>
 
-          <span>
+          <span class="navigation__label">
             {{ item.label }}
+            <span v-if="item.badge" class="navigation__badge">{{ item.badge > 99 ? '99+' : item.badge }}</span>
           </span>
         </RouterLink>
       </nav>

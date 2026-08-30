@@ -495,6 +495,12 @@ const fullestTablespaces = computed(() =>
     .slice(0, 8),
 )
 
+function handleRangeChange(event: Event) {
+  const value = Number((event.target as HTMLSelectElement).value)
+  if (![1, 6, 12, 24].includes(value)) return
+  void loadHistory(value as HistoryRange)
+}
+
 async function loadHistory(selectedHours: HistoryRange, resetView = true) {
   hours.value = selectedHours
   if (resetView) {
@@ -545,27 +551,6 @@ onUnmounted(() => {
       </button>
     </div>
 
-    <div class="database-history-ranges">
-      <button
-        v-for="range in ranges"
-        :key="range"
-        type="button"
-        :class="{ active: hours === range }"
-        @click="loadHistory(range)"
-      >
-        {{ range }}h
-      </button>
-
-      <button
-        v-if="selectedWindow"
-        type="button"
-        class="history-reset-zoom"
-        @click="resetZoom"
-      >
-        Reset chart selection
-      </button>
-    </div>
-
     <p v-if="metricsStore.error" class="login-error">
       {{ metricsStore.error }}
     </p>
@@ -612,16 +597,38 @@ onUnmounted(() => {
         </span>
       </div>
 
-      <div class="database-history-metrics history-metric-picker">
-        <button
-          v-for="item in availableMetrics"
-          :key="item.key"
-          type="button"
-          :class="{ active: metric === item.key }"
-          @click="metric = item.key"
-        >
-          {{ item.label }}
-        </button>
+      <div class="history-control-row">
+        <div class="database-history-metrics history-metric-picker">
+          <button
+            v-for="item in availableMetrics"
+            :key="item.key"
+            type="button"
+            :class="{ active: metric === item.key }"
+            @click="metric = item.key"
+          >
+            {{ item.label }}
+          </button>
+        </div>
+
+        <div class="history-range-control">
+          <button
+            v-if="selectedWindow"
+            type="button"
+            class="secondary-button history-reset-zoom"
+            @click="resetZoom"
+          >
+            Reset selection
+          </button>
+
+          <label>
+            <span class="sr-only">History time range</span>
+            <select :value="hours" @change="handleRangeChange">
+              <option v-for="range in ranges" :key="range" :value="range">
+                Last {{ range === 1 ? '1 hour' : `${range} hours` }}
+              </option>
+            </select>
+          </label>
+        </div>
       </div>
 
       <div class="history-chart-card">

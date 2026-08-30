@@ -2,6 +2,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 
 import DashboardView from '@/views/DashboardView.vue'
 import PlaceholderView from '@/views/PlaceholderView.vue'
+import AlertsView from '@/views/AlertsView.vue'
 
 import LoginView from '@/views/LoginView.vue'
 
@@ -92,7 +93,7 @@ const router = createRouter({
     {
       path: '/alerts',
       name: 'alerts',
-      component: PlaceholderView,
+      component: AlertsView,
       meta: {
         title: 'Alerts',
         subtitle: 'Warnings, incidents and recovery history.',

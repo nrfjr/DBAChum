@@ -151,3 +151,27 @@ async def create_indexes(
         ],
         name="ix_provisioning_runs_profile_started",
     )
+    await database.alerts.create_index(
+        "alert_key",
+        unique=True,
+        name="uq_alerts_alert_key",
+    )
+
+    await database.alerts.create_index(
+        [
+            ("status", 1),
+            ("severity", 1),
+            ("last_seen_at", -1),
+        ],
+        name="ix_alerts_status_severity_last_seen",
+    )
+
+    await database.alerts.create_index(
+        [
+            ("source_type", 1),
+            ("source_id", 1),
+            ("rule_key", 1),
+        ],
+        name="ix_alerts_source_rule",
+    )
+

@@ -16,6 +16,7 @@ from app.core.exceptions import AppError
 from app.services.database_connections import monitored_connections_filter
 from app.services.database_overview import collect_database_overview
 from app.services.server_monitoring import collect_server_telemetry
+from app.services.alerting import evaluate_database_sample, evaluate_server_sample
 
 
 logger = logging.getLogger(__name__)
@@ -500,6 +501,21 @@ async def collect_database_metrics_once(
         insert_result = await database[METRICS_COLLECTION_NAME].insert_many(samples)
         result.inserted_count = len(insert_result.inserted_ids)
 
+        alert_results = await asyncio.gather(
+            *(
+                evaluate_database_sample(database, connection, sample)
+                for connection, sample in zip(connections, samples)
+            ),
+            return_exceptions=True,
+        )
+        for connection, alert_result in zip(connections, alert_results):
+            if isinstance(alert_result, Exception):
+                logger.error(
+                    "Database alert evaluation failed connection_id=%s: %s",
+                    connection.get("_id"),
+                    alert_result,
+                )
+
     result.online_count = sum(
         1 for sample in samples if sample.get("status") in {"online", "limited"}
     )
@@ -600,6 +616,21 @@ async def collect_server_metrics_once(
     if samples:
         insert_result = await database[SERVER_METRICS_COLLECTION_NAME].insert_many(samples)
         result.inserted_count = len(insert_result.inserted_ids)
+
+        alert_results = await asyncio.gather(
+            *(
+                evaluate_server_sample(database, server, sample)
+                for server, sample in zip(due_servers, samples)
+            ),
+            return_exceptions=True,
+        )
+        for server, alert_result in zip(due_servers, alert_results):
+            if isinstance(alert_result, Exception):
+                logger.error(
+                    "Server alert evaluation failed server_id=%s: %s",
+                    server.get("_id"),
+                    alert_result,
+                )
 
     result.online_count = sum(
         1 for sample in samples if sample.get("status") in {"online", "limited"}

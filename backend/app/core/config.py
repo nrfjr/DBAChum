@@ -67,6 +67,22 @@ class Settings(BaseSettings):
         le=24,
     )
 
+    # Phase 6D alert thresholds. Alerts are intentionally short-horizon and
+    # collector-backed; they do not extend telemetry beyond the 24-hour cap.
+    alert_collector_stale_seconds: int = Field(default=30, ge=20, le=300)
+    alert_active_sessions_warning: int = Field(default=100, ge=0, le=100000)
+    alert_active_sessions_critical: int = Field(default=200, ge=0, le=100000)
+    alert_tablespace_warning_percent: float = Field(default=85.0, ge=1, le=100)
+    alert_tablespace_critical_percent: float = Field(default=95.0, ge=1, le=100)
+    alert_fra_warning_percent: float = Field(default=85.0, ge=1, le=100)
+    alert_fra_critical_percent: float = Field(default=95.0, ge=1, le=100)
+    alert_filesystem_warning_percent: float = Field(default=80.0, ge=1, le=100)
+    alert_filesystem_critical_percent: float = Field(default=90.0, ge=1, le=100)
+    alert_server_cpu_warning_percent: float = Field(default=90.0, ge=1, le=100)
+    alert_server_cpu_critical_percent: float = Field(default=97.0, ge=1, le=100)
+    alert_server_memory_warning_percent: float = Field(default=90.0, ge=1, le=100)
+    alert_server_memory_critical_percent: float = Field(default=97.0, ge=1, le=100)
+
     trusted_hosts: str = "localhost,127.0.0.1"
 
     cors_origins: str = (
@@ -167,6 +183,18 @@ class Settings(BaseSettings):
                 raise ValueError(
                     "CORS_ORIGINS cannot contain '*' in production."
                 )
+
+        threshold_pairs = [
+            (self.alert_active_sessions_warning, self.alert_active_sessions_critical, "active sessions"),
+            (self.alert_tablespace_warning_percent, self.alert_tablespace_critical_percent, "tablespace"),
+            (self.alert_fra_warning_percent, self.alert_fra_critical_percent, "FRA"),
+            (self.alert_filesystem_warning_percent, self.alert_filesystem_critical_percent, "filesystem"),
+            (self.alert_server_cpu_warning_percent, self.alert_server_cpu_critical_percent, "server CPU"),
+            (self.alert_server_memory_warning_percent, self.alert_server_memory_critical_percent, "server memory"),
+        ]
+        for warning, critical, label in threshold_pairs:
+            if warning > 0 and critical < warning:
+                raise ValueError(f"{label} critical alert threshold must be >= warning threshold.")
 
         return self
 

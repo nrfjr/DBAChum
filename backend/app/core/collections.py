@@ -7,6 +7,7 @@ METRICS_COLLECTION_NAME = "database_metric_samples"
 SERVER_METRICS_COLLECTION_NAME = "server_metric_samples"
 ORACLE_SQL_TEXT_COLLECTION_NAME = "oracle_sql_texts"
 COLLECTOR_STATUS_COLLECTION_NAME = "collector_status"
+ALERTS_COLLECTION_NAME = "alerts"
 
 
 def telemetry_retention_seconds() -> int:

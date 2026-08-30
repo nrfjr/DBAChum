@@ -2,6 +2,7 @@
 import { onMounted, ref, watch } from 'vue'
 
 import { useUiStore } from '@/stores/ui'
+import { useAlertsStore } from '@/stores/alerts'
 
 interface HealthResponse {
   api: string
@@ -11,6 +12,7 @@ interface HealthResponse {
 const health = ref<HealthResponse | null>(null)
 const healthError = ref(false)
 const uiStore = useUiStore()
+const alertsStore = useAlertsStore()
 
 async function checkHealth() {
 
@@ -51,7 +53,13 @@ async function checkHealth() {
   }
 }
 
-onMounted(checkHealth)
+onMounted(async () => {
+  await Promise.all([
+    checkHealth(),
+    alertsStore.loadSummary(),
+    alertsStore.load('active').catch(() => []),
+  ])
+})
 </script>
 
 <template>
@@ -91,11 +99,11 @@ onMounted(checkHealth)
         </span>
 
         <strong class="metric-card__value">
-          0
+          {{ alertsStore.summary.warning }}
         </strong>
 
         <span class="metric-card__hint">
-          No monitoring yet
+          Active warning alerts
         </span>
       </article>
 
@@ -105,11 +113,11 @@ onMounted(checkHealth)
         </span>
 
         <strong class="metric-card__value">
-          0
+          {{ alertsStore.summary.critical }}
         </strong>
 
         <span class="metric-card__hint">
-          No active incidents
+          Active critical alerts
         </span>
       </article>
     </section>
@@ -197,11 +205,26 @@ onMounted(checkHealth)
         </div>
       </div>
 
-      <div class="empty-state empty-state--small">
-        <strong>Nothing to report yet</strong>
+      <div v-if="alertsStore.items.length" class="dashboard-alert-list">
+        <RouterLink
+          v-for="alert in alertsStore.items.slice(0, 5)"
+          :key="alert.id"
+          to="/alerts"
+          class="dashboard-alert-row"
+        >
+          <span class="alert-severity-badge" :class="alert.severity">{{ alert.severity }}</span>
+          <div>
+            <strong>{{ alert.title }}</strong>
+            <small>{{ alert.source_name }}</small>
+          </div>
+        </RouterLink>
+      </div>
+
+      <div v-else class="empty-state empty-state--small">
+        <strong>Nothing to report</strong>
 
         <p>
-          Which is probably the calmest DBAChum will ever be.
+          No active alerts right now. Enjoy the suspicious calm.
         </p>
       </div>
     </section>

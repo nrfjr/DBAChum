@@ -67,6 +67,12 @@ function selectTab(tab: DatabaseTab) {
   activeTab.value = tab
 }
 
+function applyTabFromRoute() {
+  if (String(route.query.tab ?? '') !== 'history') return
+  visitedTabs.history = true
+  activeTab.value = 'history'
+}
+
 function resetVisitedTabs() {
   activeTab.value = 'overview'
   for (const tab of Object.keys(visitedTabs) as DatabaseTab[]) {
@@ -76,7 +82,13 @@ function resetVisitedTabs() {
 
 watch(connectionId, () => {
   resetVisitedTabs()
+  applyTabFromRoute()
 })
+
+watch(
+  () => route.query.tab,
+  () => applyTabFromRoute(),
+)
 
 const supportsDbaUtilities = computed(() =>
   ['oracle', 'sqlserver', 'mysql'].includes(
@@ -141,6 +153,8 @@ function statusLabel(status?: string) {
 }
 
 onMounted(async () => {
+  applyTabFromRoute()
+
   if (
     connectionsStore.connections.length === 0
   ) {
