@@ -3,6 +3,8 @@ import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import { useUiStore } from '@/stores/ui'
+import TerminalDock from '@/components/terminal/TerminalDock.vue'
+import { useTerminalSessionsStore } from '@/stores/terminalSessions'
 
 import { useAuthStore } from '@/stores/auth'
 import { hasPermission } from '@/core/permissions'
@@ -14,6 +16,7 @@ const pageTitle = computed(() => String(route.meta.title ?? 'DBAChum'))
 
 const router = useRouter()
 const authStore = useAuthStore()
+const terminalStore = useTerminalSessionsStore()
 
 const pageSubtitle = computed(() =>
   String(route.meta.subtitle ?? 'Database administration workspace.'),
@@ -76,6 +79,7 @@ const navigation = computed(() => {
 })
 
 async function logout() {
+  terminalStore.clear()
   await authStore.logout()
 
   await router.push({
@@ -167,5 +171,7 @@ async function logout() {
         <RouterView />
       </main>
     </section>
+
+    <TerminalDock />
   </div>
 </template>

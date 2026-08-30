@@ -3008,3 +3008,404 @@ button {
     flex-direction: column;
   }
 }
+
+/* Phase 5D: persistent SSH terminal workspace */
+.terminal-dock {
+  position: relative;
+  z-index: 80;
+}
+
+.terminal-window {
+  position: fixed;
+  right: 1.25rem;
+  bottom: 0;
+  width: min(860px, calc(100vw - 2.5rem));
+  height: min(470px, calc(100vh - 5rem));
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  background: #0b0f14;
+  border: 1px solid #303a46;
+  border-radius: 12px 12px 0 0;
+  box-shadow: 0 18px 55px rgba(0, 0, 0, 0.38);
+  overflow: hidden;
+  z-index: 95;
+}
+
+.terminal-window--maximized {
+  inset: 0.75rem;
+  width: auto;
+  height: auto;
+  border-radius: 12px;
+}
+
+.terminal-window__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.65rem 0.8rem;
+  background: #151b23;
+  color: #eef4fb;
+  border-bottom: 1px solid #303a46;
+  cursor: move;
+  user-select: none;
+  touch-action: none;
+}
+
+.terminal-window__identity {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.terminal-window__identity > div {
+  min-width: 0;
+  display: grid;
+}
+
+.terminal-window__identity strong,
+.terminal-window__identity small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.terminal-window__identity small {
+  color: #9ba9b8;
+}
+
+.terminal-status-dot {
+  width: 0.58rem;
+  height: 0.58rem;
+  border-radius: 50%;
+  flex: 0 0 auto;
+  background: #8c98a5;
+}
+
+.terminal-status-dot[data-state='connected'],
+.terminal-chat-chip[data-state='connected'] .terminal-status-dot {
+  background: #4bc27b;
+}
+
+.terminal-status-dot[data-state='connecting'],
+.terminal-chat-chip[data-state='connecting'] .terminal-status-dot {
+  background: #e9b949;
+}
+
+.terminal-status-dot[data-state='error'],
+.terminal-chat-chip[data-state='error'] .terminal-status-dot {
+  background: #ef6666;
+}
+
+.terminal-window__controls {
+  display: flex;
+  gap: 0.25rem;
+}
+
+.terminal-window__controls button {
+  width: 2rem;
+  height: 1.8rem;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #d9e2ec;
+  cursor: pointer;
+  font: inherit;
+}
+
+.terminal-window__controls button:hover {
+  background: #26303b;
+}
+
+.terminal-window__toolbar {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-height: 2.55rem;
+  padding: 0.4rem 0.65rem;
+  background: #10161d;
+  border-bottom: 1px solid #26303b;
+  color: #b9c4d0;
+}
+
+.terminal-tool-button {
+  border: 1px solid #354150;
+  border-radius: 6px;
+  background: #1a222c;
+  color: #dce5ee;
+  padding: 0.32rem 0.58rem;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.82rem;
+}
+
+.terminal-tool-button:hover {
+  background: #25303c;
+}
+
+.terminal-window__session-count {
+  margin-left: auto;
+  font-size: 0.76rem;
+  color: #8492a1;
+}
+
+.terminal-shortcut-menu {
+  position: relative;
+}
+
+.terminal-shortcut-popover {
+  position: absolute;
+  left: 0;
+  top: calc(100% + 0.35rem);
+  width: min(340px, calc(100vw - 3rem));
+  max-height: 360px;
+  overflow: auto;
+  padding: 0.5rem;
+  border: 1px solid #354150;
+  border-radius: 9px;
+  background: #151c24;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.38);
+  z-index: 110;
+}
+
+.terminal-shortcut-popover p {
+  margin: 0;
+  color: #aab6c2;
+}
+
+.terminal-shortcut-group + .terminal-shortcut-group {
+  margin-top: 0.65rem;
+  padding-top: 0.55rem;
+  border-top: 1px solid #2b3541;
+}
+
+.terminal-shortcut-group > strong {
+  display: block;
+  margin: 0.1rem 0.25rem 0.35rem;
+  color: #92a4b6;
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.terminal-shortcut-group button {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.48rem 0.55rem;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #e5edf5;
+  text-align: left;
+  cursor: pointer;
+}
+
+.terminal-shortcut-group button:hover {
+  background: #25303c;
+}
+
+.terminal-shortcut-group button small {
+  color: #8fa0b0;
+}
+
+.terminal-window__screen {
+  min-height: 0;
+  padding: 0.45rem 0.35rem 0.25rem;
+  background: #0b0f14;
+}
+
+.terminal-window__screen .xterm,
+.terminal-window__screen .xterm-viewport,
+.terminal-window__screen .xterm-screen {
+  height: 100%;
+}
+
+.terminal-chat-chip {
+  position: fixed;
+  bottom: 0;
+  width: 210px;
+  min-height: 44px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-rows: auto auto;
+  align-items: center;
+  column-gap: 0.5rem;
+  padding: 0.42rem 0.5rem 0.38rem 0.7rem;
+  border: 1px solid #354150;
+  border-bottom: 0;
+  border-radius: 9px 9px 0 0;
+  background: #151b23;
+  color: #ecf2f8;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+  cursor: pointer;
+  z-index: 94;
+  text-align: left;
+}
+
+.terminal-chat-chip .terminal-status-dot {
+  grid-row: 1 / span 2;
+}
+
+.terminal-chat-chip__label,
+.terminal-chat-chip small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.terminal-chat-chip small {
+  color: #98a8b8;
+}
+
+.terminal-chat-chip__close {
+  grid-column: 3;
+  grid-row: 1 / span 2;
+  padding: 0.15rem 0.35rem;
+  color: #aeb9c5;
+  font-size: 1rem;
+}
+
+.terminal-chat-chip__close:hover {
+  color: #ffffff;
+}
+
+.terminal-shortcut-command code {
+  display: block;
+  max-width: 34rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.terminal-audit-heading {
+  margin-top: 2rem;
+}
+
+@media (max-width: 760px) {
+  .terminal-window,
+  .terminal-window--maximized {
+    inset: 0.5rem 0.5rem 0;
+    width: auto;
+    height: min(70vh, 520px);
+    border-radius: 10px 10px 0 0;
+  }
+
+  .terminal-chat-chip {
+    width: min(190px, calc(33vw - 0.5rem));
+  }
+
+  .terminal-window__session-count {
+    display: none;
+  }
+}
+
+/* Phase 5D polish — explicit terminal shortcut server scope */
+.terminal-shortcut-scope {
+  display: grid;
+  gap: 0.75rem;
+  margin: 0;
+  padding: 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+  background: var(--surface);
+}
+
+.terminal-shortcut-scope legend {
+  padding: 0 0.35rem;
+  font-weight: 700;
+}
+
+.terminal-shortcut-scope__hint {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.86rem;
+}
+
+.terminal-shortcut-scope__modes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 1.25rem;
+}
+
+.terminal-shortcut-server-picker {
+  display: grid;
+  gap: 0.65rem;
+  padding-top: 0.15rem;
+}
+
+.terminal-shortcut-server-picker__toolbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.terminal-shortcut-server-picker__toolbar span {
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.terminal-shortcut-server-picker__list {
+  max-height: 260px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 0.65rem;
+  background: var(--surface);
+}
+
+.terminal-shortcut-server-option {
+  display: grid !important;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 0.7rem !important;
+  padding: 0.65rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+}
+
+.terminal-shortcut-server-option:last-of-type {
+  border-bottom: 0;
+}
+
+.terminal-shortcut-server-option:hover {
+  background: var(--surface-hover, var(--surface));
+}
+
+.terminal-shortcut-server-option input {
+  width: auto;
+  margin: 0;
+}
+
+.terminal-shortcut-server-option span {
+  min-width: 0;
+}
+
+.terminal-shortcut-server-option strong,
+.terminal-shortcut-server-option small {
+  display: block;
+}
+
+.terminal-shortcut-server-option small {
+  margin-top: 0.15rem;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+.terminal-shortcut-server-picker__list > .empty-state {
+  margin: 0;
+  padding: 0.9rem;
+}
+
+@media (max-width: 640px) {
+  .terminal-shortcut-server-picker__toolbar {
+    grid-template-columns: 1fr auto;
+  }
+
+  .terminal-shortcut-server-picker__toolbar input {
+    grid-column: 1 / -1;
+  }
+}

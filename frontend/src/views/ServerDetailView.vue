@@ -11,19 +11,23 @@ import {
 import type { DatabaseConnection } from '@/stores/connections'
 import { useAuthStore } from '@/stores/auth'
 import { hasPermission } from '@/core/permissions'
+import { useTerminalSessionsStore } from '@/stores/terminalSessions'
 
 const route = useRoute()
 const serversStore = useServersStore()
 const monitoringStore = useServerMonitoringStore()
 const authStore = useAuthStore()
+const terminalStore = useTerminalSessionsStore()
 
 const server = ref<Server | null>(null)
 const databases = ref<DatabaseConnection[]>([])
 const loading = ref(true)
 const error = ref<string | null>(null)
+const terminalError = ref<string | null>(null)
 
 const serverId = computed(() => String(route.params.id ?? ''))
 const canManageServers = computed(() => hasPermission(authStore.user?.role, 'servers:manage'))
+const canOpenTerminal = computed(() => hasPermission(authStore.user?.role, 'database:operate'))
 const sshConfigured = computed(() => Boolean(server.value?.ssh_profile_id))
 const sshTrusted = computed(() => Boolean(server.value?.ssh_host_key_fingerprint))
 const canCollectHostMetrics = computed(() => {
@@ -166,6 +170,20 @@ async function refreshAll() {
   await initializeMonitoring()
 }
 
+function openTerminal() {
+  terminalError.value = null
+  if (!server.value) return
+  if (!server.value.ssh_profile_id || !server.value.ssh_host_key_fingerprint) {
+    terminalError.value = 'Test SSH and trust the server host key before opening a terminal.'
+    return
+  }
+  try {
+    terminalStore.open(server.value)
+  } catch (err) {
+    terminalError.value = err instanceof Error ? err.message : 'Unable to open SSH terminal.'
+  }
+}
+
 onMounted(async () => {
   await load()
   await initializeMonitoring()
@@ -180,11 +198,21 @@ onMounted(async () => {
       <p v-if="server">{{ server.hostname }}<template v-if="server.ip_address"> · {{ server.ip_address }}</template></p>
     </div>
     <div class="server-detail-actions">
+      <button
+        v-if="server && canOpenTerminal"
+        type="button"
+        class="primary-button"
+        :disabled="!sshConfigured || !sshTrusted"
+        @click="openTerminal"
+      >
+        Open terminal
+      </button>
       <button type="button" class="secondary-button" :disabled="loading" @click="refreshAll">Refresh profile</button>
       <RouterLink v-if="server && canManageServers" class="secondary-button" to="/settings/infrastructure">Configure</RouterLink>
     </div>
   </section>
 
+  <p v-if="terminalError" class="login-error">{{ terminalError }}</p>
   <p v-if="error" class="login-error">{{ error }}</p>
   <p v-else-if="loading && !server" class="empty-state">Loading server...</p>
 

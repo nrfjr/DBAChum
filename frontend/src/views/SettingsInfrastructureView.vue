@@ -16,20 +16,32 @@ import {
   type SshAccessProfileInput,
   type SshAuthType,
 } from '@/stores/sshAccess'
+import {
+  useTerminalShortcutsStore,
+  type TerminalShortcut,
+  type TerminalShortcutInput,
+  type TerminalShortcutMode,
+} from '@/stores/terminalShortcuts'
 
 const serversStore = useServersStore()
 const sshStore = useSshAccessStore()
 const connectionsStore = useConnectionsStore()
+const terminalShortcutsStore = useTerminalShortcutsStore()
 
-const activeTab = ref<'servers' | 'ssh'>('servers')
+const activeTab = ref<'servers' | 'ssh' | 'shortcuts'>('servers')
 const serverFormOpen = ref(false)
 const sshFormOpen = ref(false)
+const shortcutFormOpen = ref(false)
 const editingServerId = ref<string | null>(null)
 const editingSshId = ref<string | null>(null)
+const editingShortcutId = ref<string | null>(null)
 const serverFormError = ref<string | null>(null)
 const sshFormError = ref<string | null>(null)
+const shortcutFormError = ref<string | null>(null)
 const serverFilter = ref('')
 const sshFilter = ref('')
+const shortcutFilter = ref('')
+const shortcutServerFilter = ref('')
 
 interface ServerForm {
   name: string
@@ -56,6 +68,17 @@ interface SshForm {
   private_key: string
   passphrase: string
   notes: string
+  enabled: boolean
+}
+
+interface ShortcutForm {
+  name: string
+  category: string
+  command: string
+  mode: TerminalShortcutMode
+  scope: 'all' | 'selected'
+  server_ids: string[]
+  sort_order: number
   enabled: boolean
 }
 
@@ -91,8 +114,22 @@ function emptySshForm(): SshForm {
   }
 }
 
+function emptyShortcutForm(): ShortcutForm {
+  return {
+    name: '',
+    category: 'General',
+    command: '',
+    mode: 'execute',
+    scope: 'all',
+    server_ids: [],
+    sort_order: 100,
+    enabled: true,
+  }
+}
+
 const serverForm = reactive<ServerForm>(emptyServerForm())
 const sshForm = reactive<SshForm>(emptySshForm())
+const shortcutForm = reactive<ShortcutForm>(emptyShortcutForm())
 
 const filteredServers = computed(() => {
   const q = serverFilter.value.trim().toLowerCase()
@@ -121,6 +158,60 @@ const filteredSshProfiles = computed(() => {
       .some((value) => String(value).toLowerCase().includes(q)),
   )
 })
+
+const filteredShortcuts = computed(() => {
+  const q = shortcutFilter.value.trim().toLowerCase()
+  if (!q) return terminalShortcutsStore.shortcuts
+  return terminalShortcutsStore.shortcuts.filter((shortcut) =>
+    [shortcut.name, shortcut.category, shortcut.command, shortcut.scope_label]
+      .some((value) => String(value).toLowerCase().includes(q)),
+  )
+})
+
+const shortcutServerOptions = computed(() => {
+  const q = shortcutServerFilter.value.trim().toLowerCase()
+  return serversStore.servers.filter((server) => {
+    const currentlyAssigned = shortcutForm.server_ids.includes(server.id)
+    const terminalCapable = server.enabled && Boolean(server.ssh_profile_id)
+    if (!terminalCapable && !currentlyAssigned) return false
+    if (!q) return true
+    return [
+      server.name,
+      server.hostname,
+      server.ip_address,
+      server.environment,
+      server.ssh_profile_name,
+    ]
+      .filter(Boolean)
+      .some((value) => String(value).toLowerCase().includes(q))
+  })
+})
+
+function shortcutScopeLabel(shortcut: TerminalShortcut) {
+  if (!shortcut.server_ids.length) return 'All SSH-enabled servers'
+  const names = shortcut.server_ids
+    .map((serverId) => serversStore.servers.find((server) => server.id === serverId)?.name)
+    .filter((name): name is string => Boolean(name))
+  if (!names.length) return shortcut.scope_label
+  if (names.length <= 3) return names.join(', ')
+  return `${names.slice(0, 3).join(', ')} +${names.length - 3}`
+}
+
+function setShortcutScope(scope: 'all' | 'selected') {
+  shortcutForm.scope = scope
+}
+
+function clearShortcutServers() {
+  shortcutForm.server_ids = []
+}
+
+function formatAuditDuration(seconds: number | null) {
+  if (seconds == null) return '—'
+  if (seconds < 60) return `${Math.round(seconds)}s`
+  const minutes = Math.floor(seconds / 60)
+  const remaining = Math.round(seconds % 60)
+  return `${minutes}m ${remaining}s`
+}
 
 function resetServerForm() {
   Object.assign(serverForm, emptyServerForm())
@@ -276,6 +367,79 @@ async function removeSshProfile(profile: SshAccessProfile) {
   }
 }
 
+function resetShortcutForm() {
+  Object.assign(shortcutForm, emptyShortcutForm())
+  shortcutServerFilter.value = ''
+  editingShortcutId.value = null
+  shortcutFormError.value = null
+}
+
+function openAddShortcut() {
+  resetShortcutForm()
+  shortcutFormOpen.value = true
+}
+
+function editShortcut(shortcut: TerminalShortcut) {
+  editingShortcutId.value = shortcut.id
+  shortcutFormError.value = null
+  Object.assign(shortcutForm, {
+    name: shortcut.name,
+    category: shortcut.category,
+    command: shortcut.command,
+    mode: shortcut.mode,
+    scope: shortcut.server_ids.length ? 'selected' : 'all',
+    server_ids: [...shortcut.server_ids],
+    sort_order: shortcut.sort_order,
+    enabled: shortcut.enabled,
+  })
+  shortcutFormOpen.value = true
+}
+
+function closeShortcutForm() {
+  shortcutFormOpen.value = false
+  resetShortcutForm()
+}
+
+function buildShortcutPayload(): TerminalShortcutInput {
+  return {
+    name: shortcutForm.name.trim(),
+    category: shortcutForm.category.trim() || 'General',
+    command: shortcutForm.command.trim(),
+    mode: shortcutForm.mode,
+    server_ids: shortcutForm.scope === 'selected' ? [...shortcutForm.server_ids] : [],
+    sort_order: Number(shortcutForm.sort_order),
+    enabled: shortcutForm.enabled,
+  }
+}
+
+async function saveShortcut() {
+  shortcutFormError.value = null
+  if (shortcutForm.scope === 'selected' && shortcutForm.server_ids.length === 0) {
+    shortcutFormError.value = 'Select at least one server, or choose All SSH-enabled servers.'
+    return
+  }
+  try {
+    const payload = buildShortcutPayload()
+    if (editingShortcutId.value) {
+      await terminalShortcutsStore.update(editingShortcutId.value, payload)
+    } else {
+      await terminalShortcutsStore.create(payload)
+    }
+    closeShortcutForm()
+  } catch (error) {
+    shortcutFormError.value = error instanceof Error ? error.message : 'Unable to save terminal shortcut.'
+  }
+}
+
+async function removeShortcut(shortcut: TerminalShortcut) {
+  if (!window.confirm(`Delete terminal shortcut "${shortcut.name}"?`)) return
+  try {
+    await terminalShortcutsStore.remove(shortcut.id)
+  } catch (error) {
+    shortcutFormError.value = error instanceof Error ? error.message : 'Unable to delete terminal shortcut.'
+  }
+}
+
 function serverTypeLabel(value: ServerType) {
   return {
     database: 'Database server',
@@ -294,6 +458,8 @@ onMounted(async () => {
     serversStore.load(),
     sshStore.load(),
     connectionsStore.load(),
+    terminalShortcutsStore.load(),
+    terminalShortcutsStore.loadAudit(),
   ])
 })
 </script>
@@ -306,6 +472,9 @@ onMounted(async () => {
       </button>
       <button type="button" :class="{ active: activeTab === 'ssh' }" @click="activeTab = 'ssh'">
         SSH access profiles
+      </button>
+      <button type="button" :class="{ active: activeTab === 'shortcuts' }" @click="activeTab = 'shortcuts'">
+        Terminal shortcuts
       </button>
     </div>
 
@@ -356,7 +525,7 @@ onMounted(async () => {
       </ScrollableDataTable>
     </template>
 
-    <template v-else>
+    <template v-else-if="activeTab === 'ssh'">
       <div class="section-toolbar">
         <div>
           <h3>SSH access profiles</h3>
@@ -405,6 +574,89 @@ onMounted(async () => {
             <button type="button" class="secondary-button" @click="editSshProfile(profile)">Edit</button>
             <button type="button" class="secondary-button" @click="removeSshProfile(profile)">Delete</button>
           </td>
+        </tr>
+      </ScrollableDataTable>
+    </template>
+
+    <template v-else>
+      <div class="section-toolbar">
+        <div>
+          <h3>Terminal shortcuts</h3>
+          <p>Reusable buttons for frequent shell navigation and tools. A shortcut can run immediately or only insert text at the prompt.</p>
+        </div>
+        <button class="primary-button" type="button" @click="openAddShortcut">Add shortcut</button>
+      </div>
+
+      <div class="notice-card">
+        Leave the server assignment empty to make a shortcut available on every SSH-enabled server, or select specific assets for context-sensitive menus.
+      </div>
+
+      <input v-model="shortcutFilter" class="table-filter-input" placeholder="Search shortcut, category, command or scope..." />
+      <p v-if="terminalShortcutsStore.error" class="login-error">{{ terminalShortcutsStore.error }}</p>
+
+      <ScrollableDataTable
+        :loading="terminalShortcutsStore.loading"
+        :empty="!terminalShortcutsStore.loading && filteredShortcuts.length === 0"
+        empty-message="No terminal shortcuts configured."
+        max-height="30rem"
+      >
+        <template #header>
+          <tr>
+            <th>Shortcut</th>
+            <th>Category</th>
+            <th>Behavior</th>
+            <th>Command</th>
+            <th>Scope</th>
+            <th>Status</th>
+            <th>Actions</th>
+          </tr>
+        </template>
+        <tr v-for="shortcut in filteredShortcuts" :key="shortcut.id">
+          <td><strong>{{ shortcut.name }}</strong></td>
+          <td>{{ shortcut.category }}</td>
+          <td>{{ shortcut.mode === 'execute' ? 'Run now' : 'Insert only' }}</td>
+          <td class="terminal-shortcut-command"><code>{{ shortcut.command }}</code></td>
+          <td><span :title="shortcut.scope_label">{{ shortcutScopeLabel(shortcut) }}</span></td>
+          <td>{{ shortcut.enabled ? 'Enabled' : 'Disabled' }}</td>
+          <td class="table-actions-cell">
+            <button type="button" class="secondary-button" @click="editShortcut(shortcut)">Edit</button>
+            <button type="button" class="secondary-button" @click="removeShortcut(shortcut)">Delete</button>
+          </td>
+        </tr>
+      </ScrollableDataTable>
+
+      <div class="section-toolbar terminal-audit-heading">
+        <div>
+          <h3>Recent terminal sessions</h3>
+          <p>Session metadata is audited without storing raw terminal keystrokes or password-prompt input.</p>
+        </div>
+        <button class="secondary-button" type="button" @click="terminalShortcutsStore.loadAudit()">Refresh audit</button>
+      </div>
+
+      <ScrollableDataTable
+        :empty="terminalShortcutsStore.audit.length === 0"
+        empty-message="No SSH terminal sessions have been audited yet."
+        max-height="24rem"
+      >
+        <template #header>
+          <tr>
+            <th>Started</th>
+            <th>DBAChum user</th>
+            <th>Server</th>
+            <th>SSH user</th>
+            <th>Duration</th>
+            <th>Shortcuts</th>
+            <th>Status</th>
+          </tr>
+        </template>
+        <tr v-for="entry in terminalShortcutsStore.audit" :key="entry.session_id">
+          <td>{{ new Date(entry.started_at).toLocaleString() }}</td>
+          <td>{{ entry.operator_username }}</td>
+          <td><strong>{{ entry.server_name }}</strong><br /><small>{{ entry.target }}</small></td>
+          <td>{{ entry.ssh_username }}</td>
+          <td>{{ formatAuditDuration(entry.duration_seconds) }}</td>
+          <td>{{ entry.shortcut_actions.length }}</td>
+          <td>{{ entry.status }}</td>
         </tr>
       </ScrollableDataTable>
     </template>
@@ -537,6 +789,119 @@ onMounted(async () => {
         <div class="connection-form-actions">
           <button type="submit" class="primary-button" :disabled="sshStore.saving">{{ sshStore.saving ? 'Saving...' : 'Save SSH profile' }}</button>
           <button type="button" class="secondary-button" @click="closeSshForm">Cancel</button>
+        </div>
+      </form>
+    </section>
+  </div>
+
+  <div v-if="shortcutFormOpen" class="modal-backdrop" @click.self="closeShortcutForm">
+    <section class="modal-panel infrastructure-modal" role="dialog" aria-modal="true">
+      <div class="modal-header">
+        <div>
+          <h2>{{ editingShortcutId ? 'Edit terminal shortcut' : 'Add terminal shortcut' }}</h2>
+          <p>Define a useful button without hardcoding server-specific behavior into DBAChum.</p>
+        </div>
+        <button type="button" class="modal-close" @click="closeShortcutForm">×</button>
+      </div>
+
+      <form class="connection-form" @submit.prevent="saveShortcut">
+        <div class="connection-form-row">
+          <label>Shortcut name<input v-model="shortcutForm.name" required placeholder="SQL*Plus SYSDBA" /></label>
+          <label>Category<input v-model="shortcutForm.category" required placeholder="Oracle" /></label>
+        </div>
+
+        <label>Command
+          <textarea v-model="shortcutForm.command" rows="4" required placeholder="sqlplus / as sysdba" />
+          <small>The command is sent to the active PTY exactly as configured.</small>
+        </label>
+
+        <div class="connection-form-row">
+          <label>Behavior
+            <select v-model="shortcutForm.mode">
+              <option value="execute">Run immediately</option>
+              <option value="insert">Insert at prompt only</option>
+            </select>
+          </label>
+          <label>Sort order<input v-model.number="shortcutForm.sort_order" type="number" min="0" max="10000" /></label>
+        </div>
+
+        <fieldset class="terminal-shortcut-scope">
+          <legend>Available on servers</legend>
+          <p class="terminal-shortcut-scope__hint">
+            Choose exactly where this shortcut appears. Server-specific shortcuts are also enforced by the backend when used.
+          </p>
+
+          <div class="terminal-shortcut-scope__modes">
+            <label class="connection-checkbox">
+              <input
+                type="radio"
+                name="terminal-shortcut-scope"
+                value="all"
+                :checked="shortcutForm.scope === 'all'"
+                @change="setShortcutScope('all')"
+              />
+              All SSH-enabled servers
+            </label>
+            <label class="connection-checkbox">
+              <input
+                type="radio"
+                name="terminal-shortcut-scope"
+                value="selected"
+                :checked="shortcutForm.scope === 'selected'"
+                @change="setShortcutScope('selected')"
+              />
+              Only selected servers
+            </label>
+          </div>
+
+          <div v-if="shortcutForm.scope === 'selected'" class="terminal-shortcut-server-picker">
+            <div class="terminal-shortcut-server-picker__toolbar">
+              <input
+                v-model="shortcutServerFilter"
+                type="search"
+                placeholder="Search server, hostname, environment or SSH profile..."
+              />
+              <span>{{ shortcutForm.server_ids.length }} selected</span>
+              <button
+                v-if="shortcutForm.server_ids.length"
+                type="button"
+                class="secondary-button"
+                @click="clearShortcutServers"
+              >
+                Clear
+              </button>
+            </div>
+
+            <div class="terminal-shortcut-server-picker__list">
+              <label
+                v-for="item in shortcutServerOptions"
+                :key="item.id"
+                class="terminal-shortcut-server-option"
+              >
+                <input v-model="shortcutForm.server_ids" type="checkbox" :value="item.id" />
+                <span>
+                  <strong>{{ item.name }}</strong>
+                  <small>
+                    {{ item.hostname }}
+                    <template v-if="item.environment"> · {{ item.environment }}</template>
+                    <template v-if="item.ssh_profile_name"> · {{ item.ssh_profile_name }}</template>
+                  </small>
+                </span>
+              </label>
+              <p v-if="!shortcutServerOptions.length" class="empty-state">
+                No SSH-enabled server assets match this search.
+              </p>
+            </div>
+          </div>
+        </fieldset>
+
+        <label class="connection-checkbox"><input v-model="shortcutForm.enabled" type="checkbox" /> Enable this terminal shortcut</label>
+        <p v-if="shortcutFormError" class="login-error">{{ shortcutFormError }}</p>
+        <div class="connection-form-actions">
+          <button type="submit" class="primary-button" :disabled="terminalShortcutsStore.saving">
+            {{ terminalShortcutsStore.saving ? 'Saving...' : 'Save shortcut' }}
+          </button>
+          <button type="button" class="secondary-button" @click="closeShortcutForm">Cancel</button>
         </div>
       </form>
     </section>

@@ -67,6 +67,33 @@ async def create_indexes(
         name="uq_ssh_access_profiles_name_key",
     )
 
+    await database.terminal_shortcuts.create_index(
+        "name_key",
+        unique=True,
+        name="uq_terminal_shortcuts_name_key",
+    )
+
+    await database.terminal_shortcuts.create_index(
+        "server_ids",
+        name="ix_terminal_shortcuts_server_ids",
+    )
+
+    await database.terminal_session_audit.create_index(
+        "session_id",
+        unique=True,
+        name="uq_terminal_session_audit_session_id",
+    )
+
+    await database.terminal_session_audit.create_index(
+        [("operator_user_id", 1), ("started_at", -1)],
+        name="ix_terminal_session_audit_operator_started",
+    )
+
+    await database.terminal_session_audit.create_index(
+        [("server_id", 1), ("started_at", -1)],
+        name="ix_terminal_session_audit_server_started",
+    )
+
 
     await database.database_action_audit.create_index(
         [
