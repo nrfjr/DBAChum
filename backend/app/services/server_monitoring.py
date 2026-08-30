@@ -625,3 +625,140 @@ async def collect_server_health(database, server_id: str) -> ServerHealthSnapsho
             status_code=501,
         )
     return await asyncio.to_thread(_collect_posix_health_sync, target)
+
+
+def _collect_posix_telemetry_sync(target: ResolvedSshTarget) -> dict:
+    """Collect the lightweight host subset used by the background collector.
+
+    Phase 5C's interactive health page also gathers processes and service
+    manager state. The continuous collector intentionally skips those heavier
+    commands and keeps only host/load/memory/filesystem telemetry.
+    """
+    transport, latency_ms = _connect_transport_sync(target)
+    warnings: list[str] = []
+    try:
+        uptime_result = _safe_command(
+            transport,
+            "if [ -r /proc/uptime ] && [ -r /proc/loadavg ]; then awk '{print $1}' /proc/uptime | tr '\\n' ' '; awk '{print $1, $2, $3}' /proc/loadavg; else uptime 2>/dev/null; fi",
+            warnings,
+            "Uptime/load",
+        )
+        uptime_text = uptime_result.stdout if uptime_result else ""
+        uptime_seconds, load_1, load_5, load_15 = parse_uptime_load(uptime_text)
+        if uptime_seconds is None and uptime_text:
+            uptime_seconds, load_1, load_5, load_15 = parse_uptime_command(uptime_text)
+
+        cpu_used_percent = None
+        first_cpu = _safe_command(
+            transport,
+            "head -n 1 /proc/stat 2>/dev/null",
+            warnings,
+            "CPU sample",
+        )
+        if first_cpu and first_cpu.stdout.strip().startswith("cpu "):
+            time.sleep(0.35)
+            second_cpu = _safe_command(
+                transport,
+                "head -n 1 /proc/stat 2>/dev/null",
+                warnings,
+                "CPU sample",
+            )
+            if second_cpu:
+                cpu_used_percent = parse_proc_stat_pair(
+                    first_cpu.stdout,
+                    second_cpu.stdout,
+                )
+        if cpu_used_percent is None:
+            vmstat = _safe_command(
+                transport,
+                "LC_ALL=C vmstat 1 2 2>/dev/null",
+                warnings,
+                "CPU fallback",
+            )
+            if vmstat:
+                cpu_used_percent = parse_vmstat_cpu(vmstat.stdout)
+
+        memory = ServerMemorySnapshot()
+        mem_result = _safe_command(
+            transport,
+            "cat /proc/meminfo 2>/dev/null",
+            [],
+            "Memory",
+        )
+        if mem_result and "MemTotal" in mem_result.stdout:
+            memory = parse_proc_meminfo(mem_result.stdout)
+        else:
+            svmon_result = _safe_command(
+                transport,
+                "command -v svmon >/dev/null 2>&1 && svmon -G -O unit=MB 2>/dev/null || true",
+                [],
+                "AIX memory",
+            )
+            aix_memory = parse_svmon_global(
+                svmon_result.stdout if svmon_result else ""
+            )
+            if aix_memory is not None:
+                memory = aix_memory
+            else:
+                warnings.append(
+                    "Detailed memory metrics are unavailable from /proc/meminfo or svmon on this host."
+                )
+
+        filesystems: list[ServerFilesystemSnapshot] = []
+        df_result = _safe_command(
+            transport,
+            "LC_ALL=C df -Pk 2>/dev/null",
+            warnings,
+            "Filesystems",
+        )
+        if df_result:
+            filesystems = parse_df_pk(df_result.stdout)
+            filesystems.sort(
+                key=lambda item: item.used_percent,
+                reverse=True,
+            )
+
+        return {
+            "checked_at": datetime.now(timezone.utc),
+            "status": "limited" if warnings else "online",
+            "ssh_latency_ms": latency_ms,
+            "uptime_seconds": uptime_seconds,
+            "load_1": load_1,
+            "load_5": load_5,
+            "load_15": load_15,
+            "cpu_used_percent": cpu_used_percent,
+            "memory": memory.model_dump(mode="python"),
+            "filesystems": [
+                item.model_dump(mode="python")
+                for item in filesystems
+            ],
+            "warnings": warnings,
+            "error": None,
+        }
+    finally:
+        transport.close()
+
+
+async def collect_server_telemetry(database, server_id: str) -> dict:
+    target = await resolve_ssh_target(database, server_id)
+    os_family = target.server.get("os_family")
+    if os_family == ServerOsFamily.WINDOWS.value:
+        raise AppError(
+            "Windows host telemetry is not enabled yet.",
+            code="SSH_WINDOWS_METRICS_NOT_SUPPORTED",
+            status_code=501,
+        )
+    if os_family not in {
+        ServerOsFamily.LINUX.value,
+        ServerOsFamily.AIX.value,
+        ServerOsFamily.UNIX.value,
+    }:
+        raise AppError(
+            "Background SSH metrics currently support Linux, AIX and Unix server assets.",
+            code="SSH_METRICS_OS_NOT_SUPPORTED",
+            status_code=501,
+        )
+    return await asyncio.to_thread(
+        _collect_posix_telemetry_sync,
+        target,
+    )

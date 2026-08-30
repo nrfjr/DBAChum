@@ -16,6 +16,10 @@ async def get_database_metric_history(
         connection_id,
     )
 
+    # History is intentionally bounded to DBAChum's rolling 24-hour
+    # telemetry window even for internal callers that bypass API validation.
+    hours = min(max(int(hours), 1), 24)
+
     to_at = datetime.now(timezone.utc)
 
     from_at = to_at - timedelta(hours=hours)

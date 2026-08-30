@@ -30,14 +30,41 @@ class Settings(BaseSettings):
     oracle_driver_mode: str = "thin"
     oracle_client_lib_dir: str | None = None
 
+    # Phase 6A collector settings. The collector runs as a separate process
+    # (python -m app.collector), not inside the FastAPI web process.
     metrics_collector_enabled: bool = True
     metrics_collector_interval_seconds: int = Field(
-        default=60,
-        ge=10,
-    )
-    metrics_retention_days: int = Field(
         default=30,
+        ge=10,
+        le=300,
+    )
+    server_metrics_interval_seconds: int = Field(
+        default=60,
+        ge=30,
+        le=600,
+    )
+    oracle_storage_interval_seconds: int = Field(
+        default=300,
+        ge=60,
+        le=3600,
+    )
+    metrics_collector_concurrency: int = Field(
+        default=5,
         ge=1,
+        le=20,
+    )
+    metrics_target_timeout_seconds: int = Field(
+        default=45,
+        ge=10,
+        le=300,
+    )
+    # DBAChum intentionally retains telemetry for only one rolling day.
+    # Keeping this fixed prevents the product from drifting into a long-term
+    # telemetry warehouse.
+    metrics_retention_hours: int = Field(
+        default=24,
+        ge=24,
+        le=24,
     )
 
     trusted_hosts: str = "localhost,127.0.0.1"

@@ -1,4 +1,3 @@
-import asyncio
 from contextlib import asynccontextmanager
 import logging
 from pathlib import Path
@@ -21,9 +20,6 @@ from app.core.exceptions import (
 )
 from app.core.logging import configure_logging
 from app.core.http_security import SecurityHeadersMiddleware
-from app.services.metrics_collector import (
-    run_metrics_collector,
-)
 
 configure_logging(settings.log_level)
 
@@ -43,31 +39,13 @@ async def lifespan(
 
     await connect_to_mongodb(app)
 
-    collector_task = None
-
-    if settings.metrics_collector_enabled:
-        collector_task = asyncio.create_task(
-            run_metrics_collector(app.state.database),
-            name="database-metrics-collector",
-        )
-
-        app.state.metrics_collector_task = collector_task
-
+    # Phase 6A telemetry runs in a dedicated `python -m app.collector`
+    # process. Keeping it out of FastAPI prevents duplicate collection when
+    # web workers/restarts change and avoids telemetry gaps during UI deploys.
     try:
         yield
-
     finally:
-        if collector_task is not None:
-            collector_task.cancel()
-
-            try:
-                await collector_task
-
-            except asyncio.CancelledError:
-                pass
-
         await close_mongodb(app)
-
         logger.info("DBAChum API stopped")
 
 

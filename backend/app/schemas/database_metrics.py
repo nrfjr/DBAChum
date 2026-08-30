@@ -28,6 +28,11 @@ class DatabaseMetricSampleResponse(BaseModel):
 
     error: str | None = None
 
+    # Phase 6A Oracle-specific telemetry. Kept as a structured mapping for the
+    # collector foundation; Phase 6B will add dedicated history response
+    # schemas once the visualization shape is finalized.
+    oracle: dict | None = None
+
 
 class DatabaseMetricHistoryResponse(BaseModel):
     connection_id: str

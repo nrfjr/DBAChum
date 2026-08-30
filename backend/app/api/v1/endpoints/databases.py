@@ -69,11 +69,13 @@ async def get_database_metrics_history(
     hours: int = Query(
         default=24,
         ge=1,
-        le=168,
+        le=24,
     ),
 
     limit: int = Query(
-        default=2000,
+        # 30-second sampling yields 2,880 points/day. Keep the default
+        # large enough for the complete rolling 24-hour window.
+        default=3000,
         ge=1,
         le=5000,
     ),
