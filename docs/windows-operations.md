@@ -2,7 +2,7 @@
 
 ## Service model
 
-MongoDB runs as its native Windows service. DBAChum itself is a long-running Uvicorn process launched by the `DBAChum` Windows Scheduled Task.
+MongoDB runs as its native Windows service. The single `DBAChum` Windows Scheduled Task runs a stack supervisor that owns two long-running child processes: the Uvicorn/FastAPI web server and the background telemetry collector. They start, stop, restart, and recover together.
 
 ## Start / stop / restart
 
@@ -32,6 +32,8 @@ Get-ScheduledTaskInfo -TaskName DBAChum
 .\scripts\windows\smoke_test.ps1
 ```
 
+This verifies the frontend, API/MongoDB readiness, and the background collector heartbeat. Use `-SkipCollector` only when intentionally diagnosing a deployment with collection disabled.
+
 Direct API readiness:
 
 ```powershell
@@ -40,16 +42,24 @@ Invoke-RestMethod http://localhost:8080/api/v1/health/ready
 
 ## Logs
 
-Primary server log:
+Lifecycle, server, and collector logs:
 
 ```text
+logs\dbachum-stack.log
 logs\dbachum-server.log
+logs\dbachum-collector.log
 ```
 
-Tail it:
+Tail the full-stack lifecycle:
 
 ```powershell
-Get-Content .\logs\dbachum-server.log -Wait -Tail 100
+Get-Content .\logs\dbachum-stack.log -Wait -Tail 100
+```
+
+Tail the collector directly:
+
+```powershell
+Get-Content .\logs\dbachum-collector.log -Wait -Tail 100
 ```
 
 ## MongoDB service
@@ -108,18 +118,22 @@ Start-ScheduledTask -TaskName DBAChum
 
 ### Task immediately stops
 
-Inspect:
+Inspect all three lifecycle/component logs:
 
 ```powershell
 Get-ScheduledTaskInfo -TaskName DBAChum
+Get-Content .\logs\dbachum-stack.log -Tail 200
 Get-Content .\logs\dbachum-server.log -Tail 200
+Get-Content .\logs\dbachum-collector.log -Tail 200
 ```
 
-Then run the launcher manually to see the failure in the console:
+Then run the unified launcher manually to see the failure in the console:
 
 ```powershell
-.\scripts\windows\run_dbachum.ps1
+.\scripts\windows\run_dbachum_stack.ps1
 ```
+
+For component-only debugging, `run_dbachum.ps1` and `run_collector.ps1` can still be run independently.
 
 ### MongoDB is unavailable
 

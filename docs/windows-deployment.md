@@ -9,18 +9,23 @@ Browser / PWA
     |
     | HTTP :8080 (or your chosen port)
     v
-Uvicorn + FastAPI
-    |-- /api/v1/*       -> DBAChum API
-    `-- /*              -> compiled Vue frontend/dist
+DBAChum Scheduled Task
+    |
+    `-- run_dbachum_stack.ps1 (supervisor)
+        |-- Uvicorn + FastAPI
+        |     |-- /api/v1/* -> DBAChum API
+        |     `-- /*        -> compiled Vue frontend/dist
+        |
+        `-- python -m app.collector -> telemetry + alerts
 
-FastAPI
+FastAPI + Collector
     |
     `-- MongoDB Windows service (localhost:27017 by default)
 ```
 
 There is no Docker, WSL, Nginx, or IIS requirement. The frontend is built once with Vite and then served by FastAPI as static production files.
 
-The deployment intentionally runs one Uvicorn worker. DBAChum starts its metrics collector inside the application process; multiple workers would start multiple collectors.
+The deployment intentionally runs one Uvicorn worker. The metrics collector remains a separate Python process, but both the web server and collector are supervised by the single `DBAChum` Scheduled Task. Starting, stopping, restarting, or recovering that task therefore controls the full application stack and prevents duplicate standalone collectors.
 
 ## Prerequisites
 
@@ -68,10 +73,10 @@ If you also require backup/restore tooling:
 ## 3. Test manually before installing startup automation
 
 ```powershell
-.\scripts\windows\run_dbachum.ps1 -Port 8080
+.\scripts\windows\run_dbachum_stack.ps1 -Port 8080
 ```
 
-Open `http://localhost:8080` and confirm login, Databases, History, and Settings work. Stop the foreground test with Ctrl+C.
+Open `http://localhost:8080` and confirm login, Databases, History, and Settings work. The unified launcher also starts the collector. Stop the foreground test with Ctrl+C. For component-only debugging, the original `run_dbachum.ps1` and `run_collector.ps1` launchers remain available.
 
 ## 4. Install automatic startup
 
@@ -87,7 +92,9 @@ If clients on other machines must connect directly to TCP 8080 and Windows Firew
 .\scripts\windows\install_startup_task.ps1 -Port 8080 -OpenFirewall
 ```
 
-The task runs as Local System at server startup, allows only one instance, and Task Scheduler is configured to restart it after failure. The execution time limit is explicitly disabled because the default Task Scheduler limit is unsuitable for a long-running server process.
+The task runs as Local System at server startup, allows only one instance, and Task Scheduler is configured to restart it after failure. Its stack supervisor launches both the web server and telemetry collector. If either child process exits unexpectedly, the supervisor stops the other child and exits so Task Scheduler restarts both together. Stopping the `DBAChum` task also terminates both child process trees. The execution time limit is explicitly disabled because the default Task Scheduler limit is unsuitable for a long-running application stack.
+
+If an older Phase 6 installation still has a separate `DBAChum Collector` Scheduled Task, the installer stops and removes it automatically before installing the unified task. This prevents two collectors from running at once.
 
 ## 5. Verify
 
@@ -100,10 +107,12 @@ Get-ScheduledTaskInfo -TaskName DBAChum
 Application output is written to:
 
 ```text
+logs\dbachum-stack.log
 logs\dbachum-server.log
+logs\dbachum-collector.log
 ```
 
-The launcher rotates the log when it reaches 10 MB and keeps five rotated logs by default.
+The web and collector launchers rotate their component logs when they reach 10 MB and keep five rotated logs by default. The stack log records coordinated lifecycle events and child-process failures. The supplied `smoke_test.ps1` also waits briefly for the collector heartbeat and fails if the collector is not alive.
 
 ## First administrator
 

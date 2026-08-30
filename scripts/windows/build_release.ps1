@@ -195,6 +195,8 @@ function Assert-ReleaseIsClean {
         'deployment\windows\backend.env.example',
         'scripts\windows\install_release.ps1',
         'scripts\windows\run_dbachum.ps1',
+        'scripts\windows\run_collector.ps1',
+        'scripts\windows\run_dbachum_stack.ps1',
         'scripts\windows\install_startup_task.ps1',
         'scripts\windows\preflight.ps1',
         'scripts\windows\smoke_test.ps1'
@@ -352,6 +354,8 @@ $runtimeScripts = @(
     'install_release.ps1',
     'configure_production.ps1',
     'run_dbachum.ps1',
+    'run_collector.ps1',
+    'run_dbachum_stack.ps1',
     'install_startup_task.ps1',
     'preflight.ps1',
     'smoke_test.ps1',

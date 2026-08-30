@@ -50,6 +50,8 @@ DBAChum-vX.Y.Z-windows\
 │       ├── install_release.ps1
 │       ├── configure_production.ps1
 │       ├── run_dbachum.ps1
+│       ├── run_collector.ps1
+│       ├── run_dbachum_stack.ps1
 │       ├── install_startup_task.ps1
 │       ├── preflight.ps1
 │       ├── smoke_test.ps1
@@ -102,7 +104,7 @@ Do not blindly delete the existing installation directory. `backend\.env`, Mongo
 Recommended update flow:
 
 1. Back up MongoDB.
-2. Stop the `DBAChum` Scheduled Task.
+2. Stop the `DBAChum` Scheduled Task. This stops both the web server and collector because they share the unified stack lifecycle.
 3. Preserve `backend\.env`.
 4. Replace only release-managed runtime files with the new package.
 5. Run `install_release.ps1`; it preserves the existing `.env` and updates `APP_VERSION` to the package `VERSION`.
