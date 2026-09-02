@@ -1,4 +1,7 @@
-from fastapi import APIRouter, Depends, Request
+from datetime import date
+from typing import Literal
+
+from fastapi import APIRouter, Depends, Query, Request
 
 from app.core.permissions import Permission
 from app.dependencies.permissions import require_permission
@@ -20,6 +23,9 @@ router = APIRouter(
 async def backups(
     connection_id: str,
     request: Request,
+    window: Literal["today", "3d", "7d", "custom"] = Query("today"),
+    start_date: date | None = Query(None),
+    end_date: date | None = Query(None),
     current_user: UserResponse = Depends(
         require_permission(Permission.MONITOR_READ)
     ),
@@ -27,4 +33,7 @@ async def backups(
     return await load_database_backups(
         request.app.state.database,
         connection_id,
+        window=window,
+        start_date=start_date,
+        end_date=end_date,
     )

@@ -30,7 +30,7 @@ def _modern_sessions(cursor) -> tuple[int, int, int, int, list]:
             COUNT(*),
             SUM(CASE WHEN blocking_session_id > 0 THEN 1 ELSE 0 END),
             SUM(CASE
-                    WHEN total_elapsed_time >= {LONG_RUNNING_SECONDS * 1000}
+                    WHEN r.total_elapsed_time >= {LONG_RUNNING_SECONDS * 1000}
                     THEN 1 ELSE 0 END)
         FROM sys.dm_exec_requests r
         INNER JOIN sys.dm_exec_sessions s

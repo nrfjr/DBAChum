@@ -20,12 +20,16 @@ export type BackupKind =
   | 'spfile'
   | 'other'
 
+export type BackupWindow = 'today' | '3d' | '7d' | 'custom'
+export type BackupDetailValue = string | number | boolean | null
+
 export interface DatabaseBackupItem {
   backup_id: string
   database_name: string | null
   kind: BackupKind
   native_type: string | null
   status: BackupStatus
+  native_status: string | null
   started_at: string | null
   finished_at: string | null
   duration_seconds: number | null
@@ -36,6 +40,7 @@ export interface DatabaseBackupItem {
   device_type: string | null
   label: string | null
   owner: string | null
+  details: Record<string, BackupDetailValue>
 }
 
 export interface DatabaseBackupTargetSummary {
@@ -55,11 +60,22 @@ export interface DatabaseBackupResponse {
   scope: 'database' | 'instance' | 'external'
   database_name: string | null
   generation: string | null
+  selected_window: BackupWindow
+  custom_start_date: string | null
+  custom_end_date: string | null
+  latest_backup: DatabaseBackupItem | null
   summaries: DatabaseBackupTargetSummary[]
   items: DatabaseBackupItem[]
+  truncated: boolean
   warnings: string[]
   notes: string[]
   checked_at: string
+}
+
+export interface BackupLoadOptions {
+  window?: BackupWindow
+  startDate?: string
+  endDate?: string
 }
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL
@@ -90,13 +106,20 @@ export const useDatabaseBackupsStore = defineStore(
     }),
 
     actions: {
-      async load(connectionId: string) {
+      async load(connectionId: string, options: BackupLoadOptions = {}) {
         this.loadingIds[connectionId] = true
         this.errors[connectionId] = null
 
+        const window = options.window ?? 'today'
+        const params = new URLSearchParams({ window })
+        if (window === 'custom') {
+          if (options.startDate) params.set('start_date', options.startDate)
+          if (options.endDate) params.set('end_date', options.endDate)
+        }
+
         try {
           const result = await apiRequest<DatabaseBackupResponse>(
-            `/databases/${connectionId}/backups`,
+            `/databases/${connectionId}/backups?${params.toString()}`,
           )
           this.results[connectionId] = result
           return result
