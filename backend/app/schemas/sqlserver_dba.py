@@ -99,3 +99,69 @@ class SqlServerActivityResponse(BaseModel):
     warning: str | None = None
 
     checked_at: datetime
+
+class SqlServerLoginItem(BaseModel):
+    name: str
+    principal_type: str
+    disabled: bool = False
+    default_database: str | None = None
+    created_at: datetime | None = None
+    modified_at: datetime | None = None
+    roles: list[str] = Field(default_factory=list)
+
+
+class SqlServerDatabaseUserItem(BaseModel):
+    name: str
+    principal_type: str
+    login_name: str | None = None
+    default_schema: str | None = None
+    authentication_type: str | None = None
+    orphaned: bool = False
+    created_at: datetime | None = None
+    modified_at: datetime | None = None
+    roles: list[str] = Field(default_factory=list)
+
+
+class SqlServerRoleMembershipItem(BaseModel):
+    principal: str
+    role: str
+    source: str
+
+
+class SqlServerPermissionItem(BaseModel):
+    principal: str
+    state: str
+    permission: str
+    scope: str
+    class_name: str | None = None
+    securable: str | None = None
+    grantor: str | None = None
+
+
+class SqlServerElevatedFinding(BaseModel):
+    principal: str
+    severity: str
+    source: str
+    detail: str
+
+
+class SqlServerSecurityResponse(BaseModel):
+    available: bool = True
+    database_name: str | None = None
+    generation: str | None = None
+
+    login_count: int = 0
+    database_user_count: int = 0
+    disabled_login_count: int = 0
+    orphaned_user_count: int = 0
+
+    logins: list[SqlServerLoginItem] = Field(default_factory=list)
+    database_users: list[SqlServerDatabaseUserItem] = Field(default_factory=list)
+    server_roles: list[SqlServerRoleMembershipItem] = Field(default_factory=list)
+    database_roles: list[SqlServerRoleMembershipItem] = Field(default_factory=list)
+    server_permissions: list[SqlServerPermissionItem] = Field(default_factory=list)
+    database_permissions: list[SqlServerPermissionItem] = Field(default_factory=list)
+    elevated_findings: list[SqlServerElevatedFinding] = Field(default_factory=list)
+
+    warnings: list[str] = Field(default_factory=list)
+    checked_at: datetime

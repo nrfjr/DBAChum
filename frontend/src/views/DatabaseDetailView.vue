@@ -100,7 +100,7 @@ const supportsDbaUtilities = computed(() =>
 )
 
 const supportsUsersAndSchemas = computed(() =>
-  connection.value?.engine === 'oracle' &&
+  ['oracle', 'sqlserver'].includes(connection.value?.engine ?? '') &&
   hasPermission(
     authStore.user?.role,
     'database:operate',
@@ -108,7 +108,7 @@ const supportsUsersAndSchemas = computed(() =>
 )
 
 const supportsAccessAndPrivileges = computed(() =>
-  connection.value?.engine === 'oracle' &&
+  ['oracle', 'sqlserver'].includes(connection.value?.engine ?? '') &&
   hasPermission(
     authStore.user?.role,
     'database:operate',
@@ -258,7 +258,7 @@ onMounted(async () => {
           }"
           @click="selectTab('users')"
         >
-          Users &amp; Schemas
+          {{ connection.engine === 'sqlserver' ? 'Users & Principals' : 'Users & Schemas' }}
         </button>
 
         <button

@@ -62,6 +62,71 @@ export interface SqlServerActivityItem {
   sql_text: string | null
 }
 
+
+export interface SqlServerLogin {
+  name: string
+  principal_type: string
+  disabled: boolean
+  default_database: string | null
+  created_at: string | null
+  modified_at: string | null
+  roles: string[]
+}
+
+export interface SqlServerDatabaseUser {
+  name: string
+  principal_type: string
+  login_name: string | null
+  default_schema: string | null
+  authentication_type: string | null
+  orphaned: boolean
+  created_at: string | null
+  modified_at: string | null
+  roles: string[]
+}
+
+export interface SqlServerRoleMembership {
+  principal: string
+  role: string
+  source: string
+}
+
+export interface SqlServerPermission {
+  principal: string
+  state: string
+  permission: string
+  scope: string
+  class_name: string | null
+  securable: string | null
+  grantor: string | null
+}
+
+export interface SqlServerElevatedFinding {
+  principal: string
+  severity: string
+  source: string
+  detail: string
+}
+
+export interface SqlServerSecurityResponse {
+  available: boolean
+  database_name: string | null
+  generation: string | null
+  login_count: number
+  database_user_count: number
+  disabled_login_count: number
+  orphaned_user_count: number
+  logins: SqlServerLogin[]
+  database_users: SqlServerDatabaseUser[]
+  server_roles: SqlServerRoleMembership[]
+  database_roles: SqlServerRoleMembership[]
+  server_permissions: SqlServerPermission[]
+  database_permissions: SqlServerPermission[]
+  elevated_findings: SqlServerElevatedFinding[]
+  warnings: string[]
+  checked_at: string
+}
+
 export interface SqlServerActivityResponse {
   available: boolean
   items: SqlServerActivityItem[]
@@ -93,14 +158,17 @@ export const useSqlServerDbaStore = defineStore('sqlServerDba', {
     sessions: {} as Record<string, SqlServerSessionsResponse>,
     storage: {} as Record<string, SqlServerStorageResponse>,
     activity: {} as Record<string, SqlServerActivityResponse>,
+    security: {} as Record<string, SqlServerSecurityResponse>,
 
     loadingSessions: {} as Record<string, boolean>,
     loadingStorage: {} as Record<string, boolean>,
     loadingActivity: {} as Record<string, boolean>,
+    loadingSecurity: {} as Record<string, boolean>,
 
     sessionsError: {} as Record<string, string | null>,
     storageError: {} as Record<string, string | null>,
     activityError: {} as Record<string, string | null>,
+    securityError: {} as Record<string, string | null>,
   }),
 
   actions: {
@@ -157,5 +225,26 @@ export const useSqlServerDbaStore = defineStore('sqlServerDba', {
         this.loadingActivity[id] = false
       }
     },
+
+    async loadSecurity(id: string, force = false) {
+      if (!force && this.security[id]) return
+
+      this.loadingSecurity[id] = true
+      this.securityError[id] = null
+
+      try {
+        this.security[id] = await apiRequest<SqlServerSecurityResponse>(
+          `/databases/${id}/sqlserver/security`,
+        )
+      } catch (error) {
+        this.securityError[id] =
+          error instanceof Error
+            ? error.message
+            : 'Unable to load SQL Server security metadata.'
+      } finally {
+        this.loadingSecurity[id] = false
+      }
+    },
   },
 })
+

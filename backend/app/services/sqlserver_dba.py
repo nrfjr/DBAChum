@@ -7,6 +7,9 @@ from app.connectors.sqlserver_sessions import (
 from app.connectors.sqlserver_storage import (
     get_sqlserver_storage,
 )
+from app.connectors.sqlserver_security import (
+    get_sqlserver_security,
+)
 from app.core.exceptions import AppError
 from app.services.database_connections import (
     get_database_connection,
@@ -62,6 +65,17 @@ async def load_sqlserver_activity(
     connection_id: str,
 ):
     return await get_sqlserver_activity(
+        await get_sqlserver_target(
+            database,
+            connection_id,
+        )
+    )
+
+async def load_sqlserver_security(
+    database,
+    connection_id: str,
+):
+    return await get_sqlserver_security(
         await get_sqlserver_target(
             database,
             connection_id,

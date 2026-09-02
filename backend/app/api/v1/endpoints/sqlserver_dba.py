@@ -5,12 +5,14 @@ from app.schemas.sqlserver_dba import (
     SqlServerActivityResponse,
     SqlServerSessionsResponse,
     SqlServerStorageResponse,
+    SqlServerSecurityResponse,
 )
 from app.schemas.user import UserResponse
 from app.services.sqlserver_dba import (
     load_sqlserver_activity,
     load_sqlserver_sessions,
     load_sqlserver_storage,
+    load_sqlserver_security,
 )
 from app.core.permissions import Permission
 from app.dependencies.permissions import require_permission
@@ -66,3 +68,17 @@ async def activity(
         connection_id,
     )
     
+
+@router.get(
+    "/{connection_id}/sqlserver/security",
+    response_model=SqlServerSecurityResponse,
+)
+async def security(
+    connection_id: str,
+    request: Request,
+    current_user: UserResponse = Depends(require_permission(Permission.DBA_OPERATE)),
+):
+    return await load_sqlserver_security(
+        request.app.state.database,
+        connection_id,
+    )
