@@ -30,6 +30,21 @@ function engineLabel(engine: DatabaseEngine) {
   }
 }
 
+
+const engineOrder: DatabaseEngine[] = ['oracle', 'sqlserver', 'mysql']
+
+const groupedConnections = computed(() =>
+  engineOrder
+    .map((engine) => ({
+      engine,
+      label: engineLabel(engine),
+      connections: monitoredConnections.value
+        .filter((connection) => connection.engine === engine)
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    }))
+    .filter((group) => group.connections.length > 0),
+)
+
 function databaseIdentity(
   connection: DatabaseConnection,
 ) {
@@ -157,94 +172,81 @@ onMounted(async () => {
     </RouterLink>
   </div>
 
-  <div v-else class="database-grid">
-    <button v-for="connection in monitoredConnections" :key="connection.id" type="button" class="database-card"
-      @click="openDatabase(connection)">
-      <div class="database-card-header">
+  <div v-else class="database-engine-groups">
+    <section
+      v-for="group in groupedConnections"
+      :key="group.engine"
+      class="database-engine-group"
+    >
+      <div class="database-engine-group__header">
         <div>
-          <strong>{{ connection.name }}</strong>
-          <span>{{ engineLabel(connection.engine) }}</span>
+          <h2>{{ group.label }}</h2>
+          <p>{{ group.connections.length }} monitored {{ group.connections.length === 1 ? 'connection' : 'connections' }}</p>
         </div>
-
-        <span class="database-state" :class="overviewFor(connection.id)?.status ??
-          'unknown'
-          ">
-          {{
-            statusLabel(
-              overviewFor(connection.id)?.status,
-          )
-          }}
-        </span>
-        <small v-if="
-          overviewFor(connection.id)
-            ?.response_time_ms != null
-        " class="database-latency">
-          {{
-            overviewFor(connection.id)
-              ?.response_time_ms
-          }} ms
-        </small>
+        <span class="database-engine-badge">{{ group.label }}</span>
       </div>
 
-      <div class="database-endpoint">
-        {{ connection.host }}:{{ connection.port }}
+      <div class="database-grid">
+        <button
+          v-for="connection in group.connections"
+          :key="connection.id"
+          type="button"
+          class="database-card"
+          @click="openDatabase(connection)"
+        >
+          <div class="database-card-header">
+            <div>
+              <strong>{{ connection.name }}</strong>
+              <span>{{ engineLabel(connection.engine) }}</span>
+            </div>
+
+            <div class="database-card-status">
+              <span
+                class="database-state"
+                :class="overviewFor(connection.id)?.status ?? 'unknown'"
+              >
+                {{ statusLabel(overviewFor(connection.id)?.status) }}
+              </span>
+              <small
+                v-if="overviewFor(connection.id)?.response_time_ms != null"
+                class="database-latency"
+              >
+                {{ overviewFor(connection.id)?.response_time_ms }} ms
+              </small>
+            </div>
+          </div>
+
+          <div class="database-endpoint">
+            {{ connection.host }}:{{ connection.port }}
+          </div>
+
+          <div class="database-identity">
+            {{ databaseIdentity(connection) }}
+          </div>
+
+          <div class="database-preview-grid">
+            <div>
+              <span>Active</span>
+              <strong>{{ metricValue(overviewFor(connection.id)?.active) }}</strong>
+            </div>
+
+            <div>
+              <span>Connections</span>
+              <strong>{{ metricValue(overviewFor(connection.id)?.connections) }}</strong>
+            </div>
+
+            <div>
+              <span>Blocked</span>
+              <strong>{{ metricValue(overviewFor(connection.id)?.blocked) }}</strong>
+            </div>
+
+            <div>
+              <span>Uptime</span>
+              <strong>{{ formatUptime(overviewFor(connection.id)?.uptime_seconds) }}</strong>
+            </div>
+          </div>
+        </button>
       </div>
-
-      <div class="database-identity">
-        {{ databaseIdentity(connection) }}
-      </div>
-
-      <div class="database-preview-grid">
-  <div>
-    <span>Active</span>
-
-    <strong>
-      {{
-        metricValue(
-          overviewFor(connection.id)?.active,
-        )
-      }}
-    </strong>
-  </div>
-
-  <div>
-    <span>Connections</span>
-
-    <strong>
-      {{
-        metricValue(
-          overviewFor(connection.id)
-            ?.connections,
-        )
-      }}
-    </strong>
-  </div>
-
-  <div>
-    <span>Blocked</span>
-
-    <strong>
-      {{
-        metricValue(
-          overviewFor(connection.id)?.blocked,
-        )
-      }}
-    </strong>
-  </div>
-
-  <div>
-    <span>Uptime</span>
-
-    <strong>
-      {{
-        formatUptime(
-          overviewFor(connection.id)
-            ?.uptime_seconds,
-        )
-      }}
-    </strong>
-  </div>
-</div>
-    </button>
+    </section>
   </div>
 </template>

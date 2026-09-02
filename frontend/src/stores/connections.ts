@@ -2,6 +2,8 @@ import { defineStore } from 'pinia'
 
 export type DatabaseEngine = 'oracle' | 'sqlserver' | 'mysql'
 export type OracleAuthMode = 'normal' | 'sysdba'
+export type SqlServerProvider = 'auto' | 'mssql_python' | 'pyodbc'
+export type SqlServerEncrypt = 'auto' | 'yes' | 'no'
 
 export interface DatabaseConnection {
   id: string
@@ -14,6 +16,9 @@ export interface DatabaseConnection {
   oracle_identifier_type: 'service_name' | 'sid' | null
   oracle_identifier: string | null
   oracle_auth_mode: OracleAuthMode | null
+  sqlserver_provider: SqlServerProvider | null
+  sqlserver_driver: string | null
+  sqlserver_encrypt: SqlServerEncrypt | null
   active: boolean
   monitor_enabled: boolean
   /** Legacy monitoring alias returned for rollback compatibility. */
@@ -35,6 +40,9 @@ export interface DatabaseConnectionInput {
   oracle_identifier_type: 'service_name' | 'sid' | null
   oracle_identifier: string | null
   oracle_auth_mode: OracleAuthMode | null
+  sqlserver_provider: SqlServerProvider | null
+  sqlserver_driver: string | null
+  sqlserver_encrypt: SqlServerEncrypt | null
   active: boolean
   monitor_enabled: boolean
   server_ids: string[]
@@ -49,6 +57,11 @@ export interface DatabaseConnectionTestResult {
   connected_user: string | null
   database_version: string | null
   oracle_auth_mode: OracleAuthMode | null
+  database_edition: string | null
+  sqlserver_generation: string | null
+  sqlserver_provider: string | null
+  sqlserver_driver: string | null
+  capabilities: Record<string, boolean> | null
 }
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL

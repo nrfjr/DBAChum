@@ -3672,3 +3672,96 @@ button {
     grid-template-columns: 1fr;
   }
 }
+
+.backup-section-header {
+  margin-top: 1.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.backup-destination {
+  max-width: 360px;
+  overflow-wrap: anywhere;
+}
+
+.backup-status {
+  display: inline-flex;
+  padding: 0.2rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  text-transform: capitalize;
+}
+
+.backup-status.successful {
+  color: var(--success);
+}
+
+.backup-status.warning,
+.backup-status.running {
+  color: var(--warning);
+}
+
+.backup-status.failed {
+  color: var(--danger);
+}
+
+.backup-status.unknown {
+  color: var(--text-muted);
+}
+
+.backup-note {
+  margin-bottom: 1rem;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+/* Phase 7A.2: group monitored databases by engine. */
+.database-engine-groups {
+  display: grid;
+  gap: 1.75rem;
+}
+
+.database-engine-group {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.database-engine-group__header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1rem;
+  padding-bottom: 0.65rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.database-engine-group__header h2,
+.database-engine-group__header p {
+  margin: 0;
+}
+
+.database-engine-group__header p {
+  margin-top: 0.2rem;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.database-engine-badge {
+  padding: 0.3rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.database-card-status {
+  display: grid;
+  justify-items: end;
+  gap: 0.3rem;
+}
+
+@media (max-width: 600px) {
+  .database-engine-group__header {
+    align-items: flex-start;
+  }
+}

@@ -7,6 +7,7 @@ import DatabaseSessionsPanel from '@/components/databases/DatabaseSessionsPanel.
 import DatabaseStoragePanel from '@/components/databases/DatabaseStoragePanel.vue'
 import DatabaseActivityPanel from '@/components/databases/DatabaseActivityPanel.vue'
 import DatabaseHistoryPanel from '@/components/databases/DatabaseHistoryPanel.vue'
+import DatabaseBackupsPanel from '@/components/databases/DatabaseBackupsPanel.vue'
 import DatabaseUsersPanel from '@/components/databases/DatabaseUsersPanel.vue'
 import DatabaseAccessPanel from '@/components/databases/DatabaseAccessPanel.vue'
 import { useServersStore } from '@/stores/servers'
@@ -44,6 +45,7 @@ const overview = computed(() =>
 type DatabaseTab =
   | 'overview'
   | 'history'
+  | 'backups'
   | 'sessions'
   | 'storage'
   | 'activity'
@@ -55,6 +57,7 @@ const activeTab = ref<DatabaseTab>('overview')
 const visitedTabs = reactive<Record<DatabaseTab, boolean>>({
   overview: true,
   history: false,
+  backups: false,
   sessions: false,
   storage: false,
   activity: false,
@@ -91,7 +94,7 @@ watch(
 )
 
 const supportsDbaUtilities = computed(() =>
-  ['oracle', 'sqlserver', 'mysql'].includes(
+  ['oracle', 'sqlserver'].includes(
     connection.value?.engine ?? '',
   ),
 )
@@ -224,6 +227,12 @@ onMounted(async () => {
           History
         </button>
 
+        <button :class="{
+          active: activeTab === 'backups',
+        }" @click="selectTab('backups')">
+          Backups
+        </button>
+
         <button :disabled="!supportsDbaUtilities" :class="{
           active: activeTab === 'sessions',
         }" @click="selectTab('sessions')">
@@ -309,6 +318,13 @@ onMounted(async () => {
         v-if="visitedTabs.history"
         v-show="activeTab === 'history'"
         :key="`history-${connection.id}`"
+        :connection-id="connection.id"
+      />
+
+      <DatabaseBackupsPanel
+        v-if="visitedTabs.backups"
+        v-show="activeTab === 'backups'"
+        :key="`backups-${connection.id}`"
         :connection-id="connection.id"
       />
 
@@ -431,6 +447,36 @@ onMounted(async () => {
           <div v-if="overview?.version">
             <dt>Version</dt>
             <dd>{{ overview.version }}</dd>
+          </div>
+
+          <div v-if="overview?.generation">
+            <dt>Generation</dt>
+            <dd>{{ overview.generation }}</dd>
+          </div>
+
+          <div v-if="overview?.edition">
+            <dt>Edition</dt>
+            <dd>{{ overview.edition }}</dd>
+          </div>
+
+          <div v-if="overview?.product_level">
+            <dt>Product level</dt>
+            <dd>{{ overview.product_level }}</dd>
+          </div>
+
+          <div v-if="overview?.connection_provider">
+            <dt>Connection provider</dt>
+            <dd>
+              {{ overview.connection_provider }}
+              <template v-if="overview.connection_driver">
+                · {{ overview.connection_driver }}
+              </template>
+            </dd>
+          </div>
+
+          <div v-if="overview?.connection_encrypt">
+            <dt>Transport encryption</dt>
+            <dd>{{ overview.connection_encrypt === 'yes' ? 'Enabled' : 'Disabled' }}</dd>
           </div>
 
           <div v-if="overview?.database_name">

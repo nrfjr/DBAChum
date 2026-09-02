@@ -32,6 +32,13 @@ class DatabaseOverviewResponse(BaseModel):
     service_name: str | None = None
     instance_name: str | None = None
     version: str | None = None
+    edition: str | None = None
+    product_level: str | None = None
+    generation: str | None = None
+    connection_provider: str | None = None
+    connection_driver: str | None = None
+    connection_encrypt: str | None = None
+    capabilities: dict[str, bool] | None = None
 
     checked_at: datetime
 

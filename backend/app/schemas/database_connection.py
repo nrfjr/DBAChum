@@ -25,6 +25,12 @@ class DatabaseConnectionBase(BaseModel):
     oracle_identifier_type: Literal["service_name", "sid"] | None = None
     oracle_identifier: str | None = Field(default=None, max_length=128)
     oracle_auth_mode: Literal["normal", "sysdba"] | None = None
+
+    # SQL Server can use the modern Microsoft Python provider or an
+    # explicitly isolated ODBC path for legacy instances such as 2000.
+    sqlserver_provider: Literal["auto", "mssql_python", "pyodbc"] | None = None
+    sqlserver_driver: str | None = Field(default=None, max_length=128)
+    sqlserver_encrypt: Literal["auto", "yes", "no"] | None = None
     
     server_ids: list[str] = Field(default_factory=list,max_length=16,)
 
@@ -83,6 +89,16 @@ class DatabaseConnectionBase(BaseModel):
             self.oracle_identifier = None
             self.oracle_auth_mode = None
 
+        if self.engine == DatabaseEngine.SQLSERVER:
+            self.sqlserver_provider = self.sqlserver_provider or "auto"
+            self.sqlserver_encrypt = self.sqlserver_encrypt or "auto"
+            if self.sqlserver_driver is not None:
+                self.sqlserver_driver = self.sqlserver_driver.strip() or None
+        else:
+            self.sqlserver_provider = None
+            self.sqlserver_driver = None
+            self.sqlserver_encrypt = None
+
         return self
     
 
@@ -111,4 +127,10 @@ class DatabaseConnectionTestResponse(BaseModel):
     connected_user: str | None = None
     database_version: str | None = None
     oracle_auth_mode: Literal["normal", "sysdba"] | None = None
+
+    database_edition: str | None = None
+    sqlserver_generation: str | None = None
+    sqlserver_provider: str | None = None
+    sqlserver_driver: str | None = None
+    capabilities: dict[str, bool] | None = None
 

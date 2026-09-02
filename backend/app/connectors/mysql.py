@@ -4,6 +4,7 @@ import time
 import mysql.connector.aio as mysql_aio
 from mysql.connector import Error as MySQLError
 
+from app.connectors.mysql_compat import mysql_capabilities, parse_mysql_version
 from app.core.exceptions import AppError
 from app.core.security import decrypt_secret
 
@@ -50,11 +51,14 @@ async def test_mysql_connection(
 
                 row = await cursor.fetchone()
 
+                version = parse_mysql_version(row[2] if row else None)
+
                 return {
                     "database_name": row[0] if row else None,
                     "connected_user": row[1] if row else None,
-                    "database_version": row[2] if row else None,
+                    "database_version": version.raw,
                     "service_name": None,
+                    "capabilities": mysql_capabilities(version),
                 }
 
     except MySQLError as exc:
@@ -213,16 +217,28 @@ async def get_mysql_overview(
                     )
                 )
 
-                blocked = await _mysql_scalar(
-                    cursor,
-                    """
-                    SELECT COUNT(*)
-                    FROM information_schema.innodb_trx
-                    WHERE trx_state = 'LOCK WAIT'
-                    """,
-                    "Blocked transactions",
-                    warnings,
+                version_info = parse_mysql_version(
+                    identity[1] if identity else None
                 )
+                capabilities = mysql_capabilities(version_info)
+
+                if capabilities.get("information_schema_innodb_trx"):
+                    blocked = await _mysql_scalar(
+                        cursor,
+                        """
+                        SELECT COUNT(*)
+                        FROM information_schema.innodb_trx
+                        WHERE trx_state = 'LOCK WAIT'
+                        """,
+                        "Blocked transactions",
+                        warnings,
+                    )
+                else:
+                    blocked = None
+                    warnings.append(
+                        "Blocked transaction metric is unavailable on this "
+                        "MySQL generation."
+                    )
 
                 # DBAChum's own connection contributes
                 # one running / connected thread.
@@ -262,10 +278,9 @@ async def get_mysql_overview(
                     "service_name": None,
                     "instance_name": None,
 
-                    "version":
-                        identity[1]
-                        if identity
-                        else None,
+                    "version": version_info.raw,
+                    "generation": version_info.generation,
+                    "capabilities": capabilities,
 
                     "warnings": warnings,
                 }

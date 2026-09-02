@@ -16,6 +16,8 @@ import {
   type DatabaseConnectionInput,
   type DatabaseEngine,
   type OracleAuthMode,
+  type SqlServerEncrypt,
+  type SqlServerProvider,
 } from '@/stores/connections'
 
 const connectionsStore = useConnectionsStore()
@@ -70,6 +72,9 @@ interface ConnectionForm {
   oracle_identifier_type: 'service_name' | 'sid'
   oracle_identifier: string
   oracle_auth_mode: OracleAuthMode
+  sqlserver_provider: SqlServerProvider
+  sqlserver_driver: string
+  sqlserver_encrypt: SqlServerEncrypt
   active: boolean
   monitor_enabled: boolean
   server_ids: string[]
@@ -87,6 +92,9 @@ function emptyForm(): ConnectionForm {
     oracle_identifier_type: 'service_name',
     oracle_identifier: '',
     oracle_auth_mode: 'normal',
+    sqlserver_provider: 'auto',
+    sqlserver_driver: '',
+    sqlserver_encrypt: 'auto',
     active: true,
     monitor_enabled: true,
     server_ids: [],
@@ -150,6 +158,12 @@ function editConnection(connection: DatabaseConnection) {
       connection.oracle_identifier ?? '',
     oracle_auth_mode:
       connection.oracle_auth_mode ?? 'normal',
+    sqlserver_provider:
+      connection.sqlserver_provider ?? 'auto',
+    sqlserver_driver:
+      connection.sqlserver_driver ?? '',
+    sqlserver_encrypt:
+      connection.sqlserver_encrypt ?? 'auto',
     active: connection.active,
     monitor_enabled: connection.monitor_enabled,
     server_ids: [...(connection.server_ids ?? []),],
@@ -181,6 +195,18 @@ function buildPayload(): DatabaseConnectionInput {
     oracle_auth_mode:
       form.engine === 'oracle'
         ? form.oracle_auth_mode
+        : null,
+    sqlserver_provider:
+      form.engine === 'sqlserver'
+        ? form.sqlserver_provider
+        : null,
+    sqlserver_driver:
+      form.engine === 'sqlserver'
+        ? form.sqlserver_driver.trim() || null
+        : null,
+    sqlserver_encrypt:
+      form.engine === 'sqlserver'
+        ? form.sqlserver_encrypt
         : null,
     active: form.active,
     monitor_enabled: form.monitor_enabled,
@@ -272,6 +298,11 @@ async function testConnection(
     const details = [
       result.database_name,
       result.database_version,
+      result.sqlserver_generation,
+      result.sqlserver_provider
+        ? `provider: ${result.sqlserver_provider}`
+        : null,
+      result.sqlserver_driver,
       result.oracle_auth_mode === 'sysdba'
         ? 'SYSDBA'
         : null,
@@ -512,6 +543,59 @@ onMounted(() => {
 
             <input v-model="form.database" placeholder="Database name" />
           </label>
+
+          <template v-if="form.engine === 'sqlserver'">
+            <label>
+              SQL Server provider
+
+              <select v-model="form.sqlserver_provider">
+                <option value="auto">
+                  Auto (modern first, legacy fallback)
+                </option>
+                <option value="mssql_python">
+                  Microsoft mssql-python only
+                </option>
+                <option value="pyodbc">
+                  Legacy ODBC / pyodbc
+                </option>
+              </select>
+
+              <small>
+                Use Auto normally. SQL Server 2000 can use the isolated legacy
+                ODBC path when the modern provider cannot negotiate with it.
+              </small>
+            </label>
+
+            <label v-if="form.sqlserver_provider !== 'mssql_python'">
+              ODBC driver
+              <span class="optional-label">Optional</span>
+
+              <input
+                v-model="form.sqlserver_driver"
+                placeholder="SQL Server or SQL Server Native Client 10.0"
+              />
+
+              <small>
+                Leave blank to let DBAChum inspect installed SQL Server ODBC
+                drivers. Set this explicitly for a known legacy driver.
+              </small>
+            </label>
+
+            <label>
+              Encryption negotiation
+
+              <select v-model="form.sqlserver_encrypt">
+                <option value="auto">Auto (encrypted first)</option>
+                <option value="yes">Require encryption</option>
+                <option value="no">Disable encryption for legacy server</option>
+              </select>
+
+              <small v-if="form.sqlserver_encrypt === 'no'" class="connection-danger-note">
+                Use unencrypted transport only for legacy SQL Server endpoints
+                on a trusted internal network.
+              </small>
+            </label>
+          </template>
           <label>
             Servers
             <span class="optional-label">

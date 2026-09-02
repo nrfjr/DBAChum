@@ -28,6 +28,13 @@ export interface DatabaseOverview {
   service_name: string | null
   instance_name: string | null
   version: string | null
+  edition: string | null
+  product_level: string | null
+  generation: string | null
+  connection_provider: string | null
+  connection_driver: string | null
+  connection_encrypt: string | null
+  capabilities: Record<string, boolean> | null
 
   checked_at: string
 

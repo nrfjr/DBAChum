@@ -121,6 +121,21 @@ def connection_to_response(connection: dict) -> DatabaseConnectionResponse:
             if connection["engine"] == "oracle"
             else None
         ),
+        sqlserver_provider=(
+            connection.get("sqlserver_provider", "auto")
+            if connection["engine"] == "sqlserver"
+            else None
+        ),
+        sqlserver_driver=(
+            connection.get("sqlserver_driver")
+            if connection["engine"] == "sqlserver"
+            else None
+        ),
+        sqlserver_encrypt=(
+            connection.get("sqlserver_encrypt", "auto")
+            if connection["engine"] == "sqlserver"
+            else None
+        ),
         active=connection_is_active(connection),
         monitor_enabled=connection_is_monitored(connection),
         enabled=connection_is_monitored(connection),

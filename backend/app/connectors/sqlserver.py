@@ -1,83 +1,47 @@
 import asyncio
-
-import mssql_python
-
 import logging
 import time
 
+from app.connectors.sqlserver_compat import (
+    open_sqlserver_connection,
+    probe_sqlserver_identity,
+    sqlserver_error_message,
+)
 from app.core.exceptions import AppError
-from app.core.security import decrypt_secret
+
 
 logger = logging.getLogger(__name__)
 
+
 def _test_sqlserver_sync(connection: dict) -> dict:
-    encrypted_password = connection.get("password_encrypted")
-
-    if not encrypted_password:
-        raise AppError(
-            "No password is stored for this connection.",
-            code="CONNECTION_PASSWORD_MISSING",
-            status_code=400,
-        )
-
-    password = decrypt_secret(encrypted_password)
-
-    server = f'{connection["host"]},{connection["port"]}'
-
-    connect_kwargs = {
-        "server": server,
-        "uid": connection["username"],
-        "pwd": password,
-    }
-
-    if connection.get("database"):
-        connect_kwargs["database"] = connection["database"]
-
     try:
-        with mssql_python.connect(
-            "Encrypt=yes;TrustServerCertificate=yes;",
-            timeout=5,
-            autocommit=True,
-            **connect_kwargs,
-        ) as sql_connection:
-            cursor = sql_connection.cursor()
-
-            cursor.execute(
-                """
-                SELECT
-                    DB_NAME(),
-                    SUSER_SNAME(),
-                    CAST(
-                        SERVERPROPERTY('ProductVersion')
-                        AS varchar(128)
-                    )
-                """
-            )
-
-            row = cursor.fetchone()
+        with open_sqlserver_connection(connection) as db:
+            identity = probe_sqlserver_identity(db)
 
             return {
-                "database_name": row[0] if row else None,
-                "connected_user": row[1] if row else None,
-                "database_version": row[2] if row else None,
+                "database_name": identity.database_name,
+                "connected_user": identity.connected_user,
+                "database_version": identity.version.raw,
                 "service_name": None,
+                "database_edition": identity.edition,
+                "sqlserver_generation": identity.version.generation,
+                "sqlserver_provider": identity.provider,
+                "sqlserver_driver": identity.driver,
+                "capabilities": identity.capabilities,
             }
-
-    except mssql_python.Error as exc:
+    except AppError:
+        raise
+    except Exception as exc:
         raise AppError(
-            str(exc),
+            sqlserver_error_message(exc),
             code="SQLSERVER_CONNECTION_FAILED",
             status_code=400,
         ) from exc
 
 
-async def test_sqlserver_connection(
-    connection: dict,
-) -> dict:
-    return await asyncio.to_thread(
-        _test_sqlserver_sync,
-        connection,
-    )
+async def test_sqlserver_connection(connection: dict) -> dict:
+    return await asyncio.to_thread(_test_sqlserver_sync, connection)
+
 
 def _sqlserver_scalar(
     cursor,
@@ -88,145 +52,65 @@ def _sqlserver_scalar(
     try:
         cursor.execute(sql)
         row = cursor.fetchone()
-
-        if row is None:
-            return None
-
-        return row[0]
-
-    except mssql_python.Error as exc:
+        return None if row is None else row[0]
+    except Exception as exc:
         logger.warning(
             "SQL Server overview metric '%s' unavailable: %s",
             metric_name,
             exc,
         )
-
-        warnings.append(
-            f"{metric_name} unavailable."
-        )
-
+        warnings.append(f"{metric_name} unavailable.")
         return None
 
 
-def _get_sqlserver_overview_sync(
-    connection: dict,
-) -> dict:
-    encrypted_password = connection.get(
-        "password_encrypted"
-    )
-
-    if not encrypted_password:
-        raise AppError(
-            "No password is stored for this connection.",
-            code="CONNECTION_PASSWORD_MISSING",
-            status_code=400,
-        )
-
-    password = decrypt_secret(encrypted_password)
-
-    server = (
-        f'{connection["host"]},'
-        f'{connection["port"]}'
-    )
-
-    connect_kwargs = {
-        "server": server,
-        "uid": connection["username"],
-        "pwd": password,
-    }
-
-    if connection.get("database"):
-        connect_kwargs["database"] = connection["database"]
-
+def _get_sqlserver_overview_sync(connection: dict) -> dict:
     try:
-        with mssql_python.connect(
-            "Encrypt=yes;TrustServerCertificate=yes;",
-            timeout=5,
-            autocommit=True,
-            **connect_kwargs,
-        ) as sql_connection:
-
-            with sql_connection.cursor() as cursor:
-                warnings: list[str] = []
-
+        with open_sqlserver_connection(connection) as db:
+            warnings: list[str] = []
+            cursor = db.cursor()
+            try:
                 started = time.perf_counter()
-
                 cursor.execute("SELECT 1")
                 cursor.fetchone()
-
                 response_time_ms = round(
-                    (
-                        time.perf_counter()
-                        - started
-                    ) * 1000,
+                    (time.perf_counter() - started) * 1000,
                     1,
                 )
 
+                identity = probe_sqlserver_identity(db)
+
+                # This path deliberately uses the SQL Server 2000-era system
+                # surface. Microsoft retains it as compatibility views on
+                # modern releases, giving Overview one query family from 2000
+                # through current SQL Server instead of branching on every
+                # generation.
                 cursor.execute(
                     """
                     SELECT
-                        DB_NAME(),
-                        CAST(
-                            SERVERPROPERTY(
-                                'ProductVersion'
-                            )
-                            AS varchar(128)
-                        )
+                        SUM(CASE
+                            WHEN spid <> @@SPID
+                             AND spid > 50
+                             AND status NOT IN ('sleeping', 'background', 'dormant')
+                            THEN 1 ELSE 0 END),
+                        SUM(CASE
+                            WHEN spid <> @@SPID
+                             AND spid > 50
+                            THEN 1 ELSE 0 END),
+                        SUM(CASE
+                            WHEN spid <> @@SPID
+                             AND spid > 50
+                             AND blocked <> 0
+                            THEN 1 ELSE 0 END)
+                    FROM master.dbo.sysprocesses
                     """
                 )
-
-                identity = cursor.fetchone()
-
-                active = _sqlserver_scalar(
-                    cursor,
-                    """
-                    SELECT COUNT(*)
-                    FROM sys.dm_exec_requests r
-                    INNER JOIN sys.dm_exec_sessions s
-                        ON s.session_id = r.session_id
-                    WHERE s.is_user_process = 1
-                      AND r.session_id <> @@SPID
-                    """,
-                    "Active requests",
-                    warnings,
-                )
-
-                connections = _sqlserver_scalar(
-                    cursor,
-                    """
-                    SELECT COUNT(*)
-                    FROM sys.dm_exec_sessions
-                    WHERE is_user_process = 1
-                      AND session_id <> @@SPID
-                    """,
-                    "Connections",
-                    warnings,
-                )
-
-                blocked = _sqlserver_scalar(
-                    cursor,
-                    """
-                    SELECT COUNT(*)
-                    FROM sys.dm_exec_requests r
-                    INNER JOIN sys.dm_exec_sessions s
-                        ON s.session_id = r.session_id
-                    WHERE s.is_user_process = 1
-                      AND r.session_id <> @@SPID
-                      AND r.blocking_session_id > 0
-                    """,
-                    "Blocked requests",
-                    warnings,
-                )
+                counts = cursor.fetchone()
 
                 uptime_seconds = _sqlserver_scalar(
                     cursor,
                     """
-                    SELECT DATEDIFF_BIG(
-                        SECOND,
-                        create_date,
-                        SYSDATETIME()
-                    )
-                    FROM sys.databases
+                    SELECT DATEDIFF(SECOND, crdate, GETDATE())
+                    FROM master.dbo.sysdatabases
                     WHERE name = 'tempdb'
                     """,
                     "Uptime",
@@ -234,58 +118,41 @@ def _get_sqlserver_overview_sync(
                 )
 
                 return {
-                    "response_time_ms":
-                        response_time_ms,
-
-                    "active":
-                        int(active)
-                        if active is not None
-                        else None,
-
-                    "connections":
-                        int(connections)
-                        if connections is not None
-                        else None,
-
-                    "blocked":
-                        int(blocked)
-                        if blocked is not None
-                        else None,
-
-                    "uptime_seconds":
+                    "response_time_ms": response_time_ms,
+                    "active": int(counts[0] or 0) if counts else None,
+                    "connections": int(counts[1] or 0) if counts else None,
+                    "blocked": int(counts[2] or 0) if counts else None,
+                    "uptime_seconds": (
                         int(uptime_seconds)
                         if uptime_seconds is not None
-                        else None,
-
-                    "database_name":
-                        identity[0]
-                        if identity
-                        else None,
-
+                        else None
+                    ),
+                    "database_name": identity.database_name,
                     "container_name": None,
                     "service_name": None,
-                    "instance_name": None,
-
-                    "version":
-                        identity[1]
-                        if identity
-                        else None,
-
+                    "instance_name": identity.instance_name,
+                    "version": identity.version.raw,
+                    "edition": identity.edition,
+                    "product_level": identity.product_level,
+                    "generation": identity.version.generation,
+                    "connection_provider": identity.provider,
+                    "connection_driver": identity.driver,
+                    "connection_encrypt": identity.encrypt,
+                    "capabilities": identity.capabilities,
                     "warnings": warnings,
                 }
+            finally:
+                cursor.close()
 
-    except mssql_python.Error as exc:
+    except AppError:
+        raise
+    except Exception as exc:
         raise AppError(
-            str(exc),
+            sqlserver_error_message(exc),
             code="SQLSERVER_MONITORING_FAILED",
             status_code=400,
         ) from exc
 
 
-async def get_sqlserver_overview(
-    connection: dict,
-) -> dict:
-    return await asyncio.to_thread(
-        _get_sqlserver_overview_sync,
-        connection,
-    )
+async def get_sqlserver_overview(connection: dict) -> dict:
+    return await asyncio.to_thread(_get_sqlserver_overview_sync, connection)
