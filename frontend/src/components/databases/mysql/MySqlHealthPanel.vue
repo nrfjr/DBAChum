@@ -114,6 +114,15 @@ onMounted(() => {
         <div class="database-info-grid">
           <div><dt>Running threads</dt><dd>{{ health.workload.threads_running ?? '—' }}</dd></div>
           <div><dt>Longest active</dt><dd>{{ formatDuration(health.workload.longest_active_seconds) }}</dd></div>
+          <div>
+            <dt>Long-running sessions</dt>
+            <dd>
+              {{ health.workload.long_running_sessions ?? '—' }}
+              <span v-if="health.workload.long_running_threshold_seconds != null">
+                ≥ {{ health.workload.long_running_threshold_seconds }}s
+              </span>
+            </dd>
+          </div>
           <div><dt>Questions</dt><dd>{{ health.workload.questions?.toLocaleString() ?? '—' }}</dd></div>
           <div><dt>Threads created</dt><dd>{{ health.workload.threads_created?.toLocaleString() ?? '—' }}</dd></div>
           <div><dt>Active transactions</dt><dd>{{ health.innodb.active_transactions ?? '—' }}</dd></div>

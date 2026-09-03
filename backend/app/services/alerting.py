@@ -39,17 +39,25 @@ def _sqlserver_instance_key(connection: dict) -> str:
     return f"{host}:{port}"
 
 
+def _mysql_instance_key(connection: dict) -> str:
+    host = str(connection.get("host") or "").strip().lower()
+    port = int(connection.get("port") or 3306)
+    return f"{host}:{port}"
+
+
 def database_alert_conditions(
     connection: dict,
     sample: dict,
     *,
     include_sqlserver_instance_conditions: bool = True,
+    include_mysql_instance_conditions: bool = True,
 ) -> list[AlertCondition]:
     name = str(connection.get("name") or connection.get("database") or connection.get("_id"))
     status = str(sample.get("status") or "unreachable")
     healthy = status in {"online", "limited"}
     engine = connection.get("engine")
     sqlserver = (sample.get("sqlserver") or {}) if engine == "sqlserver" else {}
+    mysql = (sample.get("mysql") or {}) if engine == "mysql" else {}
     conditions: list[AlertCondition] = [
         AlertCondition(
             rule_key="availability",
@@ -64,26 +72,58 @@ def database_alert_conditions(
         )
     ]
 
-    blocked = sqlserver.get("blocked") if engine == "sqlserver" else sample.get("blocked")
+    if engine == "sqlserver":
+        blocked = sqlserver.get("blocked")
+    elif engine == "mysql":
+        blocked = mysql.get("blocked_transactions", sample.get("blocked"))
+    else:
+        blocked = sample.get("blocked")
+
+    include_blocking = not (
+        engine == "mysql" and not include_mysql_instance_conditions
+    )
+    blocked_value = int(blocked) if blocked is not None else None
     conditions.append(
         AlertCondition(
             rule_key="blocking_sessions",
-            active=(int(blocked) > 0) if healthy and blocked is not None else None,
-            severity="critical" if blocked is not None and int(blocked) >= 5 else "warning",
-            title=f"Blocking sessions on {name}",
+            active=(
+                (blocked_value > 0) if healthy and blocked_value is not None else None
+            ) if include_blocking else False,
+            severity="critical" if blocked_value is not None and blocked_value >= 5 else "warning",
+            title=(
+                f"Blocked InnoDB transactions on {name}"
+                if engine == "mysql"
+                else f"Blocking sessions on {name}"
+            ),
             message=(
-                f"{int(blocked)} blocked session(s) were observed."
-                if blocked is not None
-                else "Blocking-session telemetry is unavailable."
+                f"{blocked_value} blocked InnoDB transaction(s) were observed."
+                if engine == "mysql" and blocked_value is not None
+                else f"{blocked_value} blocked session(s) were observed."
+                if blocked_value is not None
+                else "Blocking telemetry is unavailable."
             ),
             required_samples=2,
             recovery_samples=2,
-            current_value=int(blocked) if blocked is not None else None,
+            current_value=blocked_value,
             threshold=1,
+            context=(
+                {
+                    "instance_scope": True,
+                    "instance_key": _mysql_instance_key(connection),
+                    "deduplicated": not include_mysql_instance_conditions,
+                }
+                if engine == "mysql"
+                else None
+            ),
         )
     )
 
-    active_sessions = sqlserver.get("active") if engine == "sqlserver" else sample.get("active")
+    if engine == "sqlserver":
+        active_sessions = sqlserver.get("active")
+    elif engine == "mysql":
+        active_sessions = mysql.get("threads_running", sample.get("active"))
+    else:
+        active_sessions = sample.get("active")
     active_warning = settings.alert_active_sessions_warning
     active_critical = settings.alert_active_sessions_critical
     active_enabled = active_warning > 0 and active_critical >= active_warning
@@ -97,19 +137,40 @@ def database_alert_conditions(
         conditions.append(
             AlertCondition(
                 rule_key="active_sessions",
-                active=(active_count >= active_warning) if healthy and active_count is not None else None,
+                active=(
+                    (active_count >= active_warning)
+                    if healthy and active_count is not None
+                    else None
+                ) if not (engine == "mysql" and not include_mysql_instance_conditions) else False,
                 severity=severity,
-                title=f"High active sessions on {name}",
+                title=(
+                    f"High running threads on {name}"
+                    if engine == "mysql"
+                    else f"High active sessions on {name}"
+                ),
                 message=(
-                    f"{active_count} active session(s) were observed."
+                    f"{active_count} running thread(s) were observed."
+                    if engine == "mysql" and active_count is not None
+                    else f"{active_count} active session(s) were observed."
                     if active_count is not None
-                    else "Active-session telemetry is unavailable."
+                    else "Active-workload telemetry is unavailable."
                 ),
                 required_samples=3,
                 recovery_samples=2,
                 current_value=active_count,
                 threshold=active_warning,
-                context={"critical_threshold": active_critical},
+                context={
+                    "critical_threshold": active_critical,
+                    **(
+                        {
+                            "instance_scope": True,
+                            "instance_key": _mysql_instance_key(connection),
+                            "deduplicated": not include_mysql_instance_conditions,
+                        }
+                        if engine == "mysql"
+                        else {}
+                    ),
+                },
             )
         )
 
@@ -270,6 +331,87 @@ def database_alert_conditions(
                     recovery_samples=2,
                     current_value=longest_seconds,
                     threshold=long_threshold,
+                )
+            )
+
+    if engine == "mysql":
+        connection_used = mysql.get("connection_utilization_percent")
+        connection_value = (
+            float(connection_used)
+            if connection_used is not None
+            else None
+        )
+        if connection_value is None:
+            connection_active = None
+            connection_severity = "warning"
+        else:
+            connection_active = (
+                connection_value >= settings.alert_mysql_connection_warning_percent
+            )
+            connection_severity = _percent_severity(
+                connection_value,
+                settings.alert_mysql_connection_warning_percent,
+                settings.alert_mysql_connection_critical_percent,
+            )
+        conditions.append(
+            AlertCondition(
+                rule_key="mysql:connection_utilization",
+                active=(
+                    connection_active if healthy else None
+                ) if include_mysql_instance_conditions else False,
+                severity=connection_severity,
+                title=f"MySQL/MariaDB connection pressure on {name}",
+                message=(
+                    f"Connections are {connection_value:.1f}% of max_connections."
+                    if connection_value is not None
+                    else "Connection-utilization telemetry is unavailable."
+                ),
+                required_samples=1 if connection_severity == "critical" else 2,
+                recovery_samples=2,
+                current_value=connection_value,
+                threshold=settings.alert_mysql_connection_warning_percent,
+                context={
+                    "critical_threshold": settings.alert_mysql_connection_critical_percent,
+                    "current_connections": mysql.get("connections_current"),
+                    "max_connections": mysql.get("connections_maximum"),
+                    "instance_scope": True,
+                    "instance_key": _mysql_instance_key(connection),
+                    "deduplicated": not include_mysql_instance_conditions,
+                },
+            )
+        )
+
+        long_threshold = settings.alert_mysql_long_running_seconds
+        if long_threshold > 0:
+            longest_seconds = mysql.get("longest_active_seconds")
+            longest_value = (
+                float(longest_seconds)
+                if longest_seconds is not None
+                else None
+            )
+            conditions.append(
+                AlertCondition(
+                    rule_key="mysql:long_running",
+                    active=(
+                        longest_value >= long_threshold
+                        if healthy and longest_value is not None
+                        else None
+                    ),
+                    severity="warning",
+                    title=f"Long-running MySQL/MariaDB workload on {name}",
+                    message=(
+                        f"Longest active session is {longest_value:.0f}s."
+                        if longest_value is not None
+                        else "Long-running-session telemetry is unavailable."
+                    ),
+                    required_samples=2,
+                    recovery_samples=2,
+                    current_value=longest_value,
+                    threshold=long_threshold,
+                    context={
+                        "long_running_sessions": mysql.get("long_running_sessions"),
+                        "processlist_source": mysql.get("processlist_source"),
+                    },
                 )
             )
 
@@ -584,6 +726,7 @@ async def evaluate_database_sample(
     sample: dict,
     *,
     include_sqlserver_instance_alerts: bool = True,
+    include_mysql_instance_alerts: bool = True,
 ) -> None:
     storage_present = bool((sample.get("oracle") or {}).get("storage") is not None)
     await _evaluate_source(
@@ -595,6 +738,7 @@ async def evaluate_database_sample(
             connection,
             sample,
             include_sqlserver_instance_conditions=include_sqlserver_instance_alerts,
+            include_mysql_instance_conditions=include_mysql_instance_alerts,
         ),
         fully_evaluated_prefixes=("tablespace:",) if storage_present else (),
     )

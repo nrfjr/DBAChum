@@ -35,6 +35,9 @@ class DatabaseMetricSampleResponse(BaseModel):
     # SQL Server operational snapshot (log, tempdb, Agent, workload). The
     # shape remains flexible so 24-hour history survives capability changes.
     sqlserver: dict | None = None
+    # MySQL/MariaDB collector payload: native current state plus per-interval
+    # deltas for cumulative GLOBAL STATUS counters.
+    mysql: dict | None = None
 
 
 class OracleSqlTextResponse(BaseModel):

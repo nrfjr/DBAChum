@@ -125,6 +125,59 @@ export interface SqlServerMetricSample {
   warnings?: string[]
 }
 
+export interface MySqlMetricStorageSample {
+  checked_at?: string | null
+  scope?: 'database' | 'instance' | string | null
+  database_name?: string | null
+  data_bytes?: number | null
+  index_bytes?: number | null
+  total_bytes?: number | null
+  table_count?: number | null
+  schema_count?: number | null
+  warnings?: string[]
+}
+
+export interface MySqlMetricSample {
+  health_checked_at?: string | null
+  database_name?: string | null
+  scope?: 'database' | 'instance' | string | null
+  product?: string | null
+  generation?: string | null
+  performance_schema_enabled?: boolean | null
+  processlist_source?: string | null
+  connections_current?: number | null
+  connections_maximum?: number | null
+  connection_utilization_percent?: number | null
+  max_used_connections?: number | null
+  max_used_connections_percent?: number | null
+  threads_running?: number | null
+  long_running_sessions?: number | null
+  long_running_threshold_seconds?: number | null
+  longest_active_seconds?: number | null
+  active_transactions?: number | null
+  blocked_transactions?: number | null
+  oldest_transaction_seconds?: number | null
+  buffer_pool_size_bytes?: number | null
+  buffer_pool_data_bytes?: number | null
+  buffer_pool_used_percent?: number | null
+  temporary_tables_percent_since_startup?: number | null
+  baseline?: boolean
+  slow_queries_delta?: number | null
+  questions_delta?: number | null
+  threads_created_delta?: number | null
+  connections_total_delta?: number | null
+  aborted_connects_delta?: number | null
+  aborted_clients_delta?: number | null
+  temporary_tables_delta?: number | null
+  temporary_disk_tables_delta?: number | null
+  temporary_disk_percent_interval?: number | null
+  read_only?: boolean | null
+  slow_query_log?: boolean | null
+  long_query_time_seconds?: number | null
+  storage?: MySqlMetricStorageSample | null
+  warnings?: string[]
+}
+
 export interface DatabaseMetricSample {
   collected_at: string
   checked_at: string | null
@@ -143,6 +196,7 @@ export interface DatabaseMetricSample {
   error: string | null
   oracle?: OracleMetricSample | null
   sqlserver?: SqlServerMetricSample | null
+  mysql?: MySqlMetricSample | null
 }
 
 export interface OracleMetricSqlText {

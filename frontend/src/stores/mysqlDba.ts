@@ -108,6 +108,8 @@ export interface MySqlWorkloadHealth {
   slow_queries: number | null
   questions: number | null
   longest_active_seconds: number | null
+  long_running_sessions: number | null
+  long_running_threshold_seconds: number | null
   threads_created: number | null
 }
 

@@ -111,6 +111,8 @@ class MySqlWorkloadHealth(BaseModel):
     slow_queries: int | None = None
     questions: int | None = None
     longest_active_seconds: int | None = None
+    long_running_sessions: int | None = None
+    long_running_threshold_seconds: int | None = None
     threads_created: int | None = None
 
 

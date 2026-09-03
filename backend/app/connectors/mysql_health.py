@@ -14,6 +14,9 @@ from app.connectors.mysql_processlist import fetch_processlist
 from app.core.exceptions import AppError
 
 
+LONG_RUNNING_SESSION_SECONDS = 60
+
+
 def _status(cursor, name: str) -> int | None:
     try:
         cursor.execute(f"SHOW GLOBAL STATUS LIKE '{name}'")
@@ -141,13 +144,16 @@ def _get_mysql_health_sync(connection: dict) -> dict:
             capabilities,
             database_name,
         )
-        longest_active_seconds = max(
-            (
-                int(row[5] or 0)
-                for row in rows
-                if str(row[4] or "").lower() != "sleep"
-            ),
-            default=0,
+        active_process_times = [
+            int(row[5] or 0)
+            for row in rows
+            if str(row[4] or "").lower() != "sleep"
+        ]
+        longest_active_seconds = max(active_process_times, default=0)
+        long_running_sessions = sum(
+            1
+            for seconds in active_process_times
+            if seconds >= LONG_RUNNING_SESSION_SECONDS
         )
 
         innodb = _innodb_health(cursor, capabilities)
@@ -212,6 +218,8 @@ def _get_mysql_health_sync(connection: dict) -> dict:
                 "slow_queries": slow_queries,
                 "questions": questions,
                 "longest_active_seconds": longest_active_seconds,
+                "long_running_sessions": long_running_sessions,
+                "long_running_threshold_seconds": LONG_RUNNING_SESSION_SECONDS,
                 "threads_created": threads_created,
             },
             "innodb": {

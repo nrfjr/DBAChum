@@ -4,6 +4,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pymongo import UpdateOne
 
+from app.connectors.mysql_health import get_mysql_health
+from app.connectors.mysql_storage import get_mysql_storage
 from app.connectors.oracle_telemetry import collect_oracle_telemetry
 from app.connectors.sqlserver_health import get_sqlserver_health
 from app.core.collections import (
@@ -56,6 +58,9 @@ class CollectorDeltaState:
     last_storage_at: dict[str, datetime] = field(default_factory=dict)
     last_sqlserver_health_at: dict[str, datetime] = field(default_factory=dict)
     sqlserver_health: dict[str, dict] = field(default_factory=dict)
+    mysql_counters: dict[str, dict[str, int]] = field(default_factory=dict)
+    last_mysql_storage_at: dict[str, datetime] = field(default_factory=dict)
+    mysql_storage: dict[str, dict] = field(default_factory=dict)
     last_server_at: dict[str, datetime] = field(default_factory=dict)
 
     def reset_connection(self, connection_id: str) -> None:
@@ -65,6 +70,9 @@ class CollectorDeltaState:
         self.wait_stats.pop(connection_id, None)
         self.last_sqlserver_health_at.pop(connection_id, None)
         self.sqlserver_health.pop(connection_id, None)
+        self.mysql_counters.pop(connection_id, None)
+        self.last_mysql_storage_at.pop(connection_id, None)
+        self.mysql_storage.pop(connection_id, None)
 
     def storage_due(self, connection_id: str, now: datetime) -> bool:
         previous = self.last_storage_at.get(connection_id)
@@ -81,6 +89,14 @@ class CollectorDeltaState:
         return (
             now - previous
         ).total_seconds() >= settings.sqlserver_health_interval_seconds
+
+    def mysql_storage_due(self, connection_id: str, now: datetime) -> bool:
+        previous = self.last_mysql_storage_at.get(connection_id)
+        if previous is None:
+            return True
+        return (
+            now - previous
+        ).total_seconds() >= settings.mysql_storage_interval_seconds
 
     def server_due(self, server_id: str, now: datetime) -> bool:
         previous = self.last_server_at.get(server_id)
@@ -421,6 +437,135 @@ def _compact_sqlserver_health(health: dict) -> dict:
     }
 
 
+def _mysql_counter_snapshot(health: dict) -> dict[str, int]:
+    connections = health.get("connections") or {}
+    workload = health.get("workload") or {}
+    temporary = health.get("temporary_tables") or {}
+
+    raw = {
+        "slow_queries": workload.get("slow_queries"),
+        "questions": workload.get("questions"),
+        "threads_created": workload.get("threads_created"),
+        "connections_total": connections.get("total_since_startup"),
+        "aborted_connects": connections.get("aborted_connects"),
+        "aborted_clients": connections.get("aborted_clients"),
+        "temporary_tables": temporary.get("created"),
+        "temporary_disk_tables": temporary.get("created_on_disk"),
+    }
+    return {
+        key: int(value)
+        for key, value in raw.items()
+        if value is not None
+    }
+
+
+def _mysql_counter_deltas(
+    state: CollectorDeltaState,
+    connection_id: str,
+    health: dict,
+) -> dict[str, int | float | bool | None]:
+    current = _mysql_counter_snapshot(health)
+    previous = state.mysql_counters.get(connection_id)
+    state.mysql_counters[connection_id] = current
+
+    deltas: dict[str, int | float | bool | None] = {
+        "baseline": previous is None,
+    }
+    for name in (
+        "slow_queries",
+        "questions",
+        "threads_created",
+        "connections_total",
+        "aborted_connects",
+        "aborted_clients",
+        "temporary_tables",
+        "temporary_disk_tables",
+    ):
+        value = current.get(name)
+        deltas[f"{name}_delta"] = (
+            _counter_delta(value, previous.get(name))
+            if previous is not None and value is not None
+            else None
+        )
+
+    temp_total = deltas.get("temporary_tables_delta")
+    temp_disk = deltas.get("temporary_disk_tables_delta")
+    if (
+        isinstance(temp_total, int)
+        and isinstance(temp_disk, int)
+        and temp_total > 0
+    ):
+        deltas["temporary_disk_percent_interval"] = round(
+            (temp_disk / temp_total) * 100,
+            2,
+        )
+    else:
+        deltas["temporary_disk_percent_interval"] = None
+
+    return deltas
+
+
+def _compact_mysql_storage(storage: dict) -> dict:
+    checked_at = storage.get("checked_at")
+    return {
+        "checked_at": checked_at,
+        "scope": storage.get("scope"),
+        "database_name": storage.get("database_name"),
+        "data_bytes": storage.get("data_bytes"),
+        "index_bytes": storage.get("index_bytes"),
+        "total_bytes": storage.get("total_bytes"),
+        "table_count": storage.get("table_count"),
+        "schema_count": storage.get("schema_count"),
+        "warnings": storage.get("warnings") or [],
+    }
+
+
+def _compact_mysql_health(
+    health: dict,
+    deltas: dict[str, int | float | bool | None],
+    storage: dict | None = None,
+) -> dict:
+    connections = health.get("connections") or {}
+    workload = health.get("workload") or {}
+    innodb = health.get("innodb") or {}
+    temporary = health.get("temporary_tables") or {}
+    server = health.get("server") or {}
+
+    payload = {
+        "health_checked_at": health.get("checked_at"),
+        "database_name": health.get("database_name"),
+        "scope": health.get("scope"),
+        "product": health.get("product"),
+        "generation": health.get("generation"),
+        "performance_schema_enabled": health.get("performance_schema_enabled"),
+        "processlist_source": health.get("processlist_source"),
+        "connections_current": connections.get("current"),
+        "connections_maximum": connections.get("maximum"),
+        "connection_utilization_percent": connections.get("utilization_percent"),
+        "max_used_connections": connections.get("max_used"),
+        "max_used_connections_percent": connections.get("max_used_percent"),
+        "threads_running": workload.get("threads_running"),
+        "long_running_sessions": workload.get("long_running_sessions"),
+        "long_running_threshold_seconds": workload.get("long_running_threshold_seconds"),
+        "longest_active_seconds": workload.get("longest_active_seconds"),
+        "active_transactions": innodb.get("active_transactions"),
+        "blocked_transactions": innodb.get("blocked_transactions"),
+        "oldest_transaction_seconds": innodb.get("oldest_transaction_seconds"),
+        "buffer_pool_size_bytes": innodb.get("buffer_pool_size_bytes"),
+        "buffer_pool_data_bytes": innodb.get("buffer_pool_data_bytes"),
+        "buffer_pool_used_percent": innodb.get("buffer_pool_used_percent"),
+        "temporary_tables_percent_since_startup": temporary.get("disk_percent"),
+        "read_only": server.get("read_only"),
+        "slow_query_log": server.get("slow_query_log"),
+        "long_query_time_seconds": server.get("long_query_time_seconds"),
+        "warnings": health.get("warnings") or [],
+        **deltas,
+    }
+    if storage is not None:
+        payload["storage"] = storage
+    return payload
+
+
 async def _collect_database_sample(
     database,
     connection: dict,
@@ -457,6 +602,65 @@ async def _collect_database_sample(
 
         if connection_id in state.sqlserver_health:
             sample["sqlserver"] = state.sqlserver_health[connection_id]
+        return sample
+
+    if engine == "mysql":
+        overview = await collect_database_overview(connection)
+        sample = build_metric_sample(overview)
+        if overview.get("status") == "unreachable":
+            state.reset_connection(connection_id)
+            return sample
+
+        now = _utcnow()
+        try:
+            health = await get_mysql_health(connection)
+            deltas = _mysql_counter_deltas(state, connection_id, health)
+        except Exception as exc:
+            logger.warning(
+                "MySQL/MariaDB operational telemetry unavailable connection_id=%s: %s",
+                connection_id,
+                exc,
+            )
+            sample["warnings"].append(
+                "MySQL/MariaDB operational health snapshot unavailable."
+            )
+            return sample
+
+        if state.mysql_storage_due(connection_id, now):
+            # Storage is intentionally sampled less often than lightweight
+            # GLOBAL STATUS/processlist metrics. Record the attempt time even
+            # when permissions are insufficient so the collector does not
+            # retry an expensive INFORMATION_SCHEMA aggregation every cycle.
+            state.last_mysql_storage_at[connection_id] = now
+            try:
+                storage = await get_mysql_storage(connection)
+                state.mysql_storage[connection_id] = _compact_mysql_storage(storage)
+            except Exception as exc:
+                logger.warning(
+                    "MySQL/MariaDB storage telemetry unavailable connection_id=%s: %s",
+                    connection_id,
+                    exc,
+                )
+                sample["warnings"].append(
+                    "MySQL/MariaDB storage snapshot unavailable."
+                )
+
+        compact = _compact_mysql_health(
+            health,
+            deltas,
+            state.mysql_storage.get(connection_id),
+        )
+        sample["mysql"] = compact
+
+        # Prefer the richer health snapshot for shared history concepts while
+        # preserving Overview's latency/availability. These metrics are native
+        # instance counters, so alert evaluation deduplicates host:port owners.
+        if compact.get("threads_running") is not None:
+            sample["active"] = compact["threads_running"]
+        if compact.get("connections_current") is not None:
+            sample["connections"] = compact["connections_current"]
+        if compact.get("blocked_transactions") is not None:
+            sample["blocked"] = compact["blocked_transactions"]
         return sample
 
     if engine != "oracle":
@@ -556,6 +760,36 @@ def _sqlserver_instance_alert_owners(
     return {owner_id for owner_id, _healthy in owners.values()}
 
 
+def _mysql_instance_key(connection: dict) -> str:
+    host = str(connection.get("host") or "").strip().lower()
+    port = int(connection.get("port") or 3306)
+    return f"{host}:{port}"
+
+
+def _mysql_instance_alert_owners(
+    connections: list[dict],
+    samples: list[dict] | None = None,
+) -> set[str]:
+    """Pick one deterministic healthy connection per MySQL/MariaDB instance.
+
+    Threads_connected/running, max_connections, and the InnoDB lock snapshot
+    are instance-level signals. A server may be saved once per schema, so one
+    host:port owner prevents the Alert Center from emitting duplicate events.
+    """
+    samples = samples or []
+    owners: dict[str, tuple[str, bool]] = {}
+    for index, connection in enumerate(connections):
+        if connection.get("engine") != "mysql":
+            continue
+        instance_key = _mysql_instance_key(connection)
+        sample = samples[index] if index < len(samples) else {}
+        healthy = str(sample.get("status") or "") in {"online", "limited"}
+        current = owners.get(instance_key)
+        if current is None or (healthy and not current[1]):
+            owners[instance_key] = (str(connection["_id"]), healthy)
+    return {owner_id for owner_id, _healthy in owners.values()}
+
+
 async def collect_database_metrics_once(
     database,
     state: CollectorDeltaState,
@@ -624,6 +858,7 @@ async def collect_database_metrics_once(
         result.inserted_count = len(insert_result.inserted_ids)
 
         sqlserver_instance_owners = _sqlserver_instance_alert_owners(connections, samples)
+        mysql_instance_owners = _mysql_instance_alert_owners(connections, samples)
         alert_results = await asyncio.gather(
             *(
                 evaluate_database_sample(
@@ -633,6 +868,10 @@ async def collect_database_metrics_once(
                     include_sqlserver_instance_alerts=(
                         connection.get("engine") != "sqlserver"
                         or str(connection["_id"]) in sqlserver_instance_owners
+                    ),
+                    include_mysql_instance_alerts=(
+                        connection.get("engine") != "mysql"
+                        or str(connection["_id"]) in mysql_instance_owners
                     ),
                 )
                 for connection, sample in zip(connections, samples)

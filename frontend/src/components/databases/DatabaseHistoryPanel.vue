@@ -42,6 +42,14 @@ type HistoryMetric =
   | 'long_running'
   | 'tempdb_used'
   | 'failed_jobs'
+  | 'connection_utilization'
+  | 'mysql_long_running'
+  | 'slow_queries_delta'
+  | 'aborted_connects_delta'
+  | 'aborted_clients_delta'
+  | 'buffer_pool_used'
+  | 'tmp_disk_interval'
+  | 'storage_bytes'
 
 interface MetricDefinition {
   key: HistoryMetric
@@ -49,6 +57,7 @@ interface MetricDefinition {
   axis: string
   oracleOnly?: boolean
   sqlserverOnly?: boolean
+  mysqlOnly?: boolean
 }
 
 interface AggregatedSqlRow {
@@ -103,6 +112,7 @@ let refreshTimer: ReturnType<typeof setInterval> | undefined
 const history = computed(() => metricsStore.histories[props.connectionId])
 const isOracle = computed(() => history.value?.engine === 'oracle')
 const isSqlServer = computed(() => history.value?.engine === 'sqlserver')
+const isMySql = computed(() => history.value?.engine === 'mysql')
 
 const defaultMetricDefinition: MetricDefinition = {
   key: 'active',
@@ -123,16 +133,25 @@ const metricDefinitions: MetricDefinition[] = [
   { key: 'long_running', label: 'Long running', axis: 'Long-running requests', sqlserverOnly: true },
   { key: 'tempdb_used', label: 'tempdb used', axis: 'tempdb data used (%)', sqlserverOnly: true },
   { key: 'failed_jobs', label: 'Failed jobs', axis: 'Failed SQL Agent jobs', sqlserverOnly: true },
+  { key: 'connection_utilization', label: 'Connection %', axis: 'Connections used (%)', mysqlOnly: true },
+  { key: 'mysql_long_running', label: 'Long running', axis: 'Sessions ≥ 60s', mysqlOnly: true },
+  { key: 'slow_queries_delta', label: 'Slow queries Δ', axis: 'Slow queries / sample', mysqlOnly: true },
+  { key: 'aborted_connects_delta', label: 'Aborted connects Δ', axis: 'Aborted connects / sample', mysqlOnly: true },
+  { key: 'aborted_clients_delta', label: 'Aborted clients Δ', axis: 'Aborted clients / sample', mysqlOnly: true },
+  { key: 'buffer_pool_used', label: 'Buffer pool', axis: 'Buffer pool data (%)', mysqlOnly: true },
+  { key: 'tmp_disk_interval', label: 'Temp → disk', axis: 'Disk temp tables / sample (%)', mysqlOnly: true },
+  { key: 'storage_bytes', label: 'Storage', axis: 'Logical database size (bytes)', mysqlOnly: true },
 ]
 
 const availableMetrics = computed(() =>
   metricDefinitions.filter((item) =>
     (!item.oracleOnly || isOracle.value) &&
-    (!item.sqlserverOnly || isSqlServer.value),
+    (!item.sqlserverOnly || isSqlServer.value) &&
+    (!item.mysqlOnly || isMySql.value),
   ),
 )
 
-watch([isOracle, isSqlServer], () => {
+watch([isOracle, isSqlServer, isMySql], () => {
   if (!availableMetrics.value.some((item) => item.key === metric.value)) {
     metric.value = 'active'
   }
@@ -229,9 +248,32 @@ const selectedCpuSeconds = computed(() =>
   ),
 )
 
-const currentMetric = computed<MetricDefinition>(() =>
-  metricDefinitions.find((item) => item.key === metric.value) ?? defaultMetricDefinition,
+const selectedMySqlSlowQueries = computed(() =>
+  selectedItems.value.reduce(
+    (total, item) => total + numberOrZero(item.mysql?.slow_queries_delta),
+    0,
+  ),
 )
+
+const selectedMySqlAbortedConnections = computed(() =>
+  selectedItems.value.reduce(
+    (total, item) =>
+      total +
+      numberOrZero(item.mysql?.aborted_connects_delta) +
+      numberOrZero(item.mysql?.aborted_clients_delta),
+    0,
+  ),
+)
+
+const currentMetric = computed<MetricDefinition>(() => {
+  const base = metricDefinitions.find((item) => item.key === metric.value) ?? defaultMetricDefinition
+  if (!isMySql.value) return base
+
+  if (metric.value === 'active') return { ...base, axis: 'Running threads' }
+  if (metric.value === 'connections') return { ...base, axis: 'Connected threads' }
+  if (metric.value === 'blocked') return { ...base, axis: 'Blocked InnoDB transactions' }
+  return base
+})
 
 type MetricPoint = [number, number | null]
 
@@ -263,6 +305,22 @@ function getMetricValue(item: DatabaseMetricSample): number | null {
       return item.sqlserver?.tempdb_used_percent ?? null
     case 'failed_jobs':
       return item.sqlserver?.agent_failed_jobs ?? null
+    case 'connection_utilization':
+      return item.mysql?.connection_utilization_percent ?? null
+    case 'mysql_long_running':
+      return item.mysql?.long_running_sessions ?? null
+    case 'slow_queries_delta':
+      return item.mysql?.slow_queries_delta ?? null
+    case 'aborted_connects_delta':
+      return item.mysql?.aborted_connects_delta ?? null
+    case 'aborted_clients_delta':
+      return item.mysql?.aborted_clients_delta ?? null
+    case 'buffer_pool_used':
+      return item.mysql?.buffer_pool_used_percent ?? null
+    case 'tmp_disk_interval':
+      return item.mysql?.temporary_disk_percent_interval ?? null
+    case 'storage_bytes':
+      return item.mysql?.storage?.total_bytes ?? null
   }
 }
 
@@ -309,7 +367,8 @@ const chartOption = computed(() => {
         if (value === null || value === undefined) return 'Unavailable'
         if (metric.value === 'latency') return `${formatNumber(value, 1)} ms`
         if (metric.value === 'cpu') return `${formatNumber(value, 3)} s`
-        if (['log_used', 'tempdb_used'].includes(metric.value)) return `${formatNumber(value, 1)}%`
+        if (['log_used', 'tempdb_used', 'connection_utilization', 'buffer_pool_used', 'tmp_disk_interval'].includes(metric.value)) return `${formatNumber(value, 1)}%`
+        if (metric.value === 'storage_bytes') return formatBytes(value)
         return formatNumber(value, 1)
       },
     },
@@ -323,10 +382,15 @@ const chartOption = computed(() => {
     yAxis: {
       type: 'value',
       min: 0,
-      minInterval: ['active', 'connections', 'blocked', 'executions', 'logical_reads', 'physical_reads', 'long_running', 'failed_jobs'].includes(metric.value) ? 1 : undefined,
-      max: ['log_used', 'tempdb_used'].includes(metric.value) ? 100 : undefined,
+      minInterval: ['active', 'connections', 'blocked', 'executions', 'logical_reads', 'physical_reads', 'long_running', 'failed_jobs', 'mysql_long_running', 'slow_queries_delta', 'aborted_connects_delta', 'aborted_clients_delta'].includes(metric.value) ? 1 : undefined,
+      max: ['log_used', 'tempdb_used', 'connection_utilization', 'buffer_pool_used', 'tmp_disk_interval'].includes(metric.value) ? 100 : undefined,
       name: currentMetric.value.axis,
-      axisLabel: { color: textColor },
+      axisLabel: {
+        color: textColor,
+        formatter: metric.value === 'storage_bytes'
+          ? (value: number) => formatBytes(value)
+          : undefined,
+      },
     },
     dataZoom: [
       { id: 'history-inside', type: 'inside', start: 0, end: 100 },
@@ -618,6 +682,16 @@ onUnmounted(() => {
           Oracle CPU time
           <strong>{{ formatNumber(selectedCpuSeconds, 2) }} s</strong>
         </span>
+
+        <span v-if="isMySql">
+          Slow queries · window
+          <strong>{{ formatNumber(selectedMySqlSlowQueries, 0) }}</strong>
+        </span>
+
+        <span v-if="isMySql">
+          Aborted connections · window
+          <strong>{{ formatNumber(selectedMySqlAbortedConnections, 0) }}</strong>
+        </span>
       </div>
 
       <div class="history-control-row">
@@ -660,6 +734,18 @@ onUnmounted(() => {
             <h3>{{ currentMetric.label }}</h3>
             <p v-if="metric === 'cpu'">
               CPU time consumed during each collector interval; this is not an instantaneous CPU percentage.
+            </p>
+            <p v-else-if="['slow_queries_delta', 'aborted_connects_delta', 'aborted_clients_delta'].includes(metric)">
+              Per-collector-interval delta from the server's cumulative GLOBAL STATUS counter. The first healthy sample after startup/recovery is a baseline.
+            </p>
+            <p v-else-if="metric === 'tmp_disk_interval'">
+              Percentage of temporary tables created on disk during each collector interval; no temporary-table activity is shown as unavailable rather than 0%.
+            </p>
+            <p v-else-if="metric === 'storage_bytes'">
+              Logical data + index size visible through INFORMATION_SCHEMA. This is not filesystem free-space capacity; server disk pressure remains a Server Assets metric.
+            </p>
+            <p v-else-if="metric === 'buffer_pool_used'">
+              InnoDB buffer-pool data occupancy. High occupancy is normal and is graphed for context, not treated as a pressure alert by itself.
             </p>
             <p v-else>
               Gaps are kept visible when the target or collector did not return a sample.
