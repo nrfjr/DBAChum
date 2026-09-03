@@ -171,7 +171,7 @@ def _log_space(cursor, database_name: str | None, warnings: list[str]) -> dict:
     except Exception as exc:
         logger.warning("SQL Server transaction-log monitoring unavailable: %s", exc)
         warnings.append(
-            "Transaction-log usage unavailable (DBCC SQLPERF(LOGSPACE) may require VIEW SERVER STATE)."
+            "Transaction-log usage unavailable for this login/version."
         )
         return {}
 
@@ -179,25 +179,58 @@ def _log_space(cursor, database_name: str | None, warnings: list[str]) -> dict:
 def _workload(cursor, identity, warnings: list[str]) -> dict:
     try:
         if identity.capabilities["dm_exec"]:
-            cursor.execute(
-                f"""
-                SELECT
-                    SUM(CASE WHEN r.blocking_session_id <> 0 THEN 1 ELSE 0 END),
-                    SUM(CASE WHEN r.total_elapsed_time >= {LONG_RUNNING_SECONDS * 1000} THEN 1 ELSE 0 END),
-                    MAX(r.total_elapsed_time)
-                FROM sys.dm_exec_requests r
-                INNER JOIN sys.dm_exec_sessions s
-                    ON s.session_id = r.session_id
-                WHERE s.is_user_process = 1
-                  AND r.session_id <> @@SPID
-                  AND r.database_id = DB_ID()
-                """
-            )
-            row = cursor.fetchone()
+            try:
+                cursor.execute(
+                    f"""
+                    SELECT
+                        COUNT(*),
+                        SUM(CASE WHEN r.blocking_session_id <> 0 THEN 1 ELSE 0 END),
+                        SUM(CASE WHEN r.total_elapsed_time >= {LONG_RUNNING_SECONDS * 1000} THEN 1 ELSE 0 END),
+                        MAX(r.total_elapsed_time)
+                    FROM sys.dm_exec_requests r
+                    INNER JOIN sys.dm_exec_sessions s
+                        ON s.session_id = r.session_id
+                    WHERE s.is_user_process = 1
+                      AND r.session_id <> @@SPID
+                      AND r.database_id = DB_ID()
+                    """
+                )
+                row = cursor.fetchone()
+            except Exception as exc:
+                warnings.append(
+                    "Modern workload DMVs are unavailable for this login; "
+                    "DBAChum fell back to sysprocesses. "
+                    f"({sqlserver_error_message(exc)})"
+                )
+                cursor.execute(
+                    f"""
+                    SELECT
+                        SUM(CASE
+                            WHEN status NOT IN ('sleeping', 'background', 'dormant')
+                            THEN 1 ELSE 0 END),
+                        SUM(CASE WHEN blocked <> 0 THEN 1 ELSE 0 END),
+                        SUM(CASE
+                            WHEN status NOT IN ('sleeping', 'background', 'dormant')
+                             AND DATEDIFF(SECOND, last_batch, GETDATE()) >= {LONG_RUNNING_SECONDS}
+                            THEN 1 ELSE 0 END),
+                        MAX(CASE
+                            WHEN status NOT IN ('sleeping', 'background', 'dormant')
+                            THEN DATEDIFF(SECOND, last_batch, GETDATE()) * 1000
+                            ELSE 0 END)
+                    FROM master.dbo.sysprocesses
+                    WHERE spid <> @@SPID
+                      AND spid > 50
+                      AND dbid = DB_ID()
+                    """
+                )
+                row = cursor.fetchone()
         else:
             cursor.execute(
                 f"""
                 SELECT
+                    SUM(CASE
+                        WHEN status NOT IN ('sleeping', 'background', 'dormant')
+                        THEN 1 ELSE 0 END),
                     SUM(CASE WHEN blocked <> 0 THEN 1 ELSE 0 END),
                     SUM(CASE
                         WHEN status NOT IN ('sleeping', 'background', 'dormant')
@@ -216,15 +249,17 @@ def _workload(cursor, identity, warnings: list[str]) -> dict:
             row = cursor.fetchone()
 
         return {
-            "blocked": int(row[0] or 0) if row else 0,
-            "long_running": int(row[1] or 0) if row else 0,
-            "longest_request_ms": int(row[2] or 0) if row and row[2] is not None else None,
+            "active": int(row[0] or 0) if row else 0,
+            "blocked": int(row[1] or 0) if row else 0,
+            "long_running": int(row[2] or 0) if row else 0,
+            "longest_request_ms": int(row[3] or 0) if row and row[3] is not None else None,
             "long_running_threshold_seconds": LONG_RUNNING_SECONDS,
         }
     except Exception as exc:
         logger.warning("SQL Server workload-health monitoring unavailable: %s", exc)
-        warnings.append("Blocking/long-running health summary unavailable.")
+        warnings.append("Blocking/long-running health summary unavailable for this login/version.")
         return {
+            "active": None,
             "blocked": None,
             "long_running": None,
             "longest_request_ms": None,

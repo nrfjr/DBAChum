@@ -139,7 +139,19 @@ def _get_sqlserver_sessions_sync(connection: dict) -> dict:
             cursor = db.cursor()
             try:
                 if identity.capabilities["dm_exec"]:
-                    total, active, blocked, long_running, rows = _modern_sessions(cursor)
+                    try:
+                        total, active, blocked, long_running, rows = _modern_sessions(cursor)
+                    except Exception as exc:
+                        warnings.append(
+                            "Modern SQL Server session DMVs are unavailable for this login; "
+                            "DBAChum fell back to the legacy session view. "
+                            f"({sqlserver_error_message(exc)})"
+                        )
+                        total, active, blocked, long_running, rows = _legacy_sessions(cursor)
+                        warnings.append(
+                            "Fallback mode: elapsed time is based on last_batch and "
+                            "live SQL text is unavailable."
+                        )
                 else:
                     total, active, blocked, long_running, rows = _legacy_sessions(cursor)
                     warnings.append(

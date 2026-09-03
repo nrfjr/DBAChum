@@ -4,10 +4,63 @@ from datetime import datetime, timezone
 from app.connectors.sqlserver_compat import (
     open_sqlserver_connection,
     probe_sqlserver_identity,
+    sqlserver_error_message,
 )
 
 
 ACTIVITY_LIMIT = 50
+
+
+def _modern_activity_rows(cursor):
+    cursor.execute(
+        f"""
+        SELECT TOP {ACTIVITY_LIMIT}
+            r.session_id,
+            s.login_name,
+            r.status,
+            r.command,
+            r.total_elapsed_time,
+            r.cpu_time,
+            r.wait_type,
+            r.wait_time,
+            r.blocking_session_id,
+            DB_NAME(r.database_id),
+            txt.text
+        FROM sys.dm_exec_requests r
+        INNER JOIN sys.dm_exec_sessions s
+            ON s.session_id = r.session_id
+        OUTER APPLY sys.dm_exec_sql_text(r.sql_handle) txt
+        WHERE s.is_user_process = 1
+          AND r.session_id <> @@SPID
+        ORDER BY r.total_elapsed_time DESC
+        """
+    )
+    return cursor.fetchall()
+
+
+def _legacy_activity_rows(cursor):
+    cursor.execute(
+        f"""
+        SELECT TOP {ACTIVITY_LIMIT}
+            spid,
+            loginame,
+            status,
+            cmd,
+            CAST(DATEDIFF(SECOND, last_batch, GETDATE()) AS bigint) * 1000,
+            cpu,
+            lastwaittype,
+            waittime,
+            blocked,
+            DB_NAME(dbid),
+            NULL
+        FROM master.dbo.sysprocesses
+        WHERE spid <> @@SPID
+          AND spid > 50
+          AND status NOT IN ('sleeping', 'background', 'dormant')
+        ORDER BY last_batch
+        """
+    )
+    return cursor.fetchall()
 
 
 def _get_sqlserver_activity_sync(connection: dict) -> dict:
@@ -19,54 +72,19 @@ def _get_sqlserver_activity_sync(connection: dict) -> dict:
             cursor = db.cursor()
             try:
                 if identity.capabilities["dm_exec"]:
-                    cursor.execute(
-                        f"""
-                        SELECT TOP {ACTIVITY_LIMIT}
-                            r.session_id,
-                            s.login_name,
-                            r.status,
-                            r.command,
-                            r.total_elapsed_time,
-                            r.cpu_time,
-                            r.wait_type,
-                            r.wait_time,
-                            r.blocking_session_id,
-                            DB_NAME(r.database_id),
-                            txt.text
-                        FROM sys.dm_exec_requests r
-                        INNER JOIN sys.dm_exec_sessions s
-                            ON s.session_id = r.session_id
-                        OUTER APPLY sys.dm_exec_sql_text(r.sql_handle) txt
-                        WHERE s.is_user_process = 1
-                          AND r.session_id <> @@SPID
-                        ORDER BY r.total_elapsed_time DESC
-                        """
-                    )
-                    rows = cursor.fetchall()
-                    warning = None
+                    try:
+                        rows = _modern_activity_rows(cursor)
+                        warning = None
+                    except Exception as exc:
+                        rows = _legacy_activity_rows(cursor)
+                        warning = (
+                            "Modern SQL Server activity DMVs are unavailable for this login; "
+                            "DBAChum fell back to sysprocesses. CPU is session-cumulative and "
+                            "live SQL text is unavailable. "
+                            f"({sqlserver_error_message(exc)})"
+                        )
                 else:
-                    cursor.execute(
-                        f"""
-                        SELECT TOP {ACTIVITY_LIMIT}
-                            spid,
-                            loginame,
-                            status,
-                            cmd,
-                            CAST(DATEDIFF(SECOND, last_batch, GETDATE()) AS bigint) * 1000,
-                            cpu,
-                            lastwaittype,
-                            waittime,
-                            blocked,
-                            DB_NAME(dbid),
-                            NULL
-                        FROM master.dbo.sysprocesses
-                        WHERE spid <> @@SPID
-                          AND spid > 50
-                          AND status NOT IN ('sleeping', 'background', 'dormant')
-                        ORDER BY last_batch
-                        """
-                    )
-                    rows = cursor.fetchall()
+                    rows = _legacy_activity_rows(cursor)
                     warning = (
                         "Legacy SQL Server activity mode is using sysprocesses; "
                         "CPU is session-cumulative and live SQL text is unavailable."
@@ -101,7 +119,7 @@ def _get_sqlserver_activity_sync(connection: dict) -> dict:
         return {
             "available": False,
             "items": [],
-            "warning": str(exc).strip() or exc.__class__.__name__,
+            "warning": sqlserver_error_message(exc),
             "checked_at": checked_at,
         }
 

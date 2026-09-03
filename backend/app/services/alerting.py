@@ -33,10 +33,23 @@ def _percent_severity(value: float, warning: float, critical: float) -> str:
     return "critical" if value >= critical else "warning"
 
 
-def database_alert_conditions(connection: dict, sample: dict) -> list[AlertCondition]:
+def _sqlserver_instance_key(connection: dict) -> str:
+    host = str(connection.get("host") or "").strip().lower()
+    port = int(connection.get("port") or 1433)
+    return f"{host}:{port}"
+
+
+def database_alert_conditions(
+    connection: dict,
+    sample: dict,
+    *,
+    include_sqlserver_instance_conditions: bool = True,
+) -> list[AlertCondition]:
     name = str(connection.get("name") or connection.get("database") or connection.get("_id"))
     status = str(sample.get("status") or "unreachable")
     healthy = status in {"online", "limited"}
+    engine = connection.get("engine")
+    sqlserver = (sample.get("sqlserver") or {}) if engine == "sqlserver" else {}
     conditions: list[AlertCondition] = [
         AlertCondition(
             rule_key="availability",
@@ -51,7 +64,7 @@ def database_alert_conditions(connection: dict, sample: dict) -> list[AlertCondi
         )
     ]
 
-    blocked = sample.get("blocked")
+    blocked = sqlserver.get("blocked") if engine == "sqlserver" else sample.get("blocked")
     conditions.append(
         AlertCondition(
             rule_key="blocking_sessions",
@@ -70,7 +83,7 @@ def database_alert_conditions(connection: dict, sample: dict) -> list[AlertCondi
         )
     )
 
-    active_sessions = sample.get("active")
+    active_sessions = sqlserver.get("active") if engine == "sqlserver" else sample.get("active")
     active_warning = settings.alert_active_sessions_warning
     active_critical = settings.alert_active_sessions_critical
     active_enabled = active_warning > 0 and active_critical >= active_warning
@@ -100,8 +113,7 @@ def database_alert_conditions(connection: dict, sample: dict) -> list[AlertCondi
             )
         )
 
-    sqlserver = sample.get("sqlserver") or {}
-    if connection.get("engine") == "sqlserver":
+    if engine == "sqlserver":
         database_state = sqlserver.get("database_state")
         normalized_state = (
             str(database_state).strip().upper()
@@ -180,7 +192,9 @@ def database_alert_conditions(connection: dict, sample: dict) -> list[AlertCondi
         conditions.append(
             AlertCondition(
                 rule_key="sqlserver:tempdb",
-                active=tempdb_active if healthy else None,
+                active=(
+                    tempdb_active if healthy else None
+                ) if include_sqlserver_instance_conditions else False,
                 severity=tempdb_severity,
                 title=f"tempdb pressure on {name}",
                 message=(
@@ -195,6 +209,9 @@ def database_alert_conditions(connection: dict, sample: dict) -> list[AlertCondi
                 context={
                     "critical_threshold": settings.alert_sqlserver_tempdb_critical_percent,
                     "allocated_bytes": sqlserver.get("tempdb_allocated_bytes"),
+                    "instance_scope": True,
+                    "instance_key": _sqlserver_instance_key(connection),
+                    "deduplicated": not include_sqlserver_instance_conditions,
                 },
             )
         )
@@ -205,7 +222,11 @@ def database_alert_conditions(connection: dict, sample: dict) -> list[AlertCondi
         conditions.append(
             AlertCondition(
                 rule_key="sqlserver:agent_failures",
-                active=(failed_count > 0) if healthy and agent_available is True and failed_count is not None else None,
+                active=(
+                    (failed_count > 0)
+                    if healthy and agent_available is True and failed_count is not None
+                    else None
+                ) if include_sqlserver_instance_conditions else False,
                 severity="critical" if failed_count is not None and failed_count >= 3 else "warning",
                 title=f"SQL Agent job failures on {name}",
                 message=(
@@ -217,7 +238,12 @@ def database_alert_conditions(connection: dict, sample: dict) -> list[AlertCondi
                 recovery_samples=1,
                 current_value=failed_count,
                 threshold=0,
-                context={"failed_jobs": sqlserver.get("failed_jobs") or []},
+                context={
+                    "failed_jobs": sqlserver.get("failed_jobs") or [],
+                    "instance_scope": True,
+                    "instance_key": _sqlserver_instance_key(connection),
+                    "deduplicated": not include_sqlserver_instance_conditions,
+                },
             )
         )
 
@@ -552,14 +578,24 @@ async def _evaluate_source(
         )
 
 
-async def evaluate_database_sample(database, connection: dict, sample: dict) -> None:
+async def evaluate_database_sample(
+    database,
+    connection: dict,
+    sample: dict,
+    *,
+    include_sqlserver_instance_alerts: bool = True,
+) -> None:
     storage_present = bool((sample.get("oracle") or {}).get("storage") is not None)
     await _evaluate_source(
         database,
         source_type="database",
         source_id=str(connection["_id"]),
         source_name=str(connection.get("name") or connection.get("database") or connection["_id"]),
-        conditions=database_alert_conditions(connection, sample),
+        conditions=database_alert_conditions(
+            connection,
+            sample,
+            include_sqlserver_instance_conditions=include_sqlserver_instance_alerts,
+        ),
         fully_evaluated_prefixes=("tablespace:",) if storage_present else (),
     )
 

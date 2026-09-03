@@ -189,6 +189,7 @@ class SqlServerLogHealth(BaseModel):
 
 
 class SqlServerWorkloadHealth(BaseModel):
+    active: int | None = None
     blocked: int | None = None
     long_running: int | None = None
     longest_request_ms: int | None = None

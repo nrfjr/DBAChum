@@ -41,6 +41,7 @@ def test_collector_compacts_health_without_storing_full_job_history():
                 "used_percent": 80.0,
             },
             "workload": {
+                "active": 4,
                 "blocked": 1,
                 "long_running": 2,
                 "longest_request_ms": 420000,
@@ -67,6 +68,8 @@ def test_collector_compacts_health_without_storing_full_job_history():
     )
     assert compact["database_state"] == "ONLINE"
     assert compact["log_used_percent"] == 80.0
+    assert compact["active"] == 4
+    assert compact["blocked"] == 1
     assert compact["agent_failed_jobs"] == 1
     assert [item["name"] for item in compact["failed_jobs"]] == ["Backup"]
     assert "jobs" not in compact

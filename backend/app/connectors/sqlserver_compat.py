@@ -3,6 +3,7 @@ from __future__ import annotations
 from contextlib import contextmanager
 from dataclasses import dataclass
 import logging
+import time
 from typing import Iterator
 
 import mssql_python
@@ -17,6 +18,18 @@ except ImportError:  # pragma: no cover - exercised on deployments without legac
 
 
 logger = logging.getLogger(__name__)
+
+
+# Auto mode must finish well inside the collector's target timeout. Each
+# provider attempt gets a short connection timeout, and a successful route is
+# cached in-process so later API/collector calls do not rediscover the same
+# legacy driver/encryption combination every time. Passwords are never cached.
+AUTO_CONNECT_TIMEOUT_SECONDS = 2
+AUTO_CONNECT_BUDGET_SECONDS = 30
+EXPLICIT_CONNECT_TIMEOUT_SECONDS = 5
+
+# key -> (provider, driver, encrypt)
+_AUTO_ROUTE_CACHE: dict[tuple[str, int, str, str, str], tuple[str, str | None, str]] = {}
 
 
 SQLSERVER_GENERATIONS = {
@@ -151,7 +164,7 @@ def _connection_password(connection: dict) -> str:
     return decrypt_secret(encrypted_password)
 
 
-def _mssql_connect(connection: dict, password: str, encrypt: str):
+def _mssql_connect(connection: dict, password: str, encrypt: str, timeout: int = EXPLICIT_CONNECT_TIMEOUT_SECONDS):
     kwargs = {
         "server": f'{connection["host"]},{connection["port"]}',
         "uid": connection["username"],
@@ -162,7 +175,7 @@ def _mssql_connect(connection: dict, password: str, encrypt: str):
 
     return mssql_python.connect(
         f"Encrypt={encrypt};TrustServerCertificate=yes;",
-        timeout=5,
+        timeout=timeout,
         autocommit=True,
         **kwargs,
     )
@@ -207,6 +220,7 @@ def _pyodbc_connect(
     password: str,
     driver: str,
     encrypt: str,
+    timeout: int = EXPLICIT_CONNECT_TIMEOUT_SECONDS,
 ):
     if pyodbc is None:
         raise RuntimeError(
@@ -219,7 +233,7 @@ def _pyodbc_connect(
         f'SERVER={connection["host"]},{connection["port"]}',
         f'UID={connection["username"]}',
         f"PWD={password}",
-        "Connection Timeout=5",
+        f"Connection Timeout={timeout}",
     ]
 
     # The Windows-era "SQL Server" ODBC driver is one of the paths that
@@ -238,17 +252,73 @@ def _pyodbc_connect(
     return pyodbc.connect(
         ";".join(parts) + ";",
         autocommit=True,
-        timeout=5,
+        timeout=timeout,
     )
 
 
-def _encrypt_attempts(connection: dict) -> list[str]:
+def _is_legacy_odbc_driver(driver: str | None) -> bool:
+    value = str(driver or "").strip().lower()
+    return value in {
+        "sql server",
+        "sql native client",
+        "sql server native client 10.0",
+        "sql server native client 11.0",
+    }
+
+
+def _encrypt_attempts(connection: dict, *, prefer_no: bool = False) -> list[str]:
     configured = str(connection.get("sqlserver_encrypt") or "auto").lower()
     if configured == "yes":
         return ["yes"]
     if configured == "no":
         return ["no"]
-    return ["yes", "no"]
+    return ["no", "yes"] if prefer_no else ["yes", "no"]
+
+
+def _route_cache_key(connection: dict) -> tuple[str, int, str, str, str]:
+    return (
+        str(connection.get("host") or "").strip().lower(),
+        int(connection.get("port") or 1433),
+        str(connection.get("username") or "").strip().lower(),
+        str(connection.get("database") or "").strip().lower(),
+        str(connection.get("sqlserver_encrypt") or "auto").strip().lower(),
+    )
+
+
+def _connect_route(
+    connection: dict,
+    password: str,
+    provider: str,
+    driver: str | None,
+    encrypt: str,
+    *,
+    timeout: int,
+) -> SqlServerConnectionAdapter:
+    if provider == "mssql_python":
+        raw = _mssql_connect(connection, password, encrypt, timeout=timeout)
+        return SqlServerConnectionAdapter(
+            raw=raw,
+            provider="mssql_python",
+            driver=None,
+            encrypt=encrypt,
+        )
+
+    if provider == "pyodbc" and driver:
+        raw = _pyodbc_connect(
+            connection,
+            password,
+            driver,
+            encrypt,
+            timeout=timeout,
+        )
+        return SqlServerConnectionAdapter(
+            raw=raw,
+            provider="pyodbc",
+            driver=driver,
+            encrypt=encrypt,
+        )
+
+    raise RuntimeError("Invalid SQL Server connection route.")
 
 
 def _format_connection_errors(errors: list[str]) -> str:
@@ -261,67 +331,125 @@ def _format_connection_errors(errors: list[str]) -> str:
 
 @contextmanager
 def open_sqlserver_connection(connection: dict) -> Iterator[SqlServerConnectionAdapter]:
-    """Open SQL Server with a modern-first, legacy-isolated provider chain.
+    """Open SQL Server with bounded auto-fallback and route reuse.
 
-    `mssql-python` remains the normal path. SQL Server 2000 and other legacy
-    endpoints can opt into (or auto-fall back to) an installed ODBC driver via
-    pyodbc without forcing modern servers onto the legacy stack.
+    Auto mode tries the last successful provider/driver/encryption route first.
+    If that route stops working it is evicted and DBAChum performs a bounded
+    modern-to-legacy discovery pass. Explicit provider settings keep the longer
+    per-attempt timeout because the operator already chose that path.
     """
     password = _connection_password(connection)
     provider = str(connection.get("sqlserver_provider") or "auto").lower()
     errors: list[str] = []
     adapter: SqlServerConnectionAdapter | None = None
 
-    if provider in {"auto", "mssql_python"}:
+    if provider == "auto":
+        cache_key = _route_cache_key(connection)
+        cached = _AUTO_ROUTE_CACHE.get(cache_key)
+        attempted: set[tuple[str, str | None, str]] = set()
+        started = time.monotonic()
+
+        if cached is not None:
+            attempted.add(cached)
+            try:
+                adapter = _connect_route(
+                    connection,
+                    password,
+                    *cached,
+                    timeout=AUTO_CONNECT_TIMEOUT_SECONDS,
+                )
+            except Exception as exc:
+                errors.append(f"Cached {cached[0]} route: {exc}")
+                _AUTO_ROUTE_CACHE.pop(cache_key, None)
+
+        routes: list[tuple[str, str | None, str]] = []
+        for encrypt in _encrypt_attempts(connection):
+            routes.append(("mssql_python", None, encrypt))
+
+        configured_driver = str(connection.get("sqlserver_driver") or "").strip()
+        drivers = [configured_driver] if configured_driver else _installed_pyodbc_drivers()
+        if not drivers:
+            errors.append("Legacy ODBC: no SQL Server ODBC driver is installed/configured.")
+
+        for driver in drivers:
+            for encrypt in _encrypt_attempts(
+                connection,
+                prefer_no=_is_legacy_odbc_driver(driver),
+            ):
+                routes.append(("pyodbc", driver, encrypt))
+
+        for route in routes:
+            if adapter is not None:
+                break
+            if route in attempted:
+                continue
+            if time.monotonic() - started >= AUTO_CONNECT_BUDGET_SECONDS:
+                errors.append(
+                    f"Auto provider discovery stopped after {AUTO_CONNECT_BUDGET_SECONDS}s budget."
+                )
+                break
+
+            attempted.add(route)
+            try:
+                adapter = _connect_route(
+                    connection,
+                    password,
+                    *route,
+                    timeout=AUTO_CONNECT_TIMEOUT_SECONDS,
+                )
+                _AUTO_ROUTE_CACHE[cache_key] = route
+                logger.debug(
+                    "SQL Server auto route selected host=%s port=%s provider=%s driver=%s encrypt=%s",
+                    connection.get("host"),
+                    connection.get("port"),
+                    route[0],
+                    route[1],
+                    route[2],
+                )
+            except Exception as exc:
+                if route[0] == "mssql_python":
+                    errors.append(f"mssql-python Encrypt={route[2]}: {exc}")
+                else:
+                    errors.append(f"ODBC {route[1]} Encrypt={route[2]}: {exc}")
+
+    elif provider == "mssql_python":
         for encrypt in _encrypt_attempts(connection):
             try:
-                raw = _mssql_connect(connection, password, encrypt)
-                adapter = SqlServerConnectionAdapter(
-                    raw=raw,
-                    provider="mssql_python",
-                    driver=None,
-                    encrypt=encrypt,
+                adapter = _connect_route(
+                    connection,
+                    password,
+                    "mssql_python",
+                    None,
+                    encrypt,
+                    timeout=EXPLICIT_CONNECT_TIMEOUT_SECONDS,
                 )
                 break
             except Exception as exc:
                 errors.append(f"mssql-python Encrypt={encrypt}: {exc}")
 
-        if provider == "mssql_python" and adapter is None:
-            raise AppError(
-                _format_connection_errors(errors),
-                code="SQLSERVER_CONNECTION_FAILED",
-                status_code=400,
-            )
-
-    if adapter is None and provider in {"auto", "pyodbc"}:
-        configured_driver = (connection.get("sqlserver_driver") or "").strip()
+    elif provider == "pyodbc":
+        configured_driver = str(connection.get("sqlserver_driver") or "").strip()
         drivers = [configured_driver] if configured_driver else _installed_pyodbc_drivers()
-
         if not drivers:
-            errors.append(
-                "Legacy ODBC: no SQL Server ODBC driver is installed/configured."
-            )
+            errors.append("Legacy ODBC: no SQL Server ODBC driver is installed/configured.")
 
         for driver in drivers:
-            for encrypt in _encrypt_attempts(connection):
+            for encrypt in _encrypt_attempts(
+                connection,
+                prefer_no=_is_legacy_odbc_driver(driver),
+            ):
                 try:
-                    raw = _pyodbc_connect(
+                    adapter = _connect_route(
                         connection,
                         password,
+                        "pyodbc",
                         driver,
                         encrypt,
-                    )
-                    adapter = SqlServerConnectionAdapter(
-                        raw=raw,
-                        provider="pyodbc",
-                        driver=driver,
-                        encrypt=encrypt,
+                        timeout=EXPLICIT_CONNECT_TIMEOUT_SECONDS,
                     )
                     break
                 except Exception as exc:
-                    errors.append(
-                        f"ODBC {driver} Encrypt={encrypt}: {exc}"
-                    )
+                    errors.append(f"ODBC {driver} Encrypt={encrypt}: {exc}")
             if adapter is not None:
                 break
 

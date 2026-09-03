@@ -404,6 +404,7 @@ def _compact_sqlserver_health(health: dict) -> dict:
         "log_size_bytes": log.get("size_bytes"),
         "log_used_bytes": log.get("used_bytes"),
         "log_used_percent": log.get("used_percent"),
+        "active": workload.get("active"),
         "blocked": workload.get("blocked"),
         "long_running": workload.get("long_running"),
         "longest_request_ms": workload.get("longest_request_ms"),
@@ -524,6 +525,37 @@ async def _collect_database_sample(
     return sample
 
 
+def _sqlserver_instance_key(connection: dict) -> str:
+    host = str(connection.get("host") or "").strip().lower()
+    port = int(connection.get("port") or 1433)
+    return f"{host}:{port}"
+
+
+def _sqlserver_instance_alert_owners(
+    connections: list[dict],
+    samples: list[dict] | None = None,
+) -> set[str]:
+    """Pick one deterministic healthy DB connection per SQL Server instance.
+
+    tempdb and SQL Agent belong to the SQL Server instance, not an individual
+    database. Prefer the first healthy monitored connection for each host:port;
+    if every connection is unavailable, fall back to the first one so existing
+    instance alerts can still transition predictably.
+    """
+    samples = samples or []
+    owners: dict[str, tuple[str, bool]] = {}
+    for index, connection in enumerate(connections):
+        if connection.get("engine") != "sqlserver":
+            continue
+        instance_key = _sqlserver_instance_key(connection)
+        sample = samples[index] if index < len(samples) else {}
+        healthy = str(sample.get("status") or "") in {"online", "limited"}
+        current = owners.get(instance_key)
+        if current is None or (healthy and not current[1]):
+            owners[instance_key] = (str(connection["_id"]), healthy)
+    return {owner_id for owner_id, _healthy in owners.values()}
+
+
 async def collect_database_metrics_once(
     database,
     state: CollectorDeltaState,
@@ -591,9 +623,18 @@ async def collect_database_metrics_once(
         insert_result = await database[METRICS_COLLECTION_NAME].insert_many(samples)
         result.inserted_count = len(insert_result.inserted_ids)
 
+        sqlserver_instance_owners = _sqlserver_instance_alert_owners(connections, samples)
         alert_results = await asyncio.gather(
             *(
-                evaluate_database_sample(database, connection, sample)
+                evaluate_database_sample(
+                    database,
+                    connection,
+                    sample,
+                    include_sqlserver_instance_alerts=(
+                        connection.get("engine") != "sqlserver"
+                        or str(connection["_id"]) in sqlserver_instance_owners
+                    ),
+                )
                 for connection, sample in zip(connections, samples)
             ),
             return_exceptions=True,

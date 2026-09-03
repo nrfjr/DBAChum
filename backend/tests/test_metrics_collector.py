@@ -1,3 +1,4 @@
+from app.services.metrics_collector import _sqlserver_instance_alert_owners
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -177,3 +178,25 @@ def test_sqlserver_health_due_uses_operational_interval():
     assert state.sqlserver_health_due("sql-1", now)
     state.last_sqlserver_health_at["sql-1"] = now
     assert not state.sqlserver_health_due("sql-1", now + timedelta(seconds=10))
+
+
+def test_sqlserver_instance_alert_owner_is_one_connection_per_host_port():
+    connections = [
+        {"_id": "a", "engine": "sqlserver", "host": "DB01", "port": 1433},
+        {"_id": "b", "engine": "sqlserver", "host": "db01", "port": 1433},
+        {"_id": "c", "engine": "sqlserver", "host": "db02", "port": 1433},
+        {"_id": "o", "engine": "oracle", "host": "db01", "port": 1521},
+    ]
+    assert _sqlserver_instance_alert_owners(connections) == {"a", "c"}
+
+
+def test_sqlserver_instance_alert_owner_prefers_healthy_connection():
+    connections = [
+        {"_id": "a", "engine": "sqlserver", "host": "db01", "port": 1433},
+        {"_id": "b", "engine": "sqlserver", "host": "db01", "port": 1433},
+    ]
+    samples = [
+        {"status": "unreachable"},
+        {"status": "online"},
+    ]
+    assert _sqlserver_instance_alert_owners(connections, samples) == {"b"}

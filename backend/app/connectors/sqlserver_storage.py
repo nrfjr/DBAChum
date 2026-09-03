@@ -9,6 +9,48 @@ from app.connectors.sqlserver_compat import (
 from app.core.exceptions import AppError
 
 
+def _modern_storage_rows(cursor):
+    cursor.execute(
+        """
+        SELECT
+            DB_NAME(),
+            name,
+            physical_name,
+            type_desc,
+            CAST(size AS bigint) * 8192,
+            CASE
+                WHEN FILEPROPERTY(name, 'SpaceUsed') IS NULL
+                THEN NULL
+                ELSE CAST(FILEPROPERTY(name, 'SpaceUsed') AS bigint) * 8192
+            END
+        FROM sys.database_files
+        ORDER BY type_desc, file_id
+        """
+    )
+    return cursor.fetchall()
+
+
+def _legacy_storage_rows(cursor):
+    cursor.execute(
+        """
+        SELECT
+            DB_NAME(),
+            name,
+            filename,
+            CASE WHEN groupid = 0 THEN 'LOG' ELSE 'ROWS' END,
+            CAST(size AS bigint) * 8192,
+            CASE
+                WHEN FILEPROPERTY(name, 'SpaceUsed') IS NULL
+                THEN NULL
+                ELSE CAST(FILEPROPERTY(name, 'SpaceUsed') AS bigint) * 8192
+            END
+        FROM dbo.sysfiles
+        ORDER BY groupid, fileid
+        """
+    )
+    return cursor.fetchall()
+
+
 def _get_sqlserver_storage_sync(connection: dict) -> dict:
     checked_at = datetime.now(timezone.utc)
 
@@ -16,44 +58,23 @@ def _get_sqlserver_storage_sync(connection: dict) -> dict:
         with open_sqlserver_connection(connection) as db:
             identity = probe_sqlserver_identity(db)
             cursor = db.cursor()
+            warnings: list[str] = []
             try:
                 if identity.capabilities["database_files_catalog"]:
-                    cursor.execute(
-                        """
-                        SELECT
-                            DB_NAME(),
-                            name,
-                            physical_name,
-                            type_desc,
-                            CAST(size AS bigint) * 8192,
-                            CASE
-                                WHEN FILEPROPERTY(name, 'SpaceUsed') IS NULL
-                                THEN NULL
-                                ELSE CAST(FILEPROPERTY(name, 'SpaceUsed') AS bigint) * 8192
-                            END
-                        FROM sys.database_files
-                        ORDER BY type_desc, file_id
-                        """
-                    )
+                    try:
+                        rows = _modern_storage_rows(cursor)
+                    except Exception as exc:
+                        warnings = [
+                            "Modern SQL Server file catalog is unavailable for this login; "
+                            "DBAChum fell back to dbo.sysfiles. "
+                            f"({sqlserver_error_message(exc)})"
+                        ]
+                        rows = _legacy_storage_rows(cursor)
                 else:
-                    cursor.execute(
-                        """
-                        SELECT
-                            DB_NAME(),
-                            name,
-                            filename,
-                            CASE WHEN groupid = 0 THEN 'LOG' ELSE 'ROWS' END,
-                            CAST(size AS bigint) * 8192,
-                            CASE
-                                WHEN FILEPROPERTY(name, 'SpaceUsed') IS NULL
-                                THEN NULL
-                                ELSE CAST(FILEPROPERTY(name, 'SpaceUsed') AS bigint) * 8192
-                            END
-                        FROM dbo.sysfiles
-                        ORDER BY groupid, fileid
-                        """
-                    )
-                rows = cursor.fetchall()
+                    rows = _legacy_storage_rows(cursor)
+                    warnings = [
+                        "Legacy SQL Server storage mode is using dbo.sysfiles."
+                    ]
             finally:
                 cursor.close()
 
@@ -88,12 +109,6 @@ def _get_sqlserver_storage_sync(connection: dict) -> dict:
                         "free_bytes": free,
                         "used_percent": percent,
                     }
-                )
-
-            warnings = []
-            if not identity.capabilities["database_files_catalog"]:
-                warnings.append(
-                    "Legacy SQL Server storage mode is using dbo.sysfiles."
                 )
 
             return {

@@ -150,6 +150,7 @@ export interface SqlServerLogHealth {
 }
 
 export interface SqlServerWorkloadHealth {
+  active: number | null
   blocked: number | null
   long_running: number | null
   longest_request_ms: number | null

@@ -140,3 +140,61 @@ def test_sqlserver_database_state_alert_is_immediate():
     assert state.active is True
     assert state.severity == "critical"
     assert state.required_samples == 1
+
+
+def test_sqlserver_workload_alerts_use_database_scoped_health_values():
+    connection = {
+        "_id": "db4",
+        "name": "ERP DB",
+        "engine": "sqlserver",
+        "host": "10.0.0.20",
+        "port": 1433,
+    }
+    sample = {
+        "status": "online",
+        # Overview values are instance-wide and must not drive DB-scoped alerts.
+        "active": 999,
+        "blocked": 9,
+        "sqlserver": {
+            "active": 2,
+            "blocked": 0,
+            "database_state": "ONLINE",
+        },
+    }
+    rules = {item.rule_key: item for item in database_alert_conditions(connection, sample)}
+    assert rules["blocking_sessions"].active is False
+    assert rules["blocking_sessions"].current_value == 0
+    assert rules["active_sessions"].active is False
+    assert rules["active_sessions"].current_value == 2
+
+
+def test_sqlserver_instance_rules_are_suppressed_on_non_owner_connections():
+    connection = {
+        "_id": "db5",
+        "name": "Reporting DB",
+        "engine": "sqlserver",
+        "host": "10.0.0.20",
+        "port": 1433,
+    }
+    sample = {
+        "status": "online",
+        "sqlserver": {
+            "active": 0,
+            "blocked": 0,
+            "database_state": "ONLINE",
+            "tempdb_used_percent": 99.0,
+            "agent_available": True,
+            "agent_failed_jobs": 3,
+        },
+    }
+    rules = {
+        item.rule_key: item
+        for item in database_alert_conditions(
+            connection,
+            sample,
+            include_sqlserver_instance_conditions=False,
+        )
+    }
+    assert rules["sqlserver:tempdb"].active is False
+    assert rules["sqlserver:agent_failures"].active is False
+    assert rules["sqlserver:tempdb"].context["deduplicated"] is True

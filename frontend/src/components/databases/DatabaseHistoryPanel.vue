@@ -240,11 +240,11 @@ function getMetricValue(item: DatabaseMetricSample): number | null {
 
   switch (metric.value) {
     case 'active':
-      return item.active
+      return item.sqlserver?.active ?? item.active
     case 'connections':
       return item.connections
     case 'blocked':
-      return item.blocked
+      return item.sqlserver?.blocked ?? item.blocked
     case 'latency':
       return item.response_time_ms
     case 'cpu':

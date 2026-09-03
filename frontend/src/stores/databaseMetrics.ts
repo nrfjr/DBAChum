@@ -109,6 +109,7 @@ export interface SqlServerMetricSample {
   log_size_bytes?: number | null
   log_used_bytes?: number | null
   log_used_percent?: number | null
+  active?: number | null
   blocked?: number | null
   long_running?: number | null
   longest_request_ms?: number | null
