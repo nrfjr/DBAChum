@@ -174,6 +174,31 @@ def probe_mysql_capabilities(
         "information_schema",
         "innodb_trx",
     )
+    capabilities["information_schema_innodb_lock_waits"] = _schema_object_exists(
+        cursor,
+        "information_schema",
+        "innodb_lock_waits",
+    )
+
+    # Performance Schema feature presence is runtime-probed rather than inferred
+    # from version alone. MySQL/MariaDB installations can ship the schema while
+    # leaving the instrumentation disabled, as seen on common XAMPP builds.
+    capabilities["performance_schema_processlist"] = bool(
+        capabilities["performance_schema"]
+        and _schema_object_exists(cursor, "performance_schema", "processlist")
+    )
+    capabilities["performance_schema_threads"] = bool(
+        capabilities["performance_schema"]
+        and _schema_object_exists(cursor, "performance_schema", "threads")
+    )
+    capabilities["performance_schema_events_waits_current"] = bool(
+        capabilities["performance_schema"]
+        and _schema_object_exists(
+            cursor,
+            "performance_schema",
+            "events_waits_current",
+        )
+    )
 
     if version_info.mariadb:
         detected_global_priv = _schema_object_exists(

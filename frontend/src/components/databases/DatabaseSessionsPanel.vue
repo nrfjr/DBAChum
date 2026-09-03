@@ -2,6 +2,8 @@
 import OracleSessionsPanel from '@/components/databases/oracle/OracleSessionsPanel.vue'
 import SqlServerSessionsPanel from '@/components/databases/sqlserver/SqlServerSessionsPanel.vue'
 
+import MySqlSessionsPanel from '@/components/databases/mysql/MySqlSessionsPanel.vue'
+
 import type { DatabaseEngine } from '@/stores/connections'
 
 defineProps<{
@@ -20,4 +22,10 @@ defineProps<{
     v-else-if="engine === 'sqlserver'"
     :connection-id="connectionId"
   />
+
+  <MySqlSessionsPanel
+    v-else-if="engine === 'mysql'"
+    :connection-id="connectionId"
+  />
+
 </template>

@@ -3,12 +3,14 @@ from fastapi import APIRouter, Depends, Request
 from app.dependencies.auth import get_current_user
 from app.schemas.mysql_dba import (
     MySqlActivityResponse,
+    MySqlHealthResponse,
     MySqlSessionsResponse,
     MySqlStorageResponse,
 )
 from app.schemas.user import UserResponse
 from app.services.mysql_dba import (
     load_mysql_activity,
+    load_mysql_health,
     load_mysql_sessions,
     load_mysql_storage,
 )
@@ -62,6 +64,20 @@ async def activity(
     current_user: UserResponse = Depends(require_permission(Permission.MONITOR_READ)),
 ):
     return await load_mysql_activity(
+        request.app.state.database,
+        connection_id,
+    )
+
+@router.get(
+    "/{connection_id}/mysql/health",
+    response_model=MySqlHealthResponse,
+)
+async def mysql_health(
+    connection_id: str,
+    request: Request,
+    current_user: UserResponse = Depends(require_permission(Permission.MONITOR_READ)),
+):
+    return await load_mysql_health(
         request.app.state.database,
         connection_id,
     )

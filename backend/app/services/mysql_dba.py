@@ -1,6 +1,9 @@
 from app.connectors.mysql_activity import (
     get_mysql_activity,
 )
+from app.connectors.mysql_health import (
+    get_mysql_health,
+)
 from app.connectors.mysql_sessions import (
     get_mysql_sessions,
 )
@@ -62,6 +65,17 @@ async def load_mysql_activity(
     connection_id: str,
 ):
     return await get_mysql_activity(
+        await get_mysql_target(
+            database,
+            connection_id,
+        )
+    )
+
+async def load_mysql_health(
+    database,
+    connection_id: str,
+):
+    return await get_mysql_health(
         await get_mysql_target(
             database,
             connection_id,

@@ -4197,3 +4197,10 @@ button {
   color: var(--warning);
   font-size: 0.72rem;
 }
+
+/* Phase 7A.8 — MySQL/MariaDB monitoring transparency */
+.database-monitoring-note {
+  margin: -0.35rem 0 0.9rem;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+}

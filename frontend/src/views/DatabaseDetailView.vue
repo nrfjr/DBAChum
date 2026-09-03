@@ -11,6 +11,7 @@ import DatabaseBackupsPanel from '@/components/databases/DatabaseBackupsPanel.vu
 import DatabaseUsersPanel from '@/components/databases/DatabaseUsersPanel.vue'
 import DatabaseAccessPanel from '@/components/databases/DatabaseAccessPanel.vue'
 import SqlServerHealthPanel from '@/components/databases/sqlserver/SqlServerHealthPanel.vue'
+import MySqlHealthPanel from '@/components/databases/mysql/MySqlHealthPanel.vue'
 import { useServersStore } from '@/stores/servers'
 import { useAuthStore } from '@/stores/auth'
 import { hasPermission } from '@/core/permissions'
@@ -97,13 +98,13 @@ watch(
 )
 
 const supportsDbaUtilities = computed(() =>
-  ['oracle', 'sqlserver'].includes(
+  ['oracle', 'sqlserver', 'mysql'].includes(
     connection.value?.engine ?? '',
   ),
 )
 
-const supportsSqlServerHealth = computed(() =>
-  connection.value?.engine === 'sqlserver',
+const supportsOperationalHealth = computed(() =>
+  ['sqlserver', 'mysql'].includes(connection.value?.engine ?? ''),
 )
 
 const supportsUsersAndSchemas = computed(() =>
@@ -245,7 +246,7 @@ onMounted(async () => {
         </button>
 
         <button
-          v-if="supportsSqlServerHealth"
+          v-if="supportsOperationalHealth"
           :class="{ active: activeTab === 'health' }"
           @click="selectTab('health')"
         >
@@ -350,7 +351,14 @@ onMounted(async () => {
       <SqlServerHealthPanel
         v-if="visitedTabs.health && connection.engine === 'sqlserver'"
         v-show="activeTab === 'health'"
-        :key="`health-${connection.id}`"
+        :key="`health-sqlserver-${connection.id}`"
+        :connection-id="connection.id"
+      />
+
+      <MySqlHealthPanel
+        v-if="visitedTabs.health && connection.engine === 'mysql'"
+        v-show="activeTab === 'health'"
+        :key="`health-mysql-${connection.id}`"
         :connection-id="connection.id"
       />
 
