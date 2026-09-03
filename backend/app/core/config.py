@@ -48,6 +48,11 @@ class Settings(BaseSettings):
         ge=60,
         le=3600,
     )
+    sqlserver_health_interval_seconds: int = Field(
+        default=60,
+        ge=30,
+        le=3600,
+    )
     metrics_collector_concurrency: int = Field(
         default=5,
         ge=1,
@@ -82,6 +87,14 @@ class Settings(BaseSettings):
     alert_server_cpu_critical_percent: float = Field(default=97.0, ge=1, le=100)
     alert_server_memory_warning_percent: float = Field(default=90.0, ge=1, le=100)
     alert_server_memory_critical_percent: float = Field(default=97.0, ge=1, le=100)
+
+    # SQL Server operational alerts. Long-running requests stay informational
+    # until explicitly enabled because acceptable duration is workload-specific.
+    alert_sqlserver_log_warning_percent: float = Field(default=80.0, ge=1, le=100)
+    alert_sqlserver_log_critical_percent: float = Field(default=90.0, ge=1, le=100)
+    alert_sqlserver_tempdb_warning_percent: float = Field(default=90.0, ge=1, le=100)
+    alert_sqlserver_tempdb_critical_percent: float = Field(default=98.0, ge=1, le=100)
+    alert_sqlserver_long_running_seconds: int = Field(default=0, ge=0, le=604800)
 
     trusted_hosts: str = "localhost,127.0.0.1"
 
@@ -191,6 +204,8 @@ class Settings(BaseSettings):
             (self.alert_filesystem_warning_percent, self.alert_filesystem_critical_percent, "filesystem"),
             (self.alert_server_cpu_warning_percent, self.alert_server_cpu_critical_percent, "server CPU"),
             (self.alert_server_memory_warning_percent, self.alert_server_memory_critical_percent, "server memory"),
+            (self.alert_sqlserver_log_warning_percent, self.alert_sqlserver_log_critical_percent, "SQL Server transaction log"),
+            (self.alert_sqlserver_tempdb_warning_percent, self.alert_sqlserver_tempdb_critical_percent, "SQL Server tempdb"),
         ]
         for warning, critical, label in threshold_pairs:
             if warning > 0 and critical < warning:

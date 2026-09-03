@@ -100,6 +100,153 @@ def database_alert_conditions(connection: dict, sample: dict) -> list[AlertCondi
             )
         )
 
+    sqlserver = sample.get("sqlserver") or {}
+    if connection.get("engine") == "sqlserver":
+        database_state = sqlserver.get("database_state")
+        normalized_state = (
+            str(database_state).strip().upper()
+            if database_state is not None
+            else None
+        )
+        conditions.append(
+            AlertCondition(
+                rule_key="sqlserver:database_state",
+                active=(normalized_state != "ONLINE") if healthy and normalized_state else None,
+                severity="critical",
+                title=f"SQL Server database state on {name}",
+                message=(
+                    f"Database state is {normalized_state}."
+                    if normalized_state
+                    else "Database-state telemetry is unavailable."
+                ),
+                required_samples=1,
+                recovery_samples=2,
+                current_value=normalized_state,
+                threshold="ONLINE",
+                context={
+                    "recovery_model": sqlserver.get("recovery_model"),
+                    "log_reuse_wait": sqlserver.get("log_reuse_wait"),
+                },
+            )
+        )
+
+        log_used = sqlserver.get("log_used_percent")
+        log_value = float(log_used) if log_used is not None else None
+        if log_value is None:
+            log_active = None
+            log_severity = "warning"
+        else:
+            log_active = log_value >= settings.alert_sqlserver_log_warning_percent
+            log_severity = _percent_severity(
+                log_value,
+                settings.alert_sqlserver_log_warning_percent,
+                settings.alert_sqlserver_log_critical_percent,
+            )
+        conditions.append(
+            AlertCondition(
+                rule_key="sqlserver:transaction_log",
+                active=log_active if healthy else None,
+                severity=log_severity,
+                title=f"Transaction log pressure on {name}",
+                message=(
+                    f"Transaction log is {log_value:.1f}% used."
+                    if log_value is not None
+                    else "Transaction-log usage telemetry is unavailable."
+                ),
+                required_samples=1 if log_severity == "critical" else 2,
+                recovery_samples=2,
+                current_value=log_value,
+                threshold=settings.alert_sqlserver_log_warning_percent,
+                context={
+                    "critical_threshold": settings.alert_sqlserver_log_critical_percent,
+                    "log_reuse_wait": sqlserver.get("log_reuse_wait"),
+                    "log_size_bytes": sqlserver.get("log_size_bytes"),
+                },
+            )
+        )
+
+        tempdb_used = sqlserver.get("tempdb_used_percent")
+        tempdb_value = float(tempdb_used) if tempdb_used is not None else None
+        if tempdb_value is None:
+            tempdb_active = None
+            tempdb_severity = "warning"
+        else:
+            tempdb_active = tempdb_value >= settings.alert_sqlserver_tempdb_warning_percent
+            tempdb_severity = _percent_severity(
+                tempdb_value,
+                settings.alert_sqlserver_tempdb_warning_percent,
+                settings.alert_sqlserver_tempdb_critical_percent,
+            )
+        conditions.append(
+            AlertCondition(
+                rule_key="sqlserver:tempdb",
+                active=tempdb_active if healthy else None,
+                severity=tempdb_severity,
+                title=f"tempdb pressure on {name}",
+                message=(
+                    f"tempdb data files are {tempdb_value:.1f}% used."
+                    if tempdb_value is not None
+                    else "tempdb usage telemetry is unavailable."
+                ),
+                required_samples=1 if tempdb_severity == "critical" else 3,
+                recovery_samples=2,
+                current_value=tempdb_value,
+                threshold=settings.alert_sqlserver_tempdb_warning_percent,
+                context={
+                    "critical_threshold": settings.alert_sqlserver_tempdb_critical_percent,
+                    "allocated_bytes": sqlserver.get("tempdb_allocated_bytes"),
+                },
+            )
+        )
+
+        agent_available = sqlserver.get("agent_available")
+        failed_jobs = sqlserver.get("agent_failed_jobs")
+        failed_count = int(failed_jobs) if failed_jobs is not None else None
+        conditions.append(
+            AlertCondition(
+                rule_key="sqlserver:agent_failures",
+                active=(failed_count > 0) if healthy and agent_available is True and failed_count is not None else None,
+                severity="critical" if failed_count is not None and failed_count >= 3 else "warning",
+                title=f"SQL Agent job failures on {name}",
+                message=(
+                    f"{failed_count} enabled SQL Agent job(s) have a failed/canceled latest outcome."
+                    if failed_count is not None
+                    else "SQL Agent job telemetry is unavailable."
+                ),
+                required_samples=1,
+                recovery_samples=1,
+                current_value=failed_count,
+                threshold=0,
+                context={"failed_jobs": sqlserver.get("failed_jobs") or []},
+            )
+        )
+
+        long_threshold = settings.alert_sqlserver_long_running_seconds
+        if long_threshold > 0:
+            longest_ms = sqlserver.get("longest_request_ms")
+            longest_seconds = (
+                float(longest_ms) / 1000
+                if longest_ms is not None
+                else None
+            )
+            conditions.append(
+                AlertCondition(
+                    rule_key="sqlserver:long_running",
+                    active=(longest_seconds >= long_threshold) if healthy and longest_seconds is not None else None,
+                    severity="warning",
+                    title=f"Long-running SQL Server request on {name}",
+                    message=(
+                        f"Longest active request is {longest_seconds:.0f}s."
+                        if longest_seconds is not None
+                        else "Long-running-request telemetry is unavailable."
+                    ),
+                    required_samples=2,
+                    recovery_samples=2,
+                    current_value=longest_seconds,
+                    threshold=long_threshold,
+                )
+            )
+
     oracle = sample.get("oracle") or {}
     storage = oracle.get("storage")
     if storage is not None:

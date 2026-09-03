@@ -10,6 +10,9 @@ from app.connectors.sqlserver_storage import (
 from app.connectors.sqlserver_security import (
     get_sqlserver_security,
 )
+from app.connectors.sqlserver_health import (
+    get_sqlserver_health,
+)
 from app.core.exceptions import AppError
 from app.services.database_connections import (
     get_database_connection,
@@ -76,6 +79,18 @@ async def load_sqlserver_security(
     connection_id: str,
 ):
     return await get_sqlserver_security(
+        await get_sqlserver_target(
+            database,
+            connection_id,
+        )
+    )
+
+
+async def load_sqlserver_health(
+    database,
+    connection_id: str,
+):
+    return await get_sqlserver_health(
         await get_sqlserver_target(
             database,
             connection_id,

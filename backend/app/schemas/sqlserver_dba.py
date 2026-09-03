@@ -165,3 +165,85 @@ class SqlServerSecurityResponse(BaseModel):
 
     warnings: list[str] = Field(default_factory=list)
     checked_at: datetime
+
+
+class SqlServerDatabaseHealth(BaseModel):
+    name: str | None = None
+    state: str | None = None
+    recovery_model: str | None = None
+    user_access: str | None = None
+    read_only: bool | None = None
+    auto_close: bool | None = None
+    auto_shrink: bool | None = None
+    log_reuse_wait: str | None = None
+    page_verify: str | None = None
+    compatibility_level: int | None = None
+
+
+class SqlServerLogHealth(BaseModel):
+    size_bytes: int | None = None
+    used_bytes: int | None = None
+    free_bytes: int | None = None
+    used_percent: float | None = None
+    status_code: int | None = None
+
+
+class SqlServerWorkloadHealth(BaseModel):
+    blocked: int | None = None
+    long_running: int | None = None
+    longest_request_ms: int | None = None
+    long_running_threshold_seconds: int = 300
+
+
+class SqlServerTempDbFile(BaseModel):
+    name: str
+    physical_name: str | None = None
+    file_type: str
+    allocated_bytes: int
+    used_bytes: int | None = None
+    free_bytes: int | None = None
+    used_percent: float | None = None
+
+
+class SqlServerTempDbHealth(BaseModel):
+    allocated_bytes: int | None = None
+    used_bytes: int | None = None
+    free_bytes: int | None = None
+    used_percent: float | None = None
+    files: list[SqlServerTempDbFile] = Field(default_factory=list)
+
+
+class SqlServerAgentJob(BaseModel):
+    job_id: str
+    name: str
+    enabled: bool = True
+    owner: str | None = None
+    description: str | None = None
+    last_status: str
+    # SQL Agent run_date/run_time are server-local values with no persisted
+    # timezone offset. The UI labels this accordingly.
+    last_run_at: datetime | None = None
+    last_duration_seconds: int | None = None
+    last_message: str | None = None
+    running: bool = False
+
+
+class SqlServerAgentHealth(BaseModel):
+    available: bool = True
+    enabled_jobs: int | None = None
+    failed_jobs: int | None = None
+    running_jobs: int | None = None
+    jobs: list[SqlServerAgentJob] = Field(default_factory=list)
+
+
+class SqlServerHealthResponse(BaseModel):
+    available: bool = True
+    database_name: str | None = None
+    generation: str | None = None
+    database: SqlServerDatabaseHealth = Field(default_factory=SqlServerDatabaseHealth)
+    transaction_log: SqlServerLogHealth = Field(default_factory=SqlServerLogHealth)
+    workload: SqlServerWorkloadHealth = Field(default_factory=SqlServerWorkloadHealth)
+    tempdb: SqlServerTempDbHealth = Field(default_factory=SqlServerTempDbHealth)
+    agent: SqlServerAgentHealth = Field(default_factory=SqlServerAgentHealth)
+    warnings: list[str] = Field(default_factory=list)
+    checked_at: datetime

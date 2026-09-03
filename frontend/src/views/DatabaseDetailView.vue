@@ -10,6 +10,7 @@ import DatabaseHistoryPanel from '@/components/databases/DatabaseHistoryPanel.vu
 import DatabaseBackupsPanel from '@/components/databases/DatabaseBackupsPanel.vue'
 import DatabaseUsersPanel from '@/components/databases/DatabaseUsersPanel.vue'
 import DatabaseAccessPanel from '@/components/databases/DatabaseAccessPanel.vue'
+import SqlServerHealthPanel from '@/components/databases/sqlserver/SqlServerHealthPanel.vue'
 import { useServersStore } from '@/stores/servers'
 import { useAuthStore } from '@/stores/auth'
 import { hasPermission } from '@/core/permissions'
@@ -46,6 +47,7 @@ type DatabaseTab =
   | 'overview'
   | 'history'
   | 'backups'
+  | 'health'
   | 'sessions'
   | 'storage'
   | 'activity'
@@ -58,6 +60,7 @@ const visitedTabs = reactive<Record<DatabaseTab, boolean>>({
   overview: true,
   history: false,
   backups: false,
+  health: false,
   sessions: false,
   storage: false,
   activity: false,
@@ -97,6 +100,10 @@ const supportsDbaUtilities = computed(() =>
   ['oracle', 'sqlserver'].includes(
     connection.value?.engine ?? '',
   ),
+)
+
+const supportsSqlServerHealth = computed(() =>
+  connection.value?.engine === 'sqlserver',
 )
 
 const supportsUsersAndSchemas = computed(() =>
@@ -233,6 +240,14 @@ onMounted(async () => {
           Backups
         </button>
 
+        <button
+          v-if="supportsSqlServerHealth"
+          :class="{ active: activeTab === 'health' }"
+          @click="selectTab('health')"
+        >
+          Health
+        </button>
+
         <button :disabled="!supportsDbaUtilities" :class="{
           active: activeTab === 'sessions',
         }" @click="selectTab('sessions')">
@@ -325,6 +340,13 @@ onMounted(async () => {
         v-if="visitedTabs.backups"
         v-show="activeTab === 'backups'"
         :key="`backups-${connection.id}`"
+        :connection-id="connection.id"
+      />
+
+      <SqlServerHealthPanel
+        v-if="visitedTabs.health && connection.engine === 'sqlserver'"
+        v-show="activeTab === 'health'"
+        :key="`health-${connection.id}`"
         :connection-id="connection.id"
       />
 

@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 from pymongo import UpdateOne
 
 from app.connectors.oracle_telemetry import collect_oracle_telemetry
+from app.connectors.sqlserver_health import get_sqlserver_health
 from app.core.collections import (
     METRICS_COLLECTION_NAME,
     ORACLE_SQL_TEXT_COLLECTION_NAME,
@@ -53,6 +54,8 @@ class CollectorDeltaState:
     session_cpu: dict[str, dict[tuple[int, int], int]] = field(default_factory=dict)
     wait_stats: dict[str, dict[str, tuple[int, int]]] = field(default_factory=dict)
     last_storage_at: dict[str, datetime] = field(default_factory=dict)
+    last_sqlserver_health_at: dict[str, datetime] = field(default_factory=dict)
+    sqlserver_health: dict[str, dict] = field(default_factory=dict)
     last_server_at: dict[str, datetime] = field(default_factory=dict)
 
     def reset_connection(self, connection_id: str) -> None:
@@ -60,6 +63,8 @@ class CollectorDeltaState:
         self.sql_stats.pop(connection_id, None)
         self.session_cpu.pop(connection_id, None)
         self.wait_stats.pop(connection_id, None)
+        self.last_sqlserver_health_at.pop(connection_id, None)
+        self.sqlserver_health.pop(connection_id, None)
 
     def storage_due(self, connection_id: str, now: datetime) -> bool:
         previous = self.last_storage_at.get(connection_id)
@@ -68,6 +73,14 @@ class CollectorDeltaState:
         return (
             now - previous
         ).total_seconds() >= settings.oracle_storage_interval_seconds
+
+    def sqlserver_health_due(self, connection_id: str, now: datetime) -> bool:
+        previous = self.last_sqlserver_health_at.get(connection_id)
+        if previous is None:
+            return True
+        return (
+            now - previous
+        ).total_seconds() >= settings.sqlserver_health_interval_seconds
 
     def server_due(self, server_id: str, now: datetime) -> bool:
         previous = self.last_server_at.get(server_id)
@@ -360,6 +373,53 @@ async def _cache_sql_texts(database, connection_id: str, items: list[dict]) -> N
         )
 
 
+def _compact_sqlserver_health(health: dict) -> dict:
+    database = health.get("database") or {}
+    log = health.get("transaction_log") or {}
+    workload = health.get("workload") or {}
+    tempdb = health.get("tempdb") or {}
+    agent = health.get("agent") or {}
+    failed_jobs = [
+        {
+            "name": item.get("name"),
+            "status": item.get("last_status"),
+            "last_run_at": (
+                item.get("last_run_at").isoformat()
+                if hasattr(item.get("last_run_at"), "isoformat")
+                else item.get("last_run_at")
+            ),
+        }
+        for item in (agent.get("jobs") or [])
+        if item.get("enabled")
+        and item.get("last_status") in {"failed", "canceled"}
+    ][:10]
+
+    return {
+        "health_checked_at": health.get("checked_at"),
+        "database_name": health.get("database_name"),
+        "generation": health.get("generation"),
+        "database_state": database.get("state"),
+        "recovery_model": database.get("recovery_model"),
+        "log_reuse_wait": database.get("log_reuse_wait"),
+        "log_size_bytes": log.get("size_bytes"),
+        "log_used_bytes": log.get("used_bytes"),
+        "log_used_percent": log.get("used_percent"),
+        "blocked": workload.get("blocked"),
+        "long_running": workload.get("long_running"),
+        "longest_request_ms": workload.get("longest_request_ms"),
+        "long_running_threshold_seconds": workload.get("long_running_threshold_seconds"),
+        "tempdb_allocated_bytes": tempdb.get("allocated_bytes"),
+        "tempdb_used_bytes": tempdb.get("used_bytes"),
+        "tempdb_used_percent": tempdb.get("used_percent"),
+        "agent_available": agent.get("available"),
+        "agent_enabled_jobs": agent.get("enabled_jobs"),
+        "agent_failed_jobs": agent.get("failed_jobs"),
+        "agent_running_jobs": agent.get("running_jobs"),
+        "failed_jobs": failed_jobs,
+        "warnings": health.get("warnings") or [],
+    }
+
+
 async def _collect_database_sample(
     database,
     connection: dict,
@@ -367,6 +427,36 @@ async def _collect_database_sample(
 ) -> dict:
     connection_id = str(connection["_id"])
     engine = connection["engine"]
+
+    if engine == "sqlserver":
+        overview = await collect_database_overview(connection)
+        sample = build_metric_sample(overview)
+        if overview.get("status") == "unreachable":
+            state.reset_connection(connection_id)
+            return sample
+
+        now = _utcnow()
+        if state.sqlserver_health_due(connection_id, now):
+            try:
+                health = await get_sqlserver_health(connection)
+                compact = _compact_sqlserver_health(health)
+                state.sqlserver_health[connection_id] = compact
+                state.last_sqlserver_health_at[connection_id] = now
+            except Exception as exc:
+                logger.warning(
+                    "SQL Server operational telemetry unavailable connection_id=%s: %s",
+                    connection_id,
+                    exc,
+                )
+                # Availability is already proven by Overview. Do not turn a
+                # permission/secondary telemetry problem into a false outage.
+                sample["warnings"].append(
+                    "SQL Server operational health snapshot unavailable."
+                )
+
+        if connection_id in state.sqlserver_health:
+            sample["sqlserver"] = state.sqlserver_health[connection_id]
+        return sample
 
     if engine != "oracle":
         overview = await collect_database_overview(connection)

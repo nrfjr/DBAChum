@@ -38,12 +38,17 @@ type HistoryMetric =
   | 'logical_reads'
   | 'physical_reads'
   | 'latency'
+  | 'log_used'
+  | 'long_running'
+  | 'tempdb_used'
+  | 'failed_jobs'
 
 interface MetricDefinition {
   key: HistoryMetric
   label: string
   axis: string
   oracleOnly?: boolean
+  sqlserverOnly?: boolean
 }
 
 interface AggregatedSqlRow {
@@ -97,6 +102,7 @@ let refreshTimer: ReturnType<typeof setInterval> | undefined
 
 const history = computed(() => metricsStore.histories[props.connectionId])
 const isOracle = computed(() => history.value?.engine === 'oracle')
+const isSqlServer = computed(() => history.value?.engine === 'sqlserver')
 
 const defaultMetricDefinition: MetricDefinition = {
   key: 'active',
@@ -113,13 +119,20 @@ const metricDefinitions: MetricDefinition[] = [
   { key: 'logical_reads', label: 'Logical reads', axis: 'Logical reads / sample', oracleOnly: true },
   { key: 'physical_reads', label: 'Physical reads', axis: 'Physical reads / sample', oracleOnly: true },
   { key: 'latency', label: 'Latency', axis: 'Latency (ms)' },
+  { key: 'log_used', label: 'Log used', axis: 'Transaction log used (%)', sqlserverOnly: true },
+  { key: 'long_running', label: 'Long running', axis: 'Long-running requests', sqlserverOnly: true },
+  { key: 'tempdb_used', label: 'tempdb used', axis: 'tempdb data used (%)', sqlserverOnly: true },
+  { key: 'failed_jobs', label: 'Failed jobs', axis: 'Failed SQL Agent jobs', sqlserverOnly: true },
 ]
 
 const availableMetrics = computed(() =>
-  metricDefinitions.filter((item) => !item.oracleOnly || isOracle.value),
+  metricDefinitions.filter((item) =>
+    (!item.oracleOnly || isOracle.value) &&
+    (!item.sqlserverOnly || isSqlServer.value),
+  ),
 )
 
-watch(isOracle, () => {
+watch([isOracle, isSqlServer], () => {
   if (!availableMetrics.value.some((item) => item.key === metric.value)) {
     metric.value = 'active'
   }
@@ -242,6 +255,14 @@ function getMetricValue(item: DatabaseMetricSample): number | null {
       return item.oracle?.system_deltas?.logical_reads ?? null
     case 'physical_reads':
       return item.oracle?.system_deltas?.physical_reads ?? null
+    case 'log_used':
+      return item.sqlserver?.log_used_percent ?? null
+    case 'long_running':
+      return item.sqlserver?.long_running ?? null
+    case 'tempdb_used':
+      return item.sqlserver?.tempdb_used_percent ?? null
+    case 'failed_jobs':
+      return item.sqlserver?.agent_failed_jobs ?? null
   }
 }
 
@@ -288,6 +309,7 @@ const chartOption = computed(() => {
         if (value === null || value === undefined) return 'Unavailable'
         if (metric.value === 'latency') return `${formatNumber(value, 1)} ms`
         if (metric.value === 'cpu') return `${formatNumber(value, 3)} s`
+        if (['log_used', 'tempdb_used'].includes(metric.value)) return `${formatNumber(value, 1)}%`
         return formatNumber(value, 1)
       },
     },
@@ -301,7 +323,8 @@ const chartOption = computed(() => {
     yAxis: {
       type: 'value',
       min: 0,
-      minInterval: ['active', 'connections', 'blocked', 'executions', 'logical_reads', 'physical_reads'].includes(metric.value) ? 1 : undefined,
+      minInterval: ['active', 'connections', 'blocked', 'executions', 'logical_reads', 'physical_reads', 'long_running', 'failed_jobs'].includes(metric.value) ? 1 : undefined,
+      max: ['log_used', 'tempdb_used'].includes(metric.value) ? 100 : undefined,
       name: currentMetric.value.axis,
       axisLabel: { color: textColor },
     },

@@ -127,6 +127,87 @@ export interface SqlServerSecurityResponse {
   checked_at: string
 }
 
+
+export interface SqlServerDatabaseHealth {
+  name: string | null
+  state: string | null
+  recovery_model: string | null
+  user_access: string | null
+  read_only: boolean | null
+  auto_close: boolean | null
+  auto_shrink: boolean | null
+  log_reuse_wait: string | null
+  page_verify: string | null
+  compatibility_level: number | null
+}
+
+export interface SqlServerLogHealth {
+  size_bytes: number | null
+  used_bytes: number | null
+  free_bytes: number | null
+  used_percent: number | null
+  status_code: number | null
+}
+
+export interface SqlServerWorkloadHealth {
+  blocked: number | null
+  long_running: number | null
+  longest_request_ms: number | null
+  long_running_threshold_seconds: number
+}
+
+export interface SqlServerTempDbFile {
+  name: string
+  physical_name: string | null
+  file_type: string
+  allocated_bytes: number
+  used_bytes: number | null
+  free_bytes: number | null
+  used_percent: number | null
+}
+
+export interface SqlServerTempDbHealth {
+  allocated_bytes: number | null
+  used_bytes: number | null
+  free_bytes: number | null
+  used_percent: number | null
+  files: SqlServerTempDbFile[]
+}
+
+export interface SqlServerAgentJob {
+  job_id: string
+  name: string
+  enabled: boolean
+  owner: string | null
+  description: string | null
+  last_status: string
+  last_run_at: string | null
+  last_duration_seconds: number | null
+  last_message: string | null
+  running: boolean
+}
+
+export interface SqlServerAgentHealth {
+  available: boolean
+  enabled_jobs: number | null
+  failed_jobs: number | null
+  running_jobs: number | null
+  jobs: SqlServerAgentJob[]
+}
+
+export interface SqlServerHealthResponse {
+  available: boolean
+  database_name: string | null
+  generation: string | null
+  database: SqlServerDatabaseHealth
+  transaction_log: SqlServerLogHealth
+  workload: SqlServerWorkloadHealth
+  tempdb: SqlServerTempDbHealth
+  agent: SqlServerAgentHealth
+  warnings: string[]
+  checked_at: string
+}
+
 export interface SqlServerActivityResponse {
   available: boolean
   items: SqlServerActivityItem[]
@@ -159,16 +240,19 @@ export const useSqlServerDbaStore = defineStore('sqlServerDba', {
     storage: {} as Record<string, SqlServerStorageResponse>,
     activity: {} as Record<string, SqlServerActivityResponse>,
     security: {} as Record<string, SqlServerSecurityResponse>,
+    health: {} as Record<string, SqlServerHealthResponse>,
 
     loadingSessions: {} as Record<string, boolean>,
     loadingStorage: {} as Record<string, boolean>,
     loadingActivity: {} as Record<string, boolean>,
     loadingSecurity: {} as Record<string, boolean>,
+    loadingHealth: {} as Record<string, boolean>,
 
     sessionsError: {} as Record<string, string | null>,
     storageError: {} as Record<string, string | null>,
     activityError: {} as Record<string, string | null>,
     securityError: {} as Record<string, string | null>,
+    healthError: {} as Record<string, string | null>,
   }),
 
   actions: {
@@ -223,6 +307,26 @@ export const useSqlServerDbaStore = defineStore('sqlServerDba', {
             : 'Unable to load SQL Server activity.'
       } finally {
         this.loadingActivity[id] = false
+      }
+    },
+
+    async loadHealth(id: string, force = false) {
+      if (!force && this.health[id]) return
+
+      this.loadingHealth[id] = true
+      this.healthError[id] = null
+
+      try {
+        this.health[id] = await apiRequest<SqlServerHealthResponse>(
+          `/databases/${id}/sqlserver/health`,
+        )
+      } catch (error) {
+        this.healthError[id] =
+          error instanceof Error
+            ? error.message
+            : 'Unable to load SQL Server operational health.'
+      } finally {
+        this.loadingHealth[id] = false
       }
     },
 

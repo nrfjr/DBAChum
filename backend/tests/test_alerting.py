@@ -98,3 +98,45 @@ def test_server_filesystem_thresholds_are_evaluated_per_mount():
     rules = {item.rule_key: item for item in server_alert_conditions(server, sample)}
     assert rules["filesystem:/arch"].active is True
     assert rules["filesystem:/arch"].severity == "critical"
+
+
+def test_sqlserver_operational_alerts_use_health_snapshot():
+    connection = {"_id": "db2", "name": "ERP SQL", "engine": "sqlserver"}
+    sample = {
+        "status": "online",
+        "blocked": 0,
+        "active": 4,
+        "sqlserver": {
+            "database_state": "ONLINE",
+            "recovery_model": "FULL",
+            "log_reuse_wait": "LOG_BACKUP",
+            "log_size_bytes": 10_000,
+            "log_used_percent": 95.0,
+            "tempdb_allocated_bytes": 20_000,
+            "tempdb_used_percent": 20.0,
+            "agent_available": True,
+            "agent_failed_jobs": 1,
+            "failed_jobs": [{"name": "Nightly backup", "status": "failed"}],
+        },
+    }
+    rules = {item.rule_key: item for item in database_alert_conditions(connection, sample)}
+    assert rules["sqlserver:database_state"].active is False
+    assert rules["sqlserver:transaction_log"].active is True
+    assert rules["sqlserver:transaction_log"].severity == "critical"
+    assert rules["sqlserver:agent_failures"].active is True
+    assert rules["sqlserver:tempdb"].active is False
+
+
+def test_sqlserver_database_state_alert_is_immediate():
+    connection = {"_id": "db3", "name": "Legacy", "engine": "sqlserver"}
+    sample = {
+        "status": "online",
+        "blocked": 0,
+        "active": 0,
+        "sqlserver": {"database_state": "SUSPECT"},
+    }
+    rules = {item.rule_key: item for item in database_alert_conditions(connection, sample)}
+    state = rules["sqlserver:database_state"]
+    assert state.active is True
+    assert state.severity == "critical"
+    assert state.required_samples == 1

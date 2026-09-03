@@ -4101,3 +4101,99 @@ button {
     grid-template-columns: 1fr;
   }
 }
+
+/* Phase 7A.5 SQL Server operational health */
+.sqlserver-health-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 0.8rem;
+  margin: 1rem 0 1.25rem;
+}
+
+.sqlserver-health-summary > div {
+  display: grid;
+  gap: 0.25rem;
+  padding: 0.9rem 1rem;
+  border: 1px solid var(--border-color, var(--border));
+  border-radius: 0.75rem;
+  background: var(--surface);
+}
+
+.sqlserver-health-summary span,
+.sqlserver-health-summary small,
+.sqlserver-health-details span,
+.sqlserver-health-section-header p {
+  color: var(--text-muted);
+}
+
+.sqlserver-health-summary strong {
+  font-size: 1.15rem;
+}
+
+.sqlserver-health-value.healthy,
+.sqlserver-health-state.healthy {
+  color: var(--success);
+}
+
+.sqlserver-health-value.warning,
+.sqlserver-health-state.warning {
+  color: var(--warning);
+}
+
+.sqlserver-health-value.critical,
+.sqlserver-health-state.critical {
+  color: var(--danger);
+}
+
+.sqlserver-health-details {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(175px, 1fr));
+  gap: 0.7rem;
+}
+
+.sqlserver-health-details > div {
+  display: grid;
+  gap: 0.2rem;
+  padding: 0.7rem 0.8rem;
+  border: 1px solid var(--border-color, var(--border));
+  border-radius: 0.65rem;
+  background: var(--surface);
+}
+
+.sqlserver-health-details strong {
+  overflow-wrap: anywhere;
+}
+
+.sqlserver-health-section-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.6rem;
+}
+
+.sqlserver-health-section-header h3,
+.sqlserver-health-section-header p {
+  margin: 0;
+}
+
+.sqlserver-health-section-header p {
+  margin-top: 0.2rem;
+  font-size: 0.82rem;
+}
+
+.sqlserver-health-state {
+  display: inline-flex;
+  padding: 0.2rem 0.5rem;
+  border-radius: 999px;
+  background: var(--surface-muted);
+  font-size: 0.76rem;
+  font-weight: 600;
+}
+
+.sqlserver-health-running {
+  display: block;
+  margin-top: 0.15rem;
+  color: var(--warning);
+  font-size: 0.72rem;
+}

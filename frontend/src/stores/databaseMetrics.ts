@@ -93,6 +93,37 @@ export interface OracleMetricSample {
   storage?: OracleMetricStorage
 }
 
+export interface SqlServerMetricFailedJob {
+  name?: string | null
+  status?: string | null
+  last_run_at?: string | null
+}
+
+export interface SqlServerMetricSample {
+  health_checked_at?: string | null
+  database_name?: string | null
+  generation?: string | null
+  database_state?: string | null
+  recovery_model?: string | null
+  log_reuse_wait?: string | null
+  log_size_bytes?: number | null
+  log_used_bytes?: number | null
+  log_used_percent?: number | null
+  blocked?: number | null
+  long_running?: number | null
+  longest_request_ms?: number | null
+  long_running_threshold_seconds?: number | null
+  tempdb_allocated_bytes?: number | null
+  tempdb_used_bytes?: number | null
+  tempdb_used_percent?: number | null
+  agent_available?: boolean | null
+  agent_enabled_jobs?: number | null
+  agent_failed_jobs?: number | null
+  agent_running_jobs?: number | null
+  failed_jobs?: SqlServerMetricFailedJob[]
+  warnings?: string[]
+}
+
 export interface DatabaseMetricSample {
   collected_at: string
   checked_at: string | null
@@ -110,6 +141,7 @@ export interface DatabaseMetricSample {
   warnings: string[]
   error: string | null
   oracle?: OracleMetricSample | null
+  sqlserver?: SqlServerMetricSample | null
 }
 
 export interface OracleMetricSqlText {

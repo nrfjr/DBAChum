@@ -169,3 +169,11 @@ async def test_collect_database_metrics_once_for_non_oracle(monkeypatch):
     assert result.online_count == 2
     assert result.failed_count == 0
     assert len(database.metric_samples.inserted) == 2
+
+
+def test_sqlserver_health_due_uses_operational_interval():
+    state = metrics_collector.CollectorDeltaState()
+    now = datetime.now(timezone.utc)
+    assert state.sqlserver_health_due("sql-1", now)
+    state.last_sqlserver_health_at["sql-1"] = now
+    assert not state.sqlserver_health_due("sql-1", now + timedelta(seconds=10))

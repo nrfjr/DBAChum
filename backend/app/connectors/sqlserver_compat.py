@@ -128,6 +128,13 @@ def sqlserver_capabilities(version: SqlServerVersion) -> dict[str, bool]:
         "live_sql_text": modern,
         "backup_history_msdb": True,
         "backup_media_history": True,
+        # Operational monitoring keeps a legacy-safe core: SQLPERF LOGSPACE,
+        # SQL Agent's msdb tables, and dbo.sysfiles all predate the DMV era.
+        "dbcc_logspace": True,
+        "sql_agent_tables": True,
+        "sql_agent_activity": major is not None and major >= 9,
+        "tempdb_sysfiles": True,
+        "database_state_catalog": major is not None and major >= 9,
         "datediff_big": major is not None and major >= 13,
         "compression_metadata": major is not None and major >= 10,
     }
