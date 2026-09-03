@@ -343,11 +343,12 @@ async def test_database_connection(
 
     if engine == "mysql":
         result = await test_mysql_connection(connection)
+        product = result.get("database_product") or "MySQL"
 
         return {
             "success": True,
             "engine": "mysql",
-            "message": "MySQL connection successful.",
+            "message": f"{product} connection successful.",
             **result,
         }
 

@@ -38,6 +38,21 @@ class DatabaseOverviewResponse(BaseModel):
     connection_provider: str | None = None
     connection_driver: str | None = None
     connection_encrypt: str | None = None
+
+    # MySQL-family identity/capability details. These stay optional on the
+    # common response so Oracle and SQL Server are not forced into MySQL
+    # semantics.
+    database_product: str | None = None
+    version_comment: str | None = None
+    server_hostname: str | None = None
+    server_port: int | None = None
+    database_count: int | None = None
+    max_connections: int | None = None
+    questions: int | None = None
+    slow_queries: int | None = None
+    data_directory: str | None = None
+    performance_schema_enabled: bool | None = None
+
     capabilities: dict[str, bool] | None = None
 
     checked_at: datetime

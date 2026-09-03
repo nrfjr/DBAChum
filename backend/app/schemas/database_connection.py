@@ -132,5 +132,13 @@ class DatabaseConnectionTestResponse(BaseModel):
     sqlserver_generation: str | None = None
     sqlserver_provider: str | None = None
     sqlserver_driver: str | None = None
+
+    # Generic MySQL-family identity returned by connection tests.
+    database_product: str | None = None
+    database_generation: str | None = None
+    version_comment: str | None = None
+    server_hostname: str | None = None
+    server_port: int | None = None
+
     capabilities: dict[str, bool] | None = None
 

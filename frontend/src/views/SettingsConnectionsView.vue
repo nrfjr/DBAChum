@@ -297,12 +297,17 @@ async function testConnection(
 
     const details = [
       result.database_name,
+      result.database_product,
       result.database_version,
+      result.database_generation,
       result.sqlserver_generation,
       result.sqlserver_provider
         ? `provider: ${result.sqlserver_provider}`
         : null,
       result.sqlserver_driver,
+      result.server_hostname
+        ? `server: ${result.server_hostname}`
+        : null,
       result.oracle_auth_mode === 'sysdba'
         ? 'SYSDBA'
         : null,
@@ -336,7 +341,7 @@ function engineLabel(engine: DatabaseEngine) {
     case 'sqlserver':
       return 'SQL Server'
     case 'mysql':
-      return 'MySQL'
+      return 'MySQL / MariaDB'
   }
 }
 
@@ -476,7 +481,7 @@ onMounted(() => {
               <option value="sqlserver">
                 SQL Server
               </option>
-              <option value="mysql">MySQL</option>
+              <option value="mysql">MySQL / MariaDB</option>
             </select>
           </label>
 

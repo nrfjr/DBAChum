@@ -143,7 +143,7 @@ function engineLabel(engine: DatabaseEngine) {
     case 'sqlserver':
       return 'SQL Server'
     case 'mysql':
-      return 'MySQL'
+      return 'MySQL / MariaDB'
   }
 }
 
@@ -207,7 +207,11 @@ onMounted(async () => {
           <h1>{{ connection.name }}</h1>
 
           <p>
-            {{ engineLabel(connection.engine) }}
+            {{
+              connection.engine === 'mysql'
+                ? (overview?.database_product ?? 'MySQL')
+                : engineLabel(connection.engine)
+            }}
             ·
             {{ connection.host }}:{{ connection.port }}
           </p>
@@ -500,6 +504,68 @@ onMounted(async () => {
             <dt>Transport encryption</dt>
             <dd>{{ overview.connection_encrypt === 'yes' ? 'Enabled' : 'Disabled' }}</dd>
           </div>
+
+          <template v-if="connection.engine === 'mysql'">
+            <div v-if="overview?.database_product">
+              <dt>Server product</dt>
+              <dd>{{ overview.database_product }}</dd>
+            </div>
+
+            <div v-if="overview?.version_comment">
+              <dt>Distribution</dt>
+              <dd>{{ overview.version_comment }}</dd>
+            </div>
+
+            <div v-if="overview?.server_hostname">
+              <dt>Server hostname</dt>
+              <dd>{{ overview.server_hostname }}</dd>
+            </div>
+
+            <div v-if="overview?.server_port != null">
+              <dt>Server-reported port</dt>
+              <dd>{{ overview.server_port }}</dd>
+            </div>
+
+            <div v-if="overview?.database_count != null">
+              <dt>Visible databases</dt>
+              <dd>{{ overview.database_count }}</dd>
+            </div>
+
+            <div v-if="overview?.max_connections != null">
+              <dt>Max connections</dt>
+              <dd>{{ overview.max_connections }}</dd>
+            </div>
+
+            <div v-if="overview?.questions != null">
+              <dt>Questions since startup</dt>
+              <dd>{{ overview?.questions?.toLocaleString() ?? '—' }}</dd>
+            </div>
+
+            <div v-if="overview?.slow_queries != null">
+              <dt>Slow queries since startup</dt>
+              <dd>{{ overview?.slow_queries?.toLocaleString() ?? '—' }}</dd>
+            </div>
+
+            <div v-if="overview?.data_directory">
+              <dt>Data directory</dt>
+              <dd>{{ overview.data_directory }}</dd>
+            </div>
+
+            <div v-if="overview?.performance_schema_enabled != null">
+              <dt>Performance Schema</dt>
+              <dd>
+                {{ overview.performance_schema_enabled ? 'Enabled' : 'Disabled' }}
+                <template
+                  v-if="
+                    !overview.performance_schema_enabled
+                    && overview.capabilities?.performance_schema_present
+                  "
+                >
+                  · compatible fallbacks active
+                </template>
+              </dd>
+            </div>
+          </template>
 
           <div v-if="overview?.database_name">
             <dt>Database</dt>

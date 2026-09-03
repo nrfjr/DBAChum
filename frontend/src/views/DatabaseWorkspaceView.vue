@@ -26,7 +26,7 @@ function engineLabel(engine: DatabaseEngine) {
     case 'sqlserver':
       return 'SQL Server'
     case 'mysql':
-      return 'MySQL'
+      return 'MySQL / MariaDB'
   }
 }
 
@@ -197,7 +197,13 @@ onMounted(async () => {
           <div class="database-card-header">
             <div>
               <strong>{{ connection.name }}</strong>
-              <span>{{ engineLabel(connection.engine) }}</span>
+              <span>
+                {{
+                  connection.engine === 'mysql'
+                    ? (overviewFor(connection.id)?.database_product ?? 'MySQL')
+                    : engineLabel(connection.engine)
+                }}
+              </span>
             </div>
 
             <div class="database-card-status">

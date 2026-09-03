@@ -61,6 +61,11 @@ export interface DatabaseConnectionTestResult {
   sqlserver_generation: string | null
   sqlserver_provider: string | null
   sqlserver_driver: string | null
+  database_product: string | null
+  database_generation: string | null
+  version_comment: string | null
+  server_hostname: string | null
+  server_port: number | null
   capabilities: Record<string, boolean> | null
 }
 

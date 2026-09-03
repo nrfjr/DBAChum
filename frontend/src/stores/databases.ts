@@ -34,6 +34,18 @@ export interface DatabaseOverview {
   connection_provider: string | null
   connection_driver: string | null
   connection_encrypt: string | null
+
+  database_product: string | null
+  version_comment: string | null
+  server_hostname: string | null
+  server_port: number | null
+  database_count: number | null
+  max_connections: number | null
+  questions: number | null
+  slow_queries: number | null
+  data_directory: string | null
+  performance_schema_enabled: boolean | null
+
   capabilities: Record<string, boolean> | null
 
   checked_at: string
