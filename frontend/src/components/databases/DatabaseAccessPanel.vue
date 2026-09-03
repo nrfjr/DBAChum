@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import OracleAccessPrivilegesPanel from '@/components/databases/oracle/OracleAccessPrivilegesPanel.vue'
 import SqlServerAccessPanel from '@/components/databases/sqlserver/SqlServerAccessPanel.vue'
+import MySqlAccessPanel from '@/components/databases/mysql/MySqlAccessPanel.vue'
 
 import type { DatabaseEngine } from '@/stores/connections'
 
@@ -17,6 +18,10 @@ defineProps<{
   />
   <SqlServerAccessPanel
     v-else-if="engine === 'sqlserver'"
+    :connection-id="connectionId"
+  />
+  <MySqlAccessPanel
+    v-else-if="engine === 'mysql'"
     :connection-id="connectionId"
   />
 </template>

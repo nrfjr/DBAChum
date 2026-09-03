@@ -150,6 +150,61 @@ export interface MySqlHealthResponse {
   checked_at: string
 }
 
+export interface MySqlPrivilegeItem {
+  privilege: string
+  scope: string
+  grant_option: boolean
+}
+
+export interface MySqlElevatedFinding {
+  principal: string
+  severity: string
+  source: string
+  detail: string
+}
+
+export interface MySqlSecurityAccount {
+  user: string
+  host: string
+  account: string
+  auth_plugin: string | null
+  account_locked: boolean | null
+  password_expired: boolean | null
+  is_role: boolean
+  default_role: string | null
+  ssl_type: string | null
+  password_last_changed: string | null
+  current_identity: boolean
+  login_identity: string | null
+  wildcard_host: boolean
+  remote_host: boolean
+  grants_visible: boolean
+  grants: string[]
+  roles: string[]
+  privileges: MySqlPrivilegeItem[]
+  elevated_findings: MySqlElevatedFinding[]
+}
+
+export interface MySqlSecurityResponse {
+  available: boolean
+  database_name: string | null
+  scope: 'instance'
+  product: string | null
+  generation: string | null
+  metadata_source: string | null
+  grants_source: string
+  complete_account_list: boolean
+  account_count: number
+  anonymous_account_count: number
+  wildcard_host_count: number
+  role_account_count: number
+  accounts: MySqlSecurityAccount[]
+  elevated_findings: MySqlElevatedFinding[]
+  warnings: string[]
+  checked_at: string
+}
+
+
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL
 
 async function apiRequest<T>(path: string): Promise<T> {
@@ -174,16 +229,19 @@ export const useMySqlDbaStore = defineStore('mysqlDba', {
     storage: {} as Record<string, MySqlStorageResponse>,
     activity: {} as Record<string, MySqlActivityResponse>,
     health: {} as Record<string, MySqlHealthResponse>,
+    security: {} as Record<string, MySqlSecurityResponse>,
 
     loadingSessions: {} as Record<string, boolean>,
     loadingStorage: {} as Record<string, boolean>,
     loadingActivity: {} as Record<string, boolean>,
     loadingHealth: {} as Record<string, boolean>,
+    loadingSecurity: {} as Record<string, boolean>,
 
     sessionsError: {} as Record<string, string | null>,
     storageError: {} as Record<string, string | null>,
     activityError: {} as Record<string, string | null>,
     healthError: {} as Record<string, string | null>,
+    securityError: {} as Record<string, string | null>,
   }),
 
   actions: {
@@ -255,5 +313,24 @@ export const useMySqlDbaStore = defineStore('mysqlDba', {
         this.loadingHealth[id] = false
       }
     },
+
+    async loadSecurity(id: string, force = false) {
+      if (!force && this.security[id]) return
+      this.loadingSecurity[id] = true
+      this.securityError[id] = null
+      try {
+        this.security[id] = await apiRequest<MySqlSecurityResponse>(
+          `/databases/${id}/mysql/security`,
+        )
+      } catch (error) {
+        this.securityError[id] =
+          error instanceof Error
+            ? error.message
+            : 'Unable to load MySQL/MariaDB access metadata.'
+      } finally {
+        this.loadingSecurity[id] = false
+      }
+    },
   },
 })
+

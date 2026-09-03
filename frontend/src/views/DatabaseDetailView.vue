@@ -108,7 +108,7 @@ const supportsOperationalHealth = computed(() =>
 )
 
 const supportsUsersAndSchemas = computed(() =>
-  ['oracle', 'sqlserver'].includes(connection.value?.engine ?? '') &&
+  ['oracle', 'sqlserver', 'mysql'].includes(connection.value?.engine ?? '') &&
   hasPermission(
     authStore.user?.role,
     'database:operate',
@@ -116,7 +116,7 @@ const supportsUsersAndSchemas = computed(() =>
 )
 
 const supportsAccessAndPrivileges = computed(() =>
-  ['oracle', 'sqlserver'].includes(connection.value?.engine ?? '') &&
+  ['oracle', 'sqlserver', 'mysql'].includes(connection.value?.engine ?? '') &&
   hasPermission(
     authStore.user?.role,
     'database:operate',
@@ -278,7 +278,7 @@ onMounted(async () => {
           }"
           @click="selectTab('users')"
         >
-          {{ connection.engine === 'sqlserver' ? 'Users & Principals' : 'Users & Schemas' }}
+          {{ connection.engine === 'sqlserver' ? 'Users & Principals' : connection.engine === 'mysql' ? 'Users & Hosts' : 'Users & Schemas' }}
         </button>
 
         <button
@@ -288,7 +288,7 @@ onMounted(async () => {
           }"
           @click="selectTab('access')"
         >
-          Access &amp; Privileges
+          {{ connection.engine === 'mysql' ? 'Access & Grants' : 'Access & Privileges' }}
         </button>
       </nav>
 

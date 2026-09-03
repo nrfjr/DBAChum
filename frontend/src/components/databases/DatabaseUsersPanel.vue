@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import OracleUsersPanel from '@/components/databases/oracle/OracleUsersPanel.vue'
 import SqlServerUsersPanel from '@/components/databases/sqlserver/SqlServerUsersPanel.vue'
+import MySqlUsersPanel from '@/components/databases/mysql/MySqlUsersPanel.vue'
 
 import type { DatabaseEngine } from '@/stores/connections'
 
@@ -19,6 +20,10 @@ defineProps<{
   />
   <SqlServerUsersPanel
     v-else-if="engine === 'sqlserver'"
+    :connection-id="connectionId"
+  />
+  <MySqlUsersPanel
+    v-else-if="engine === 'mysql'"
     :connection-id="connectionId"
   />
 </template>

@@ -151,3 +151,57 @@ class MySqlHealthResponse(BaseModel):
     server: MySqlServerHealth
     warnings: list[str] = Field(default_factory=list)
     checked_at: datetime
+
+
+class MySqlPrivilegeItem(BaseModel):
+    privilege: str
+    scope: str
+    grant_option: bool = False
+
+
+class MySqlElevatedFinding(BaseModel):
+    principal: str
+    severity: str
+    source: str
+    detail: str
+
+
+class MySqlAccountItem(BaseModel):
+    user: str
+    host: str
+    account: str
+    auth_plugin: str | None = None
+    account_locked: bool | None = None
+    password_expired: bool | None = None
+    is_role: bool = False
+    default_role: str | None = None
+    ssl_type: str | None = None
+    password_last_changed: datetime | None = None
+    current_identity: bool = False
+    login_identity: str | None = None
+    wildcard_host: bool = False
+    remote_host: bool = False
+    grants_visible: bool = False
+    grants: list[str] = Field(default_factory=list)
+    roles: list[str] = Field(default_factory=list)
+    privileges: list[MySqlPrivilegeItem] = Field(default_factory=list)
+    elevated_findings: list[MySqlElevatedFinding] = Field(default_factory=list)
+
+
+class MySqlSecurityResponse(BaseModel):
+    available: bool = True
+    database_name: str | None = None
+    scope: str = "instance"
+    product: str | None = None
+    generation: str | None = None
+    metadata_source: str | None = None
+    grants_source: str = "SHOW GRANTS"
+    complete_account_list: bool = False
+    account_count: int = 0
+    anonymous_account_count: int = 0
+    wildcard_host_count: int = 0
+    role_account_count: int = 0
+    accounts: list[MySqlAccountItem] = Field(default_factory=list)
+    elevated_findings: list[MySqlElevatedFinding] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    checked_at: datetime

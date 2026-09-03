@@ -10,6 +10,9 @@ from app.connectors.mysql_sessions import (
 from app.connectors.mysql_storage import (
     get_mysql_storage,
 )
+from app.connectors.mysql_security import (
+    get_mysql_security,
+)
 from app.core.exceptions import AppError
 from app.services.database_connections import (
     get_database_connection,
@@ -76,6 +79,18 @@ async def load_mysql_health(
     connection_id: str,
 ):
     return await get_mysql_health(
+        await get_mysql_target(
+            database,
+            connection_id,
+        )
+    )
+
+
+async def load_mysql_security(
+    database,
+    connection_id: str,
+):
+    return await get_mysql_security(
         await get_mysql_target(
             database,
             connection_id,

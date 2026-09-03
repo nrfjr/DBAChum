@@ -6,6 +6,7 @@ from app.schemas.mysql_dba import (
     MySqlHealthResponse,
     MySqlSessionsResponse,
     MySqlStorageResponse,
+    MySqlSecurityResponse,
 )
 from app.schemas.user import UserResponse
 from app.services.mysql_dba import (
@@ -13,6 +14,7 @@ from app.services.mysql_dba import (
     load_mysql_health,
     load_mysql_sessions,
     load_mysql_storage,
+    load_mysql_security,
 )
 from app.core.permissions import Permission
 from app.dependencies.permissions import require_permission
@@ -78,6 +80,21 @@ async def mysql_health(
     current_user: UserResponse = Depends(require_permission(Permission.MONITOR_READ)),
 ):
     return await load_mysql_health(
+        request.app.state.database,
+        connection_id,
+    )
+
+
+@router.get(
+    "/{connection_id}/mysql/security",
+    response_model=MySqlSecurityResponse,
+)
+async def mysql_security(
+    connection_id: str,
+    request: Request,
+    current_user: UserResponse = Depends(require_permission(Permission.DBA_OPERATE)),
+):
+    return await load_mysql_security(
         request.app.state.database,
         connection_id,
     )
