@@ -1,7 +1,8 @@
+import asyncio
 import logging
 import time
 
-import mysql.connector.aio as mysql_aio
+import mysql.connector as mysql_connector
 from mysql.connector import Error as MySQLError
 
 from app.connectors.mysql_compat import mysql_capabilities, parse_mysql_version
@@ -27,6 +28,7 @@ def mysql_connect_kwargs(connection: dict) -> dict:
         "user": connection["username"],
         "password": decrypt_secret(encrypted_password),
         "connection_timeout": 5,
+        "autocommit": True,
     }
 
     if connection.get("database"):
@@ -35,17 +37,15 @@ def mysql_connect_kwargs(connection: dict) -> dict:
     return kwargs
 
 
-async def _mysql_status_value(
+def _mysql_status_value(
     cursor,
     variable_name: str,
     metric_name: str,
     warnings: list[str],
 ):
     try:
-        await cursor.execute(
-            f"SHOW GLOBAL STATUS LIKE '{variable_name}'"
-        )
-        row = await cursor.fetchone()
+        cursor.execute(f"SHOW GLOBAL STATUS LIKE '{variable_name}'")
+        row = cursor.fetchone()
         if row is None:
             return None
         return int(row[1])
@@ -59,17 +59,15 @@ async def _mysql_status_value(
         return None
 
 
-async def _mysql_variable_value(
+def _mysql_variable_value(
     cursor,
     variable_name: str,
     metric_name: str,
     warnings: list[str],
 ):
     try:
-        await cursor.execute(
-            f"SHOW GLOBAL VARIABLES LIKE '{variable_name}'"
-        )
-        row = await cursor.fetchone()
+        cursor.execute(f"SHOW GLOBAL VARIABLES LIKE '{variable_name}'")
+        row = cursor.fetchone()
         if row is None:
             return None
         return row[1]
@@ -83,15 +81,15 @@ async def _mysql_variable_value(
         return None
 
 
-async def _mysql_scalar(
+def _mysql_scalar(
     cursor,
     sql: str,
     metric_name: str,
     warnings: list[str],
 ):
     try:
-        await cursor.execute(sql)
-        row = await cursor.fetchone()
+        cursor.execute(sql)
+        row = cursor.fetchone()
         if row is None:
             return None
         return row[0]
@@ -105,13 +103,13 @@ async def _mysql_scalar(
         return None
 
 
-async def _schema_object_exists(
+def _schema_object_exists(
     cursor,
     schema_name: str,
     object_name: str,
 ) -> bool:
     try:
-        await cursor.execute(
+        cursor.execute(
             """
             SELECT COUNT(*)
             FROM information_schema.tables
@@ -120,15 +118,15 @@ async def _schema_object_exists(
             """,
             (schema_name, object_name),
         )
-        row = await cursor.fetchone()
+        row = cursor.fetchone()
         return bool(row and int(row[0] or 0) > 0)
     except MySQLError:
         return False
 
 
-async def _schema_exists(cursor, schema_name: str) -> bool:
+def _schema_exists(cursor, schema_name: str) -> bool:
     try:
-        await cursor.execute(
+        cursor.execute(
             """
             SELECT COUNT(*)
             FROM information_schema.schemata
@@ -136,13 +134,13 @@ async def _schema_exists(cursor, schema_name: str) -> bool:
             """,
             (schema_name,),
         )
-        row = await cursor.fetchone()
+        row = cursor.fetchone()
         return bool(row and int(row[0] or 0) > 0)
     except MySQLError:
         return False
 
 
-async def probe_mysql_capabilities(
+def probe_mysql_capabilities(
     cursor,
     version_info,
 ) -> dict[str, bool]:
@@ -151,15 +149,13 @@ async def probe_mysql_capabilities(
 
     performance_schema_value = None
     try:
-        await cursor.execute(
-            "SHOW GLOBAL VARIABLES LIKE 'performance_schema'"
-        )
-        row = await cursor.fetchone()
+        cursor.execute("SHOW GLOBAL VARIABLES LIKE 'performance_schema'")
+        row = cursor.fetchone()
         performance_schema_value = row[1] if row else None
     except MySQLError:
         pass
 
-    performance_schema_present = await _schema_exists(
+    performance_schema_present = _schema_exists(
         cursor,
         "performance_schema",
     )
@@ -167,32 +163,20 @@ async def probe_mysql_capabilities(
         performance_schema_value or ""
     ).strip().upper() in {"ON", "1", "YES", "TRUE"}
 
-    capabilities["performance_schema_present"] = (
-        performance_schema_present
-    )
-    capabilities["performance_schema_enabled"] = (
-        performance_schema_enabled
-    )
-    # The short legacy key means DBAChum can actually use Performance Schema
-    # now, not merely that this server version theoretically supports it.
+    capabilities["performance_schema_present"] = performance_schema_present
+    capabilities["performance_schema_enabled"] = performance_schema_enabled
     capabilities["performance_schema"] = (
-        performance_schema_present
-        and performance_schema_enabled
+        performance_schema_present and performance_schema_enabled
     )
 
-    capabilities["information_schema_innodb_trx"] = (
-        await _schema_object_exists(
-            cursor,
-            "information_schema",
-            "innodb_trx",
-        )
+    capabilities["information_schema_innodb_trx"] = _schema_object_exists(
+        cursor,
+        "information_schema",
+        "innodb_trx",
     )
 
-    # MariaDB 10.4 moved account data behind mysql.global_priv. Detection is
-    # intentionally best-effort because restricted monitor accounts may not
-    # be able to see mysql's system tables through INFORMATION_SCHEMA.
     if version_info.mariadb:
-        detected_global_priv = await _schema_object_exists(
+        detected_global_priv = _schema_object_exists(
             cursor,
             "mysql",
             "global_priv",
@@ -205,8 +189,8 @@ async def probe_mysql_capabilities(
     return capabilities
 
 
-async def _read_mysql_identity(cursor) -> dict:
-    await cursor.execute(
+def _read_mysql_identity(cursor) -> dict:
+    cursor.execute(
         """
         SELECT
             DATABASE(),
@@ -217,7 +201,7 @@ async def _read_mysql_identity(cursor) -> dict:
             @@port
         """
     )
-    row = await cursor.fetchone()
+    row = cursor.fetchone()
     version_info = parse_mysql_version(row[2] if row else None)
 
     return {
@@ -230,33 +214,58 @@ async def _read_mysql_identity(cursor) -> dict:
     }
 
 
+def _close_mysql_resource(resource) -> None:
+    if resource is None:
+        return
+    try:
+        resource.close()
+    except Exception:
+        logger.debug("Ignoring MySQL resource close failure", exc_info=True)
+
+
+def _test_mysql_connection_sync(connection: dict) -> dict:
+    mysql_connection = None
+    cursor = None
+    try:
+        mysql_connection = mysql_connector.connect(
+            **mysql_connect_kwargs(connection)
+        )
+        cursor = mysql_connection.cursor()
+
+        identity = _read_mysql_identity(cursor)
+        version_info = identity["version_info"]
+        capabilities = probe_mysql_capabilities(cursor, version_info)
+
+        return {
+            "database_name": identity["database_name"],
+            "connected_user": identity["connected_user"],
+            "database_version": version_info.raw,
+            "database_product": version_info.product_name,
+            "database_generation": version_info.generation,
+            "version_comment": identity["version_comment"],
+            "server_hostname": identity["server_hostname"],
+            "server_port": identity["server_port"],
+            "service_name": None,
+            "capabilities": capabilities,
+        }
+    finally:
+        _close_mysql_resource(cursor)
+        _close_mysql_resource(mysql_connection)
+
+
 async def test_mysql_connection(connection: dict) -> dict:
     try:
-        async with await mysql_aio.connect(
-            **mysql_connect_kwargs(connection)
-        ) as mysql_connection:
-            async with await mysql_connection.cursor() as cursor:
-                identity = await _read_mysql_identity(cursor)
-                version_info = identity["version_info"]
-                capabilities = await probe_mysql_capabilities(
-                    cursor,
-                    version_info,
-                )
-
-                return {
-                    "database_name": identity["database_name"],
-                    "connected_user": identity["connected_user"],
-                    "database_version": version_info.raw,
-                    "database_product": version_info.product_name,
-                    "database_generation": version_info.generation,
-                    "version_comment": identity["version_comment"],
-                    "server_hostname": identity["server_hostname"],
-                    "server_port": identity["server_port"],
-                    "service_name": None,
-                    "capabilities": capabilities,
-                }
-
-    except MySQLError as exc:
+        # Connector/Python's aio transport can fail against older MariaDB/
+        # non-TLS endpoints while inspecting socket cipher information. Use
+        # the mature synchronous connector in a worker thread so FastAPI's
+        # event loop remains non-blocking while retaining broad compatibility.
+        return await asyncio.to_thread(
+            _test_mysql_connection_sync,
+            connection,
+        )
+    except AppError:
+        raise
+    except (MySQLError, TypeError, ValueError, OSError) as exc:
         raise AppError(
             str(exc),
             code="MYSQL_CONNECTION_FAILED",
@@ -264,163 +273,168 @@ async def test_mysql_connection(connection: dict) -> dict:
         ) from exc
 
 
+def _get_mysql_overview_sync(connection: dict) -> dict:
+    mysql_connection = None
+    cursor = None
+    try:
+        mysql_connection = mysql_connector.connect(
+            **mysql_connect_kwargs(connection)
+        )
+        cursor = mysql_connection.cursor()
+        warnings: list[str] = []
+
+        started = time.perf_counter()
+        cursor.execute("SELECT 1")
+        cursor.fetchone()
+        response_time_ms = round(
+            (time.perf_counter() - started) * 1000,
+            1,
+        )
+
+        identity = _read_mysql_identity(cursor)
+        version_info = identity["version_info"]
+        capabilities = probe_mysql_capabilities(cursor, version_info)
+
+        threads_running = _mysql_status_value(
+            cursor,
+            "Threads_running",
+            "Active threads",
+            warnings,
+        )
+        threads_connected = _mysql_status_value(
+            cursor,
+            "Threads_connected",
+            "Connections",
+            warnings,
+        )
+        uptime_seconds = _mysql_status_value(
+            cursor,
+            "Uptime",
+            "Uptime",
+            warnings,
+        )
+        questions = _mysql_status_value(
+            cursor,
+            "Questions",
+            "Questions",
+            warnings,
+        )
+        slow_queries = _mysql_status_value(
+            cursor,
+            "Slow_queries",
+            "Slow queries",
+            warnings,
+        )
+
+        max_connections_raw = _mysql_variable_value(
+            cursor,
+            "max_connections",
+            "Maximum connections",
+            warnings,
+        )
+        data_directory = _mysql_variable_value(
+            cursor,
+            "datadir",
+            "Data directory",
+            warnings,
+        )
+
+        try:
+            max_connections = (
+                int(max_connections_raw)
+                if max_connections_raw is not None
+                else None
+            )
+        except (TypeError, ValueError):
+            max_connections = None
+            warnings.append("Maximum connections unavailable.")
+
+        database_count = _mysql_scalar(
+            cursor,
+            "SELECT COUNT(*) FROM information_schema.schemata",
+            "Visible database count",
+            warnings,
+        )
+
+        if capabilities.get("information_schema_innodb_trx"):
+            blocked = _mysql_scalar(
+                cursor,
+                """
+                SELECT COUNT(*)
+                FROM information_schema.innodb_trx
+                WHERE trx_state = 'LOCK WAIT'
+                """,
+                "Blocked transactions",
+                warnings,
+            )
+        else:
+            blocked = None
+            warnings.append(
+                "InnoDB transaction lock-wait metadata is not "
+                "available to this connection."
+            )
+
+        # DBAChum's own connection contributes one connected/running thread,
+        # so subtract it from the human-facing workload count.
+        active = (
+            max(threads_running - 1, 0)
+            if threads_running is not None
+            else None
+        )
+        connections = (
+            max(threads_connected - 1, 0)
+            if threads_connected is not None
+            else None
+        )
+
+        performance_schema_enabled = capabilities.get(
+            "performance_schema",
+            False,
+        )
+
+        return {
+            "response_time_ms": response_time_ms,
+            "active": active,
+            "connections": connections,
+            "blocked": int(blocked) if blocked is not None else None,
+            "uptime_seconds": uptime_seconds,
+            "database_name": identity["database_name"],
+            "container_name": None,
+            "service_name": None,
+            "instance_name": None,
+            "version": version_info.raw,
+            "generation": version_info.generation,
+            "database_product": version_info.product_name,
+            "version_comment": identity["version_comment"],
+            "server_hostname": identity["server_hostname"],
+            "server_port": identity["server_port"],
+            "database_count": (
+                int(database_count)
+                if database_count is not None
+                else None
+            ),
+            "max_connections": max_connections,
+            "questions": questions,
+            "slow_queries": slow_queries,
+            "data_directory": data_directory,
+            "performance_schema_enabled": performance_schema_enabled,
+            "capabilities": capabilities,
+            "warnings": warnings,
+        }
+    finally:
+        _close_mysql_resource(cursor)
+        _close_mysql_resource(mysql_connection)
+
+
 async def get_mysql_overview(connection: dict) -> dict:
     try:
-        async with await mysql_aio.connect(
-            **mysql_connect_kwargs(connection)
-        ) as mysql_connection:
-            async with await mysql_connection.cursor() as cursor:
-                warnings: list[str] = []
-
-                started = time.perf_counter()
-                await cursor.execute("SELECT 1")
-                await cursor.fetchone()
-                response_time_ms = round(
-                    (time.perf_counter() - started) * 1000,
-                    1,
-                )
-
-                identity = await _read_mysql_identity(cursor)
-                version_info = identity["version_info"]
-                capabilities = await probe_mysql_capabilities(
-                    cursor,
-                    version_info,
-                )
-
-                threads_running = await _mysql_status_value(
-                    cursor,
-                    "Threads_running",
-                    "Active threads",
-                    warnings,
-                )
-                threads_connected = await _mysql_status_value(
-                    cursor,
-                    "Threads_connected",
-                    "Connections",
-                    warnings,
-                )
-                uptime_seconds = await _mysql_status_value(
-                    cursor,
-                    "Uptime",
-                    "Uptime",
-                    warnings,
-                )
-                questions = await _mysql_status_value(
-                    cursor,
-                    "Questions",
-                    "Questions",
-                    warnings,
-                )
-                slow_queries = await _mysql_status_value(
-                    cursor,
-                    "Slow_queries",
-                    "Slow queries",
-                    warnings,
-                )
-
-                max_connections_raw = await _mysql_variable_value(
-                    cursor,
-                    "max_connections",
-                    "Maximum connections",
-                    warnings,
-                )
-                data_directory = await _mysql_variable_value(
-                    cursor,
-                    "datadir",
-                    "Data directory",
-                    warnings,
-                )
-
-                try:
-                    max_connections = (
-                        int(max_connections_raw)
-                        if max_connections_raw is not None
-                        else None
-                    )
-                except (TypeError, ValueError):
-                    max_connections = None
-                    warnings.append("Maximum connections unavailable.")
-
-                database_count = await _mysql_scalar(
-                    cursor,
-                    "SELECT COUNT(*) FROM information_schema.schemata",
-                    "Visible database count",
-                    warnings,
-                )
-
-                if capabilities.get("information_schema_innodb_trx"):
-                    blocked = await _mysql_scalar(
-                        cursor,
-                        """
-                        SELECT COUNT(*)
-                        FROM information_schema.innodb_trx
-                        WHERE trx_state = 'LOCK WAIT'
-                        """,
-                        "Blocked transactions",
-                        warnings,
-                    )
-                else:
-                    blocked = None
-                    warnings.append(
-                        "InnoDB transaction lock-wait metadata is not "
-                        "available to this connection."
-                    )
-
-                # DBAChum's own connection contributes one connected/running
-                # thread, so subtract it from the human-facing workload count.
-                active = (
-                    max(threads_running - 1, 0)
-                    if threads_running is not None
-                    else None
-                )
-                connections = (
-                    max(threads_connected - 1, 0)
-                    if threads_connected is not None
-                    else None
-                )
-
-                performance_schema_enabled = capabilities.get(
-                    "performance_schema",
-                    False,
-                )
-
-                return {
-                    "response_time_ms": response_time_ms,
-                    "active": active,
-                    "connections": connections,
-                    "blocked": (
-                        int(blocked)
-                        if blocked is not None
-                        else None
-                    ),
-                    "uptime_seconds": uptime_seconds,
-                    "database_name": identity["database_name"],
-                    "container_name": None,
-                    "service_name": None,
-                    "instance_name": None,
-                    "version": version_info.raw,
-                    "generation": version_info.generation,
-                    "database_product": version_info.product_name,
-                    "version_comment": identity["version_comment"],
-                    "server_hostname": identity["server_hostname"],
-                    "server_port": identity["server_port"],
-                    "database_count": (
-                        int(database_count)
-                        if database_count is not None
-                        else None
-                    ),
-                    "max_connections": max_connections,
-                    "questions": questions,
-                    "slow_queries": slow_queries,
-                    "data_directory": data_directory,
-                    "performance_schema_enabled": (
-                        performance_schema_enabled
-                    ),
-                    "capabilities": capabilities,
-                    "warnings": warnings,
-                }
-
-    except MySQLError as exc:
+        return await asyncio.to_thread(
+            _get_mysql_overview_sync,
+            connection,
+        )
+    except AppError:
+        raise
+    except (MySQLError, TypeError, ValueError, OSError) as exc:
         raise AppError(
             str(exc),
             code="MYSQL_MONITORING_FAILED",
