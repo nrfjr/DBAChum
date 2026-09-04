@@ -10,16 +10,22 @@ import DatabaseHistoryPanel from '@/components/databases/DatabaseHistoryPanel.vu
 import DatabaseBackupsPanel from '@/components/databases/DatabaseBackupsPanel.vue'
 import DatabaseUsersPanel from '@/components/databases/DatabaseUsersPanel.vue'
 import DatabaseAccessPanel from '@/components/databases/DatabaseAccessPanel.vue'
+import DatabaseMonitoringNotice from '@/components/databases/DatabaseMonitoringNotice.vue'
 import SqlServerHealthPanel from '@/components/databases/sqlserver/SqlServerHealthPanel.vue'
 import MySqlHealthPanel from '@/components/databases/mysql/MySqlHealthPanel.vue'
 import { useServersStore } from '@/stores/servers'
 import { useAuthStore } from '@/stores/auth'
 import { hasPermission } from '@/core/permissions'
-
 import {
-  useConnectionsStore,
-  type DatabaseEngine,
-} from '@/stores/connections'
+  engineLabel,
+  engineProductLabel,
+  formatMetric,
+  formatUptime,
+  overviewMetricLabel,
+  statusLabel,
+} from '@/core/databasePresentation'
+
+import { useConnectionsStore } from '@/stores/connections'
 
 const route = useRoute()
 const router = useRouter()
@@ -137,32 +143,6 @@ const relatedServers = computed(() => {
   )
 })
 
-function engineLabel(engine: DatabaseEngine) {
-  switch (engine) {
-    case 'oracle':
-      return 'Oracle'
-    case 'sqlserver':
-      return 'SQL Server'
-    case 'mysql':
-      return 'MySQL / MariaDB'
-  }
-}
-
-function statusLabel(status?: string) {
-  switch (status) {
-    case 'online':
-      return 'Online'
-    case 'limited':
-      return 'Limited'
-    case 'unreachable':
-      return 'Unreachable'
-    case 'disabled':
-      return 'Disabled'
-    default:
-      return 'Not checked'
-  }
-}
-
 onMounted(async () => {
   applyTabFromRoute()
 
@@ -209,9 +189,10 @@ onMounted(async () => {
 
           <p>
             {{
-              connection.engine === 'mysql'
-                ? (overview?.database_product ?? 'MySQL')
-                : engineLabel(connection.engine)
+              engineProductLabel(
+                connection.engine,
+                overview?.database_product,
+              )
             }}
             ·
             {{ connection.host }}:{{ connection.port }}
@@ -294,26 +275,26 @@ onMounted(async () => {
 
       <section v-if="activeTab === 'overview'" class="database-preview-grid database-detail-metrics">
         <div>
-          <span>Active</span>
+          <span>{{ overviewMetricLabel(connection.engine, 'active') }}</span>
 
           <strong>
-            {{ overview?.active ?? '—' }}
+            {{ formatMetric(overview?.active) }}
           </strong>
         </div>
 
         <div>
-          <span>Connections</span>
+          <span>{{ overviewMetricLabel(connection.engine, 'connections') }}</span>
 
           <strong>
-            {{ overview?.connections ?? '—' }}
+            {{ formatMetric(overview?.connections) }}
           </strong>
         </div>
 
         <div>
-          <span>Blocked</span>
+          <span>{{ overviewMetricLabel(connection.engine, 'blocked') }}</span>
 
           <strong>
-            {{ overview?.blocked ?? '—' }}
+            {{ formatMetric(overview?.blocked) }}
           </strong>
         </div>
 
@@ -321,13 +302,17 @@ onMounted(async () => {
           <span>Uptime</span>
 
           <strong>
-            {{
-              overview?.uptime_seconds
-              ?? '—'
-            }}
+            {{ formatUptime(overview?.uptime_seconds) }}
           </strong>
         </div>
       </section>
+
+      <DatabaseMonitoringNotice
+        v-if="activeTab === 'overview'"
+        :status="overview?.status"
+        :warnings="overview?.warnings"
+        :error="overview?.error"
+      />
 
       <!--
         Panels are lazy-mounted the first time their tab is opened, then kept

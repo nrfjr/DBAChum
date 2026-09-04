@@ -19,6 +19,26 @@ from app.services.database_connections import (
 logger = logging.getLogger(__name__)
 
 
+def _normalize_warnings(items) -> list[str]:
+    """Return stable, human-facing monitoring warnings.
+
+    Connector fallbacks can discover the same limitation through more than one
+    probe. Keep the Overview contract deterministic and avoid repeating the same
+    warning in the UI while preserving the connector's original wording.
+    """
+    normalized: list[str] = []
+    seen: set[str] = set()
+
+    for item in items or []:
+        warning = str(item).strip()
+        if not warning or warning in seen:
+            continue
+        seen.add(warning)
+        normalized.append(warning)
+
+    return normalized
+
+
 async def collect_database_overview(
     connection: dict,
 ) -> dict:
@@ -91,11 +111,12 @@ async def collect_database_overview(
             "error": "Monitoring failed unexpectedly.",
         }
 
-    warnings = result.get("warnings", [])
+    warnings = _normalize_warnings(result.get("warnings", []))
 
     return {
         **base,
         **result,
+        "warnings": warnings,
         "status":
             "limited"
             if warnings

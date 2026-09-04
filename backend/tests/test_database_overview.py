@@ -162,6 +162,40 @@ async def test_connector_warnings_mark_overview_limited(
 
 
 @pytest.mark.asyncio
+async def test_connector_warnings_are_trimmed_and_deduplicated(
+    monkeypatch,
+):
+    async def limited_overview(_connection):
+        return {
+            "active": None,
+            "connections": 5,
+            "blocked": None,
+            "warnings": [
+                "  Active sessions unavailable.  ",
+                "Active sessions unavailable.",
+                "",
+                "Blocking telemetry unavailable.",
+            ],
+        }
+
+    monkeypatch.setattr(
+        database_overview,
+        "get_oracle_overview",
+        limited_overview,
+    )
+
+    result = await database_overview.collect_database_overview(
+        make_connection()
+    )
+
+    assert result["status"] == "limited"
+    assert result["warnings"] == [
+        "Active sessions unavailable.",
+        "Blocking telemetry unavailable.",
+    ]
+
+
+@pytest.mark.asyncio
 async def test_unexpected_connector_error_does_not_break_monitoring(
     monkeypatch,
 ):

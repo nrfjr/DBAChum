@@ -2,6 +2,14 @@
 import { computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useDatabasesStore } from '@/stores/databases'
+import {
+  engineLabel,
+  engineProductLabel,
+  formatMetric,
+  formatUptime,
+  overviewMetricLabel,
+  statusLabel,
+} from '@/core/databasePresentation'
 
 import {
   useConnectionsStore,
@@ -19,18 +27,6 @@ const monitoredConnections = computed(() =>
   ),
 )
 
-function engineLabel(engine: DatabaseEngine) {
-  switch (engine) {
-    case 'oracle':
-      return 'Oracle'
-    case 'sqlserver':
-      return 'SQL Server'
-    case 'mysql':
-      return 'MySQL / MariaDB'
-  }
-}
-
-
 const engineOrder: DatabaseEngine[] = ['oracle', 'sqlserver', 'mysql']
 
 const groupedConnections = computed(() =>
@@ -45,9 +41,7 @@ const groupedConnections = computed(() =>
     .filter((group) => group.connections.length > 0),
 )
 
-function databaseIdentity(
-  connection: DatabaseConnection,
-) {
+function databaseIdentity(connection: DatabaseConnection) {
   if (connection.engine === 'oracle') {
     return connection.oracle_identifier ?? 'Oracle database'
   }
@@ -58,71 +52,12 @@ function databaseIdentity(
 function openDatabase(connection: DatabaseConnection) {
   router.push({
     name: 'database-detail',
-    params: {
-      id: connection.id,
-    },
+    params: { id: connection.id },
   })
 }
 
 function overviewFor(id: string) {
   return databasesStore.overviews[id]
-}
-
-function statusLabel(
-  status?: string,
-) {
-  switch (status) {
-    case 'online':
-      return 'Online'
-    case 'limited':
-      return 'Limited'
-    case 'unreachable':
-      return 'Unreachable'
-    case 'disabled':
-      return 'Disabled'
-    default:
-      return 'Not checked'
-  }
-}
-
-function metricValue(
-  value: number | null | undefined,
-) {
-  if (value == null) {
-    return '—'
-  }
-
-  return new Intl.NumberFormat().format(value)
-}
-
-function formatUptime(
-  seconds: number | null | undefined,
-) {
-  if (seconds == null) {
-    return '—'
-  }
-
-  const days = Math.floor(
-    seconds / 86400
-  )
-
-  const hours = Math.floor(
-    (seconds % 86400) / 3600
-  )
-
-  if (days > 0) {
-    return `${days}d ${hours}h`
-  }
-
-  const minutes = Math.floor(
-    (seconds % 3600) / 60
-  )
-
-  if (hours > 0) {
-    return `${hours}h ${minutes}m`
-  }
-
-  return `${minutes}m`
 }
 
 onMounted(async () => {
@@ -199,9 +134,10 @@ onMounted(async () => {
               <strong>{{ connection.name }}</strong>
               <span>
                 {{
-                  connection.engine === 'mysql'
-                    ? (overviewFor(connection.id)?.database_product ?? 'MySQL')
-                    : engineLabel(connection.engine)
+                  engineProductLabel(
+                    connection.engine,
+                    overviewFor(connection.id)?.database_product,
+                  )
                 }}
               </span>
             </div>
@@ -232,18 +168,18 @@ onMounted(async () => {
 
           <div class="database-preview-grid">
             <div>
-              <span>Active</span>
-              <strong>{{ metricValue(overviewFor(connection.id)?.active) }}</strong>
+              <span>{{ overviewMetricLabel(connection.engine, 'active') }}</span>
+              <strong>{{ formatMetric(overviewFor(connection.id)?.active) }}</strong>
             </div>
 
             <div>
-              <span>Connections</span>
-              <strong>{{ metricValue(overviewFor(connection.id)?.connections) }}</strong>
+              <span>{{ overviewMetricLabel(connection.engine, 'connections') }}</span>
+              <strong>{{ formatMetric(overviewFor(connection.id)?.connections) }}</strong>
             </div>
 
             <div>
-              <span>Blocked</span>
-              <strong>{{ metricValue(overviewFor(connection.id)?.blocked) }}</strong>
+              <span>{{ overviewMetricLabel(connection.engine, 'blocked') }}</span>
+              <strong>{{ formatMetric(overviewFor(connection.id)?.blocked) }}</strong>
             </div>
 
             <div>

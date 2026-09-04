@@ -17,6 +17,7 @@ import {
   type DatabaseMetricSample,
 } from '@/stores/databaseMetrics'
 import { useUiStore } from '@/stores/ui'
+import { overviewMetricLabel } from '@/core/databasePresentation'
 
 
 const props = defineProps<{
@@ -51,13 +52,21 @@ type HistoryMetric =
   | 'tmp_disk_interval'
   | 'storage_bytes'
 
+type MetricGroupKey = 'workload' | 'connections' | 'performance' | 'storage' | 'jobs'
+
 interface MetricDefinition {
   key: HistoryMetric
   label: string
   axis: string
+  group: MetricGroupKey
   oracleOnly?: boolean
   sqlserverOnly?: boolean
   mysqlOnly?: boolean
+}
+
+interface MetricGroupDefinition {
+  key: MetricGroupKey
+  label: string
 }
 
 interface AggregatedSqlRow {
@@ -114,41 +123,79 @@ const isOracle = computed(() => history.value?.engine === 'oracle')
 const isSqlServer = computed(() => history.value?.engine === 'sqlserver')
 const isMySql = computed(() => history.value?.engine === 'mysql')
 
+const metricGroups: MetricGroupDefinition[] = [
+  { key: 'workload', label: 'Workload' },
+  { key: 'connections', label: 'Connections' },
+  { key: 'performance', label: 'Performance' },
+  { key: 'storage', label: 'Storage & capacity' },
+  { key: 'jobs', label: 'Jobs' },
+]
+
 const defaultMetricDefinition: MetricDefinition = {
   key: 'active',
   label: 'Active',
   axis: 'Active sessions',
+  group: 'workload',
 }
 
 const metricDefinitions: MetricDefinition[] = [
   defaultMetricDefinition,
-  { key: 'connections', label: 'Connections', axis: 'Connections' },
-  { key: 'blocked', label: 'Blocked', axis: 'Blocked sessions' },
-  { key: 'cpu', label: 'CPU time', axis: 'CPU seconds / sample', oracleOnly: true },
-  { key: 'executions', label: 'Execs', axis: 'Executions / sample', oracleOnly: true },
-  { key: 'logical_reads', label: 'Logical reads', axis: 'Logical reads / sample', oracleOnly: true },
-  { key: 'physical_reads', label: 'Physical reads', axis: 'Physical reads / sample', oracleOnly: true },
-  { key: 'latency', label: 'Latency', axis: 'Latency (ms)' },
-  { key: 'log_used', label: 'Log used', axis: 'Transaction log used (%)', sqlserverOnly: true },
-  { key: 'long_running', label: 'Long running', axis: 'Long-running requests', sqlserverOnly: true },
-  { key: 'tempdb_used', label: 'tempdb used', axis: 'tempdb data used (%)', sqlserverOnly: true },
-  { key: 'failed_jobs', label: 'Failed jobs', axis: 'Failed SQL Agent jobs', sqlserverOnly: true },
-  { key: 'connection_utilization', label: 'Connection %', axis: 'Connections used (%)', mysqlOnly: true },
-  { key: 'mysql_long_running', label: 'Long running', axis: 'Sessions ≥ 60s', mysqlOnly: true },
-  { key: 'slow_queries_delta', label: 'Slow queries Δ', axis: 'Slow queries / sample', mysqlOnly: true },
-  { key: 'aborted_connects_delta', label: 'Aborted connects Δ', axis: 'Aborted connects / sample', mysqlOnly: true },
-  { key: 'aborted_clients_delta', label: 'Aborted clients Δ', axis: 'Aborted clients / sample', mysqlOnly: true },
-  { key: 'buffer_pool_used', label: 'Buffer pool', axis: 'Buffer pool data (%)', mysqlOnly: true },
-  { key: 'tmp_disk_interval', label: 'Temp → disk', axis: 'Disk temp tables / sample (%)', mysqlOnly: true },
-  { key: 'storage_bytes', label: 'Storage', axis: 'Logical database size (bytes)', mysqlOnly: true },
+  { key: 'blocked', label: 'Blocked', axis: 'Blocked sessions', group: 'workload' },
+  { key: 'long_running', label: 'Long-running requests', axis: 'Long-running requests', group: 'workload', sqlserverOnly: true },
+  { key: 'mysql_long_running', label: 'Long-running sessions', axis: 'Sessions ≥ 60s', group: 'workload', mysqlOnly: true },
+  { key: 'connections', label: 'Connections', axis: 'Connections', group: 'connections' },
+  { key: 'connection_utilization', label: 'Connection utilization %', axis: 'Connections used (%)', group: 'connections', mysqlOnly: true },
+  { key: 'aborted_connects_delta', label: 'Aborted connects Δ', axis: 'Aborted connects / sample', group: 'connections', mysqlOnly: true },
+  { key: 'aborted_clients_delta', label: 'Aborted clients Δ', axis: 'Aborted clients / sample', group: 'connections', mysqlOnly: true },
+  { key: 'latency', label: 'Connection latency', axis: 'Latency (ms)', group: 'performance' },
+  { key: 'cpu', label: 'CPU time', axis: 'CPU seconds / sample', group: 'performance', oracleOnly: true },
+  { key: 'executions', label: 'Executions', axis: 'Executions / sample', group: 'performance', oracleOnly: true },
+  { key: 'logical_reads', label: 'Logical reads', axis: 'Logical reads / sample', group: 'performance', oracleOnly: true },
+  { key: 'physical_reads', label: 'Physical reads', axis: 'Physical reads / sample', group: 'performance', oracleOnly: true },
+  { key: 'slow_queries_delta', label: 'Slow queries Δ', axis: 'Slow queries / sample', group: 'performance', mysqlOnly: true },
+  { key: 'log_used', label: 'Transaction log used %', axis: 'Transaction log used (%)', group: 'storage', sqlserverOnly: true },
+  { key: 'tempdb_used', label: 'tempdb used %', axis: 'tempdb data used (%)', group: 'storage', sqlserverOnly: true },
+  { key: 'buffer_pool_used', label: 'InnoDB buffer pool %', axis: 'Buffer pool data (%)', group: 'storage', mysqlOnly: true },
+  { key: 'tmp_disk_interval', label: 'Temp tables → disk %', axis: 'Disk temp tables / sample (%)', group: 'storage', mysqlOnly: true },
+  { key: 'storage_bytes', label: 'Logical storage', axis: 'Logical database size (bytes)', group: 'storage', mysqlOnly: true },
+  { key: 'failed_jobs', label: 'Failed SQL Agent jobs', axis: 'Failed SQL Agent jobs', group: 'jobs', sqlserverOnly: true },
 ]
 
+function presentationForMetric(item: MetricDefinition): MetricDefinition {
+  const engine = history.value?.engine
+  if (!engine || !['active', 'connections', 'blocked'].includes(item.key)) {
+    return item
+  }
+
+  const label = overviewMetricLabel(
+    engine,
+    item.key as 'active' | 'connections' | 'blocked',
+  )
+
+  return {
+    ...item,
+    label,
+    axis: label,
+  }
+}
+
 const availableMetrics = computed(() =>
-  metricDefinitions.filter((item) =>
-    (!item.oracleOnly || isOracle.value) &&
-    (!item.sqlserverOnly || isSqlServer.value) &&
-    (!item.mysqlOnly || isMySql.value),
-  ),
+  metricDefinitions
+    .filter((item) =>
+      (!item.oracleOnly || isOracle.value) &&
+      (!item.sqlserverOnly || isSqlServer.value) &&
+      (!item.mysqlOnly || isMySql.value),
+    )
+    .map(presentationForMetric),
+)
+
+const availableMetricGroups = computed(() =>
+  metricGroups
+    .map((group) => ({
+      ...group,
+      items: availableMetrics.value.filter((item) => item.group === group.key),
+    }))
+    .filter((group) => group.items.length > 0),
 )
 
 watch([isOracle, isSqlServer, isMySql], () => {
@@ -265,15 +312,10 @@ const selectedMySqlAbortedConnections = computed(() =>
   ),
 )
 
-const currentMetric = computed<MetricDefinition>(() => {
-  const base = metricDefinitions.find((item) => item.key === metric.value) ?? defaultMetricDefinition
-  if (!isMySql.value) return base
-
-  if (metric.value === 'active') return { ...base, axis: 'Running threads' }
-  if (metric.value === 'connections') return { ...base, axis: 'Connected threads' }
-  if (metric.value === 'blocked') return { ...base, axis: 'Blocked InnoDB transactions' }
-  return base
-})
+const currentMetric = computed<MetricDefinition>(() =>
+  availableMetrics.value.find((item) => item.key === metric.value)
+  ?? presentationForMetric(defaultMetricDefinition),
+)
 
 type MetricPoint = [number, number | null]
 
@@ -582,6 +624,12 @@ const fullestTablespaces = computed(() =>
     .slice(0, 8),
 )
 
+function handleMetricChange(event: Event) {
+  const value = (event.target as HTMLSelectElement).value as HistoryMetric
+  if (!availableMetrics.value.some((item) => item.key === value)) return
+  metric.value = value
+}
+
 function handleRangeChange(event: Event) {
   const value = Number((event.target as HTMLSelectElement).value)
   if (![1, 6, 12, 24].includes(value)) return
@@ -623,8 +671,8 @@ onUnmounted(() => {
       <div>
         <h2>24-hour history</h2>
         <p>
-          Collector-backed telemetry only. Drag the chart range and the Oracle
-          SQL/session/wait tables below recalculate for that exact window.
+          Collector-backed telemetry only. Drag the chart range to inspect the
+          exact incident window; Oracle detail tables follow that selection when available.
         </p>
       </div>
 
@@ -695,17 +743,24 @@ onUnmounted(() => {
       </div>
 
       <div class="history-control-row">
-        <div class="database-history-metrics history-metric-picker">
-          <button
-            v-for="item in availableMetrics"
-            :key="item.key"
-            type="button"
-            :class="{ active: metric === item.key }"
-            @click="metric = item.key"
-          >
-            {{ item.label }}
-          </button>
-        </div>
+        <label class="history-metric-control history-control-select">
+          <span class="history-control-label">Metric</span>
+          <select :value="metric" @change="handleMetricChange">
+            <optgroup
+              v-for="group in availableMetricGroups"
+              :key="group.key"
+              :label="group.label"
+            >
+              <option
+                v-for="item in group.items"
+                :key="item.key"
+                :value="item.key"
+              >
+                {{ item.label }}
+              </option>
+            </optgroup>
+          </select>
+        </label>
 
         <div class="history-range-control">
           <button
@@ -717,8 +772,8 @@ onUnmounted(() => {
             Reset selection
           </button>
 
-          <label>
-            <span class="sr-only">History time range</span>
+          <label class="history-control-select">
+            <span class="history-control-label">Range</span>
             <select :value="hours" @change="handleRangeChange">
               <option v-for="range in ranges" :key="range" :value="range">
                 Last {{ range === 1 ? '1 hour' : `${range} hours` }}
@@ -970,11 +1025,30 @@ onUnmounted(() => {
   overflow-wrap: anywhere;
 }
 
-.history-metric-picker {
-  margin-top: .85rem;
+.history-control-select {
+  display: flex;
+  flex-direction: column;
+  gap: .3rem;
+}
+
+.history-control-label {
+  color: var(--text-muted);
+  font-size: .78rem;
+  font-weight: 600;
+}
+
+.history-metric-control select {
+  min-width: 15rem;
+  max-width: 22rem;
+  padding: .55rem 2rem .55rem .75rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-small);
+  background: var(--color-surface);
+  color: var(--color-text);
 }
 
 .history-reset-zoom {
+  align-self: flex-end;
   margin-left: auto;
 }
 
@@ -1057,7 +1131,20 @@ onUnmounted(() => {
     flex-direction: column;
   }
 
+  .history-metric-control,
+  .history-metric-control select,
+  .history-range-control label,
+  .history-range-control select {
+    width: 100%;
+    max-width: none;
+  }
+
+  .history-range-control {
+    align-items: stretch;
+  }
+
   .history-reset-zoom {
+    align-self: stretch;
     margin-left: 0;
   }
 }

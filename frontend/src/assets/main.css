@@ -4420,3 +4420,17 @@ button {
     grid-template-columns: 1fr;
   }
 }
+
+/* Phase 7A.11 cross-engine monitoring notice */
+.database-monitoring-notice {
+  margin-bottom: 1.25rem;
+}
+
+.database-monitoring-notice ul {
+  margin: 0.6rem 0 0;
+  padding-left: 1.25rem;
+}
+
+.database-monitoring-notice li + li {
+  margin-top: 0.25rem;
+}

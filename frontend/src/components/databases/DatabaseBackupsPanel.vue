@@ -186,7 +186,7 @@ onMounted(() => load('today'))
       </button>
     </div>
 
-    <div class="backup-range-bar">
+    <div v-if="!result || result.available" class="backup-range-bar">
       <div class="backup-range-buttons" aria-label="Backup history range">
         <button
           type="button"
@@ -299,8 +299,13 @@ onMounted(() => load('today'))
         {{ note }}
       </div>
 
-      <div v-if="!result.available" class="empty-state">
-        Backup history is not available through the current provider.
+      <div v-if="!result.available" class="database-empty-state">
+        <h3>No backup provider configured</h3>
+        <p>
+          DBAChum cannot infer backup history when this engine has no native
+          repository or configured provider. Nothing is reported as healthy or
+          failed until a real provider supplies records.
+        </p>
       </div>
 
       <template v-else>

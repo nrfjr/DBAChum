@@ -41,7 +41,7 @@ onMounted(() => {
     <div class="utility-toolbar">
       <div>
         <h2>Operational health</h2>
-        <p>Connections, workload, InnoDB, temporary tables, and server runtime state.</p>
+        <p>Server-level counters plus database-filtered processlist detail when a database is configured.</p>
       </div>
       <button
         type="button"
@@ -137,7 +137,8 @@ onMounted(() => {
         <div class="database-info-grid">
           <div><dt>Product</dt><dd>{{ health.product ?? '—' }}</dd></div>
           <div><dt>Generation</dt><dd>{{ health.generation ?? '—' }}</dd></div>
-          <div><dt>Scope</dt><dd>{{ health.scope === 'database' ? (health.database_name ?? 'Database') : 'Instance' }}</dd></div>
+          <div><dt>Processlist scope</dt><dd>{{ health.scope === 'database' ? (health.database_name ?? 'Configured database') : 'Instance' }}</dd></div>
+          <div><dt>Global counters</dt><dd>Server / instance</dd></div>
           <div><dt>Read only</dt><dd>{{ health.server.read_only == null ? '—' : health.server.read_only ? 'Yes' : 'No' }}</dd></div>
           <div><dt>Slow query log</dt><dd>{{ health.server.slow_query_log == null ? '—' : health.server.slow_query_log ? 'Enabled' : 'Disabled' }}</dd></div>
           <div><dt>Long query time</dt><dd>{{ health.server.long_query_time_seconds != null ? `${health.server.long_query_time_seconds}s` : '—' }}</dd></div>
