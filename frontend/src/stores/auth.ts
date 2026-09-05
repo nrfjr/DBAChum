@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 
 import type {
+  Permission,
   UserRole,
 } from '@/core/permissions'
 
@@ -36,6 +37,7 @@ export interface User {
   email: string | null
   role: UserRole
   is_active: boolean
+  permissions?: Permission[]
   avatar_initials: string
   preferences: UserPreferences
   created_at?: string | null

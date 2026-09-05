@@ -34,7 +34,7 @@ async def get_shortcuts(
 async def get_server_shortcuts(
     server_id: str,
     request: Request,
-    current_user: UserResponse = Depends(require_permission(Permission.DBA_OPERATE)),
+    current_user: UserResponse = Depends(require_permission(Permission.TERMINAL_USE)),
 ):
     return await list_terminal_shortcuts_for_server(request.app.state.database, server_id)
 

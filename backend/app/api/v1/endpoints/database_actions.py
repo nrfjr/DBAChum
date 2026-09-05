@@ -33,7 +33,7 @@ async def get_database_actions(
         le=100,
     ),
     current_user: UserResponse = Depends(
-        require_permission(Permission.DBA_OPERATE)
+        require_permission(Permission.DATABASE_INSPECT)
     ),
 ):
     database = request.app.state.database

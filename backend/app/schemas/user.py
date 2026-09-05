@@ -88,6 +88,7 @@ class UserResponse(BaseModel):
     email: EmailStr | None = None
     role: UserRole
     is_active: bool
+    permissions: list[str] = Field(default_factory=list)
     avatar_initials: str = "DB"
     preferences: UserPreferences = Field(
         default_factory=UserPreferences

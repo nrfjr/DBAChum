@@ -4,6 +4,7 @@ from bson import ObjectId
 from pymongo.errors import DuplicateKeyError
 
 from app.core.exceptions import AppError
+from app.core.permissions import permission_values_for_role
 from app.core.security import hash_password
 from app.schemas.user import (
     UserCreate,
@@ -138,6 +139,10 @@ def user_to_response(
         is_active=user.get(
             "is_active",
             True,
+        ),
+
+        permissions=permission_values_for_role(
+            user.get("role", "viewer")
         ),
 
         avatar_initials=build_avatar_initials(

@@ -3,9 +3,16 @@ import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
 import { useAlertsStore, type AlertSeverity } from '@/stores/alerts'
+import { useAuthStore } from '@/stores/auth'
+import { hasPermission } from '@/core/permissions' 
 
 const alertsStore = useAlertsStore()
+const authStore = useAuthStore()
 const router = useRouter()
+
+const canManageAlerts = computed(() =>
+  hasPermission(authStore.user, 'alerts:manage'),
+)
 
 const statusFilter = ref<'active' | 'resolved' | 'all'>('active')
 const severityFilter = ref<'' | AlertSeverity>('')
@@ -123,7 +130,7 @@ onUnmounted(() => {
           <option value="critical">Critical</option>
           <option value="warning">Warning</option>
         </select>
-        <button v-if="hasResolved || alertsStore.summary.resolved" type="button" class="secondary-button" @click="clearResolved">
+        <button v-if="canManageAlerts && (hasResolved || alertsStore.summary.resolved)" type="button" class="secondary-button" @click="clearResolved">
           Clear resolved
         </button>
       </div>
@@ -182,6 +189,7 @@ onUnmounted(() => {
             Open {{ alert.source_type }}
           </button>
           <button
+            v-if="canManageAlerts"
             type="button"
             class="secondary-button alert-clear-button"
             :disabled="clearingId === alert.id"

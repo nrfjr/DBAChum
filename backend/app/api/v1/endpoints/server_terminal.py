@@ -33,7 +33,7 @@ async def server_terminal_websocket(
         await websocket.close(code=4401)
         return
 
-    if not has_permission(user.get("role", "viewer"), Permission.DBA_OPERATE):
+    if not has_permission(user.get("role", "viewer"), Permission.TERMINAL_USE):
         await websocket.send_json(
             {"type": "error", "code": "FORBIDDEN", "message": "You do not have permission to open SSH terminals."}
         )

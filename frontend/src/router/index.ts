@@ -210,7 +210,7 @@ router.beforeEach(async (to) => {
   if (
     requiredPermission &&
     !hasPermission(
-      authStore.user?.role,
+      authStore.user,
       requiredPermission,
     )
   ) {

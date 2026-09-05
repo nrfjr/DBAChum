@@ -33,7 +33,7 @@ const sectionTitle = computed(() => {
 const canManageUsers = computed(
   () =>
     hasPermission(
-      authStore.user?.role,
+      authStore.user,
       'users:manage',
     ),
 )
@@ -41,20 +41,20 @@ const canManageUsers = computed(
 
 
 const canManageProvisioning = computed(
-  () => hasPermission(authStore.user?.role, 'provisioning:manage'),
+  () => hasPermission(authStore.user, 'provisioning:manage'),
 )
 
 const canManageLdap = computed(
-  () => hasPermission(authStore.user?.role, 'ldap:manage'),
+  () => hasPermission(authStore.user, 'ldap:manage'),
 )
 
 const canManageInfrastructure = computed(
-  () => hasPermission(authStore.user?.role, 'servers:manage'),
+  () => hasPermission(authStore.user, 'servers:manage'),
 )
 
 const canAccessConnections = computed(() =>
   hasPermission(
-    authStore.user?.role,
+    authStore.user,
     'connections:test',
   ),
 )

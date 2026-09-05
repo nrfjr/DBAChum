@@ -116,16 +116,16 @@ const supportsOperationalHealth = computed(() =>
 const supportsUsersAndSchemas = computed(() =>
   ['oracle', 'sqlserver', 'mysql'].includes(connection.value?.engine ?? '') &&
   hasPermission(
-    authStore.user?.role,
-    'database:operate',
+    authStore.user,
+    'database:inspect',
   ),
 )
 
 const supportsAccessAndPrivileges = computed(() =>
   ['oracle', 'sqlserver', 'mysql'].includes(connection.value?.engine ?? '') &&
   hasPermission(
-    authStore.user?.role,
-    'database:operate',
+    authStore.user,
+    'database:inspect',
   ),
 )
 

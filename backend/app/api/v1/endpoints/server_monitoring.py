@@ -25,7 +25,7 @@ router = APIRouter(
 async def test_ssh_connection(
     server_id: str,
     request: Request,
-    current_user: UserResponse = Depends(require_permission(Permission.MONITOR_READ)),
+    current_user: UserResponse = Depends(require_permission(Permission.CONNECTION_TEST)),
 ):
     return await test_server_ssh(request.app.state.database, server_id)
 

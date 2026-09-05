@@ -39,15 +39,15 @@ const pageSubtitle = computed(() =>
 
 const canAccessSettings = computed(() =>
   hasPermission(
-    authStore.user?.role,
+    authStore.user,
     'connections:test',
   ) ||
   hasPermission(
-    authStore.user?.role,
+    authStore.user,
     'users:manage',
   ) ||
   hasPermission(
-    authStore.user?.role,
+    authStore.user,
     'servers:manage',
   ),
 )

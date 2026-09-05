@@ -37,7 +37,7 @@ const authStore = useAuthStore()
 const canTestConnections = computed(
   () =>
     hasPermission(
-      authStore.user?.role,
+      authStore.user,
       'connections:test',
     ),
 )
@@ -46,7 +46,7 @@ const canTestConnections = computed(
 const canManageConnections = computed(
   () =>
     hasPermission(
-      authStore.user?.role,
+      authStore.user,
       'connections:manage',
     ),
 )

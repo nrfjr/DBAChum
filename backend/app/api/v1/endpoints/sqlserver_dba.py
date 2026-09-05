@@ -78,7 +78,7 @@ async def activity(
 async def security(
     connection_id: str,
     request: Request,
-    current_user: UserResponse = Depends(require_permission(Permission.DBA_OPERATE)),
+    current_user: UserResponse = Depends(require_permission(Permission.DATABASE_INSPECT)),
 ):
     return await load_sqlserver_security(
         request.app.state.database,

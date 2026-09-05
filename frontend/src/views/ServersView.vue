@@ -10,7 +10,7 @@ const serversStore = useServersStore()
 const authStore = useAuthStore()
 const router = useRouter()
 
-const canManageServers = computed(() => hasPermission(authStore.user?.role, 'servers:manage'))
+const canManageServers = computed(() => hasPermission(authStore.user, 'servers:manage'))
 
 const search = ref('')
 const environmentFilter = ref('')

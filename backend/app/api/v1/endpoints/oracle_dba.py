@@ -173,7 +173,7 @@ async def get_database_users(
     connection_id: str,
     request: Request,
     current_user: UserResponse = Depends(
-        require_permission(Permission.DBA_OPERATE)
+        require_permission(Permission.DATABASE_INSPECT)
     ),
 ):
     return await load_oracle_users(
@@ -190,7 +190,7 @@ async def get_oracle_username_availability(
     username: str,
     request: Request,
     current_user: UserResponse = Depends(
-        require_permission(Permission.DBA_OPERATE)
+        require_permission(Permission.DATABASE_INSPECT)
     ),
 ):
     normalized = normalize_oracle_identifier(username, field_name="Username")
@@ -307,7 +307,7 @@ async def get_oracle_user_lifecycle(
     username: str,
     request: Request,
     current_user: UserResponse = Depends(
-        require_permission(Permission.DBA_OPERATE)
+        require_permission(Permission.DATABASE_INSPECT)
     ),
 ):
     return await load_oracle_user_lifecycle_state(
@@ -396,7 +396,7 @@ async def get_oracle_user_access_inspector_endpoint(
     username: str,
     request: Request,
     current_user: UserResponse = Depends(
-        require_permission(Permission.DBA_OPERATE)
+        require_permission(Permission.DATABASE_INSPECT)
     ),
 ):
     return await load_oracle_user_access_inspector(
@@ -419,7 +419,7 @@ async def get_oracle_access_lookup_endpoint(
     object_name: str | None = Query(default=None, max_length=30),
     privilege: str | None = Query(default=None, max_length=128),
     current_user: UserResponse = Depends(
-        require_permission(Permission.DBA_OPERATE)
+        require_permission(Permission.DATABASE_INSPECT)
     ),
 ):
     return await load_oracle_access_lookup(
@@ -443,7 +443,7 @@ async def get_oracle_access_compare_endpoint(
     left_username: str = Query(..., min_length=1, max_length=30),
     right_username: str = Query(..., min_length=1, max_length=30),
     current_user: UserResponse = Depends(
-        require_permission(Permission.DBA_OPERATE)
+        require_permission(Permission.DATABASE_INSPECT)
     ),
 ):
     return await load_oracle_access_compare(
@@ -461,7 +461,7 @@ async def get_oracle_access_compare_endpoint(
 async def get_oracle_roles_endpoint(
     connection_id: str,
     request: Request,
-    current_user: UserResponse = Depends(require_permission(Permission.DBA_OPERATE)),
+    current_user: UserResponse = Depends(require_permission(Permission.DATABASE_INSPECT)),
 ):
     return await load_oracle_roles(request.app.state.database, connection_id)
 
@@ -488,7 +488,7 @@ async def get_oracle_role_detail_endpoint(
     connection_id: str,
     role_name: str,
     request: Request,
-    current_user: UserResponse = Depends(require_permission(Permission.DBA_OPERATE)),
+    current_user: UserResponse = Depends(require_permission(Permission.DATABASE_INSPECT)),
 ):
     return await load_oracle_role_detail(request.app.state.database, connection_id, role_name)
 
@@ -581,7 +581,7 @@ async def get_reference_user(
     username: str,
     request: Request,
     current_user: UserResponse = Depends(
-        require_permission(Permission.DBA_OPERATE)
+        require_permission(Permission.DATABASE_INSPECT)
     ),
 ):
     return await load_oracle_reference_user(
@@ -599,7 +599,7 @@ async def get_database_provisioning_profiles(
     connection_id: str,
     request: Request,
     current_user: UserResponse = Depends(
-        require_permission(Permission.DBA_OPERATE)
+        require_permission(Permission.DATABASE_INSPECT)
     ),
 ):
     return await list_provisioning_profiles_for_connection(
@@ -662,7 +662,7 @@ async def get_database_provisioning_runs(
     connection_id: str,
     request: Request,
     current_user: UserResponse = Depends(
-        require_permission(Permission.DBA_OPERATE)
+        require_permission(Permission.DATABASE_INSPECT)
     ),
 ):
     return await list_provisioning_runs(
@@ -680,7 +680,7 @@ async def get_database_provisioning_run(
     run_id: str,
     request: Request,
     current_user: UserResponse = Depends(
-        require_permission(Permission.DBA_OPERATE)
+        require_permission(Permission.DATABASE_INSPECT)
     ),
 ):
     return await get_provisioning_run(
@@ -699,7 +699,7 @@ async def get_database_provisioning_retry_requirement(
     run_id: str,
     request: Request,
     current_user: UserResponse = Depends(
-        require_permission(Permission.DBA_OPERATE)
+        require_permission(Permission.DATABASE_INSPECT)
     ),
 ):
     return await get_retry_requirement(
@@ -741,7 +741,7 @@ async def preview_database_deprovision(
     run_id: str,
     request: Request,
     current_user: UserResponse = Depends(
-        require_permission(Permission.DBA_OPERATE)
+        require_permission(Permission.DATABASE_INSPECT)
     ),
 ):
     return await build_deprovision_preview(
@@ -760,7 +760,7 @@ async def preview_oracle_user_deprovision(
     username: str,
     request: Request,
     current_user: UserResponse = Depends(
-        require_permission(Permission.DBA_OPERATE)
+        require_permission(Permission.DATABASE_INSPECT)
     ),
 ):
     return await build_oracle_user_deprovision_preview(

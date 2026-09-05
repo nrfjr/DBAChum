@@ -26,8 +26,9 @@ const error = ref<string | null>(null)
 const terminalError = ref<string | null>(null)
 
 const serverId = computed(() => String(route.params.id ?? ''))
-const canManageServers = computed(() => hasPermission(authStore.user?.role, 'servers:manage'))
-const canOpenTerminal = computed(() => hasPermission(authStore.user?.role, 'database:operate'))
+const canManageServers = computed(() => hasPermission(authStore.user, 'servers:manage'))
+const canTestConnections = computed(() => hasPermission(authStore.user, 'connections:test'))
+const canOpenTerminal = computed(() => hasPermission(authStore.user, 'terminal:use'))
 const sshConfigured = computed(() => Boolean(server.value?.ssh_profile_id))
 const sshTrusted = computed(() => Boolean(server.value?.ssh_host_key_fingerprint))
 const canCollectHostMetrics = computed(() => {
@@ -123,7 +124,7 @@ async function initializeMonitoring() {
   try {
     if (server.value.ssh_host_key_fingerprint && canCollectHostMetrics.value) {
       await monitoringStore.loadHealth(serverId.value)
-    } else {
+    } else if (canTestConnections.value) {
       await monitoringStore.testSsh(serverId.value)
     }
   } catch {
@@ -233,7 +234,7 @@ onMounted(async () => {
         <div class="server-card-heading">
           <h2>SSH access</h2>
           <button
-            v-if="sshConfigured"
+            v-if="sshConfigured && canTestConnections"
             type="button"
             class="secondary-button"
             :disabled="sshTestLoading"
@@ -298,7 +299,10 @@ onMounted(async () => {
       </div>
 
       <div v-if="!sshConfigured" class="notice-card">Assign an SSH access profile before host metrics can be collected.</div>
-      <div v-else-if="!sshTrusted" class="notice-card">Test SSH and verify the server fingerprint before DBAChum sends the stored SSH credential.</div>
+      <div v-else-if="!sshTrusted" class="notice-card">
+        <template v-if="canTestConnections">Test SSH and verify the server fingerprint before DBAChum sends the stored SSH credential.</template>
+        <template v-else>An operator or administrator must verify SSH connectivity; an administrator must trust the verified host key.</template>
+      </div>
       <div v-else-if="!canCollectHostMetrics" class="notice-card">This first host-metrics collector supports Linux, AIX and Unix assets. SSH connectivity can still be tested for this server.</div>
       <p v-if="monitoringError" class="login-error">{{ monitoringError }}</p>
 

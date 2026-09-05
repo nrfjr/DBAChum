@@ -37,7 +37,7 @@ async def alert_summary(
 @router.delete("/resolved")
 async def clear_all_resolved(
     request: Request,
-    current_user: UserResponse = Depends(require_permission(Permission.MONITOR_READ)),
+    current_user: UserResponse = Depends(require_permission(Permission.ALERT_MANAGE)),
 ):
     deleted = await clear_resolved_alerts(request.app.state.database)
     return {"cleared": deleted}
@@ -47,7 +47,7 @@ async def clear_all_resolved(
 async def dismiss_alert(
     alert_id: str,
     request: Request,
-    current_user: UserResponse = Depends(require_permission(Permission.MONITOR_READ)),
+    current_user: UserResponse = Depends(require_permission(Permission.ALERT_MANAGE)),
 ):
     return await clear_alert(
         request.app.state.database,
