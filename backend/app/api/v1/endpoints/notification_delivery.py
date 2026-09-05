@@ -3,6 +3,8 @@ from fastapi import APIRouter, Depends, Query, Request
 from app.core.permissions import Permission
 from app.dependencies.permissions import require_permission
 from app.schemas.email_delivery import (
+    EmailDeliveryClearRequest,
+    EmailDeliveryClearResponse,
     EmailDeliveryResponse,
     EmailSettingsResponse,
     EmailSettingsUpdate,
@@ -11,6 +13,7 @@ from app.schemas.email_delivery import (
 )
 from app.schemas.user import UserResponse
 from app.services.email_delivery import (
+    clear_email_deliveries,
     list_email_deliveries,
     retry_email_delivery,
     send_test_email,
@@ -93,6 +96,24 @@ async def email_delivery_history(
     return await list_email_deliveries(
         request.app.state.database,
         limit=limit,
+    )
+
+
+@router.post(
+    "/email/deliveries/clear",
+    response_model=EmailDeliveryClearResponse,
+)
+async def clear_email_delivery_history(
+    data: EmailDeliveryClearRequest,
+    request: Request,
+    current_user: UserResponse = Depends(
+        require_permission(Permission.NOTIFICATION_MANAGE)
+    ),
+):
+    return await clear_email_deliveries(
+        request.app.state.database,
+        delivery_ids=data.delivery_ids,
+        clear_all=data.clear_all,
     )
 
 

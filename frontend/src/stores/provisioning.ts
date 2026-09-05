@@ -649,6 +649,25 @@ export const useProvisioningStore = defineStore('provisioning', {
       return runs
     },
 
+    async clearRunsForConnection(
+      connectionId: string,
+      runIds: string[] = [],
+      clearAll = false,
+    ) {
+      const result = await apiRequest<{ deleted_count: number; skipped_count: number }>(
+        `/databases/${connectionId}/oracle/provisioning-runs/clear`,
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            clear_all: clearAll,
+            run_ids: runIds,
+          }),
+        },
+      )
+      await this.loadRunsForConnection(connectionId)
+      return result
+    },
+
     async retryRun(
       connectionId: string,
       runId: string,

@@ -42,6 +42,8 @@ from app.schemas.oracle_dba import (
 from app.schemas.provisioning import (
     ProvisioningExecuteRequest,
     ProvisioningExecutionResponse,
+    ProvisioningHistoryClearRequest,
+    ProvisioningHistoryClearResponse,
     ProvisioningPreviewRequest,
     ProvisioningPreviewResponse,
     ProvisioningProfileResponse,
@@ -106,6 +108,7 @@ from app.services.deprovisioning import (
 )
 from app.services.provisioning_lifecycle import (
     build_deprovision_preview,
+    clear_provisioning_runs,
     get_provisioning_run,
     get_retry_requirement,
     list_provisioning_runs,
@@ -668,6 +671,26 @@ async def get_database_provisioning_runs(
     return await list_provisioning_runs(
         request.app.state.database,
         connection_id,
+    )
+
+
+@router.post(
+    "/{connection_id}/oracle/provisioning-runs/clear",
+    response_model=ProvisioningHistoryClearResponse,
+)
+async def clear_database_provisioning_runs(
+    connection_id: str,
+    data: ProvisioningHistoryClearRequest,
+    request: Request,
+    current_user: UserResponse = Depends(
+        require_permission(Permission.PROVISIONING_MANAGE)
+    ),
+):
+    return await clear_provisioning_runs(
+        request.app.state.database,
+        connection_id,
+        run_ids=data.run_ids,
+        clear_all=data.clear_all,
     )
 
 

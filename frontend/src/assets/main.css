@@ -4912,3 +4912,73 @@ button {
     grid-template-columns: 1fr;
   }
 }
+
+/* ==========================================================
+   Phase 7B.5 — Personal preferences and history controls
+   ========================================================== */
+.preference-file-input {
+  display: none;
+}
+
+.preference-data-card {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.preference-data-actions,
+.table-bulk-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  flex-wrap: wrap;
+}
+
+.profile-muted-note {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.86rem;
+  line-height: 1.5;
+}
+
+.danger-button {
+  border: 1px solid color-mix(in srgb, var(--danger) 55%, var(--border));
+  border-radius: 0.55rem;
+  padding: 0.55rem 0.8rem;
+  background: transparent;
+  color: var(--danger);
+  cursor: pointer;
+}
+
+.danger-button:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+}
+
+.danger-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.table-selection-cell {
+  width: 2.5rem;
+  min-width: 2.5rem !important;
+  text-align: center !important;
+}
+
+.email-delivery-table td:nth-child(3),
+.email-delivery-table td:nth-child(7),
+.email-delivery-table td:nth-child(9) {
+  min-width: 190px;
+}
+
+@media (max-width: 720px) {
+  .preference-data-actions,
+  .table-bulk-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .preference-data-actions > button,
+  .table-bulk-actions > button {
+    width: 100%;
+  }
+}

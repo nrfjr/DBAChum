@@ -5,6 +5,7 @@ import {
   onMounted,
   reactive,
   ref,
+  watch,
 } from 'vue'
 
 import {
@@ -27,6 +28,9 @@ import {
   type OracleUserDeprovisionPreview,
   type OracleUserDeprovisionResult,
 } from '@/stores/provisioning'
+import { useAuthStore } from '@/stores/auth'
+import { hasPermission } from '@/core/permissions'
+import { formatUserDateTime } from '@/core/dateTime'
 
 const props = defineProps<{
   connectionId: string
@@ -34,6 +38,7 @@ const props = defineProps<{
 
 const oracleStore = useOracleDbaStore()
 const provisioningStore = useProvisioningStore()
+const authStore = useAuthStore()
 
 const search = ref('')
 
@@ -98,18 +103,41 @@ const filteredUsers = computed(() => {
     })
 })
 
+const userPage = ref(1)
+const userPageSize = ref(25)
+
+const userPageCount = computed(() =>
+  Math.max(1, Math.ceil(filteredUsers.value.length / userPageSize.value)),
+)
+
+const pagedUsers = computed(() => {
+  const start = (userPage.value - 1) * userPageSize.value
+  return filteredUsers.value.slice(start, start + userPageSize.value)
+})
+
+const userRangeStart = computed(() =>
+  filteredUsers.value.length === 0
+    ? 0
+    : (userPage.value - 1) * userPageSize.value + 1,
+)
+
+const userRangeEnd = computed(() =>
+  Math.min(userPage.value * userPageSize.value, filteredUsers.value.length),
+)
+
+watch([search, filter, userPageSize], () => {
+  userPage.value = 1
+})
+
+watch(
+  () => filteredUsers.value.length,
+  () => {
+    userPage.value = Math.min(userPage.value, userPageCount.value)
+  },
+)
+
 function formatDate(value: string | null) {
-  if (!value) {
-    return '—'
-  }
-
-  const parsed = new Date(value)
-
-  if (Number.isNaN(parsed.getTime())) {
-    return value
-  }
-
-  return parsed.toLocaleString()
+  return formatUserDateTime(value, authStore.user?.preferences)
 }
 
 function formatDeprovisionMatch(values: Record<string, string | null>) {
@@ -178,6 +206,9 @@ const summaryCopyNotice = ref('')
 const historyOpen = ref(false)
 const historyLoading = ref(false)
 const historyError = ref<string | null>(null)
+const historyClearMessage = ref<string | null>(null)
+const selectedProvisioningRunIds = ref<string[]>([])
+const historyClearing = ref(false)
 const retryingRunId = ref<string | null>(null)
 const retryPasswordRun = ref<ProvisioningRunSummary | null>(null)
 const retryPassword = ref('')
@@ -235,6 +266,20 @@ const provisioningRuns = computed(() =>
   provisioningStore.runsByConnection[props.connectionId] ?? [],
 )
 
+const canClearProvisioningHistory = computed(() =>
+  hasPermission(authStore.user, 'provisioning:manage'),
+)
+
+const clearableProvisioningRuns = computed(() =>
+  provisioningRuns.value.filter((run) => run.status !== 'running'),
+)
+
+const allClearableProvisioningRunsSelected = computed(() =>
+  clearableProvisioningRuns.value.length > 0
+  && clearableProvisioningRuns.value.every((run) =>
+    selectedProvisioningRunIds.value.includes(run.run_id),
+  ),
+)
 
 function toggleProvisioningHistory() {
   historyOpen.value = !historyOpen.value
@@ -245,12 +290,80 @@ async function loadProvisioningHistory() {
   historyError.value = null
   try {
     await provisioningStore.loadRunsForConnection(props.connectionId)
+    selectedProvisioningRunIds.value = selectedProvisioningRunIds.value.filter((runId) =>
+      provisioningRuns.value.some((run) => run.run_id === runId),
+    )
   } catch (error) {
     historyError.value = error instanceof Error
       ? error.message
       : 'Unable to load provisioning history.'
   } finally {
     historyLoading.value = false
+  }
+}
+
+function toggleAllProvisioningHistory() {
+  selectedProvisioningRunIds.value = allClearableProvisioningRunsSelected.value
+    ? []
+    : clearableProvisioningRuns.value.map((run) => run.run_id)
+}
+
+async function clearSelectedProvisioningHistory() {
+  const ids = [...selectedProvisioningRunIds.value]
+  if (!ids.length) return
+
+  if (!window.confirm(
+    `Clear ${ids.length} selected provisioning history record${ids.length === 1 ? '' : 's'}? This does not change current Oracle accounts, application rows or LDAP entries, but the removed runs can no longer provide retry or history-linked deprovision context.`,
+  )) {
+    return
+  }
+
+  historyClearing.value = true
+  historyError.value = null
+  historyClearMessage.value = null
+  try {
+    const result = await provisioningStore.clearRunsForConnection(
+      props.connectionId,
+      ids,
+      false,
+    )
+    selectedProvisioningRunIds.value = []
+    historyClearMessage.value = `Cleared ${result.deleted_count} provisioning history record${result.deleted_count === 1 ? '' : 's'}.${result.skipped_count ? ` ${result.skipped_count} active/nonexistent record(s) were left untouched.` : ''}`
+  } catch (error) {
+    historyError.value = error instanceof Error
+      ? error.message
+      : 'Unable to clear provisioning history.'
+  } finally {
+    historyClearing.value = false
+  }
+}
+
+async function clearAllProvisioningHistory() {
+  if (!clearableProvisioningRuns.value.length) return
+
+  if (!window.confirm(
+    'Clear all completed provisioning history for this Oracle database? Current Oracle accounts, application rows and LDAP entries are not changed, but removed runs can no longer provide retry or history-linked deprovision context.',
+  )) {
+    return
+  }
+
+  historyClearing.value = true
+  historyError.value = null
+  historyClearMessage.value = null
+  try {
+    const result = await provisioningStore.clearRunsForConnection(
+      props.connectionId,
+      [],
+      true,
+    )
+    selectedProvisioningRunIds.value = []
+    historyClearMessage.value = `Cleared ${result.deleted_count} provisioning history record${result.deleted_count === 1 ? '' : 's'}.`
+  } catch (error) {
+    historyError.value = error instanceof Error
+      ? error.message
+      : 'Unable to clear provisioning history.'
+  } finally {
+    historyClearing.value = false
   }
 }
 
@@ -1373,7 +1486,7 @@ onBeforeUnmount(() => {
           </label>
 
           <span>
-            {{ filteredUsers.length }} shown
+            Showing {{ userRangeStart }}–{{ userRangeEnd }} of {{ filteredUsers.length }} matching
           </span>
         </div>
 
@@ -1402,7 +1515,7 @@ onBeforeUnmount(() => {
 
             <tbody>
               <tr
-                v-for="user in filteredUsers"
+                v-for="user in pagedUsers"
                 :key="user.username"
               >
                 <td>
@@ -1498,6 +1611,39 @@ onBeforeUnmount(() => {
             </tbody>
           </table>
         </div>
+
+        <div v-if="filteredUsers.length > 0" class="oracle-user-pagination">
+          <span>
+            Showing {{ userRangeStart }}–{{ userRangeEnd }} of {{ filteredUsers.length }}
+          </span>
+          <div class="oracle-user-pagination-controls">
+            <label>
+              Rows
+              <select v-model.number="userPageSize">
+                <option :value="25">25</option>
+                <option :value="50">50</option>
+                <option :value="100">100</option>
+              </select>
+            </label>
+            <button
+              type="button"
+              class="secondary-button compact-button"
+              :disabled="userPage <= 1"
+              @click="userPage -= 1"
+            >
+              Previous
+            </button>
+            <span>Page {{ userPage }} of {{ userPageCount }}</span>
+            <button
+              type="button"
+              class="secondary-button compact-button"
+              :disabled="userPage >= userPageCount"
+              @click="userPage += 1"
+            >
+              Next
+            </button>
+          </div>
+        </div>
       </template>
     </template>
 
@@ -1507,17 +1653,41 @@ onBeforeUnmount(() => {
           <h3>Provisioning history</h3>
           <p>Lifecycle runs created from this parent Oracle database. Passwords are never stored.</p>
         </div>
-        <button
-          type="button"
-          class="secondary-button"
-          :disabled="historyLoading"
-          @click="loadProvisioningHistory"
-        >
-          {{ historyLoading ? 'Loading...' : 'Refresh history' }}
-        </button>
+        <div class="provisioning-history-actions">
+          <template v-if="canClearProvisioningHistory">
+            <button
+              type="button"
+              class="secondary-button"
+              :disabled="historyClearing || selectedProvisioningRunIds.length === 0"
+              @click="clearSelectedProvisioningHistory"
+            >
+              Clear selected
+            </button>
+            <button
+              type="button"
+              class="secondary-button"
+              :disabled="historyClearing || clearableProvisioningRuns.length === 0"
+              @click="clearAllProvisioningHistory"
+            >
+              Clear all history
+            </button>
+          </template>
+          <button
+            type="button"
+            class="secondary-button"
+            :disabled="historyLoading || historyClearing"
+            @click="loadProvisioningHistory"
+          >
+            {{ historyLoading ? 'Loading...' : 'Refresh history' }}
+          </button>
+        </div>
       </div>
 
+      <p class="profile-muted-note">
+        Dates use your profile timezone. Clearing history never changes the current Oracle account, application rows or LDAP entry. It does remove DBAChum retry and history-linked deprovision context for those runs; running lifecycle records are protected.
+      </p>
       <p v-if="historyError" class="login-error">{{ historyError }}</p>
+      <p v-if="historyClearMessage" class="profile-success">{{ historyClearMessage }}</p>
 
       <div v-if="provisioningResult && !createOpen" class="preview-callout provisioning-retry-result">
         <div>
@@ -1547,6 +1717,15 @@ onBeforeUnmount(() => {
         <table class="utility-table">
           <thead>
             <tr>
+              <th v-if="canClearProvisioningHistory" class="table-selection-cell">
+                <input
+                  type="checkbox"
+                  :checked="allClearableProvisioningRunsSelected"
+                  :disabled="clearableProvisioningRuns.length === 0"
+                  aria-label="Select all clearable provisioning history"
+                  @change="toggleAllProvisioningHistory"
+                >
+              </th>
               <th>User</th>
               <th>Profile</th>
               <th>Status</th>
@@ -1558,6 +1737,16 @@ onBeforeUnmount(() => {
           </thead>
           <tbody>
             <tr v-for="run in provisioningRuns" :key="run.run_id">
+              <td v-if="canClearProvisioningHistory" class="table-selection-cell">
+                <input
+                  v-if="run.status !== 'running'"
+                  v-model="selectedProvisioningRunIds"
+                  type="checkbox"
+                  :value="run.run_id"
+                  :aria-label="`Select provisioning run for ${run.username}`"
+                >
+                <span v-else title="Running history cannot be cleared">—</span>
+              </td>
               <td>
                 <strong>{{ run.username }}</strong>
                 <small v-if="run.employee_id">ID {{ run.employee_id }}</small>
@@ -2747,6 +2936,18 @@ onBeforeUnmount(() => {
   .access-inspector-summary, .access-account-summary, .access-finding-list { grid-template-columns: 1fr; }
   .access-object-toolbar { align-items: stretch; flex-direction: column; }
   .access-object-toolbar input { min-width: 0; width: 100%; }
+}
+
+.oracle-user-pagination { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: .75rem 0 0; font-size: .85rem; }
+.oracle-user-pagination-controls { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; }
+.oracle-user-pagination-controls label { display: flex; align-items: center; gap: .4rem; }
+.oracle-user-pagination-controls select { min-width: 4.5rem; }
+.provisioning-history-actions { display: flex; align-items: center; justify-content: flex-end; gap: .55rem; flex-wrap: wrap; }
+.table-selection-cell { width: 2.4rem; text-align: center !important; }
+@media (max-width: 760px) {
+  .oracle-user-pagination { align-items: flex-start; flex-direction: column; }
+  .provisioning-history-heading { align-items: flex-start; flex-direction: column; }
+  .provisioning-history-actions { justify-content: flex-start; }
 }
 
 </style>

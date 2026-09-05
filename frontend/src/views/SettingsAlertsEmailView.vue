@@ -14,6 +14,7 @@ import {
 } from '@/stores/emailDelivery'
 
 import { useAuthStore } from '@/stores/auth'
+import { formatUserDateTime } from '@/core/dateTime'
 
 const emailStore = useEmailDeliveryStore()
 const authStore = useAuthStore()
@@ -23,6 +24,9 @@ const testMessage = ref('')
 const testError = ref('')
 const testRecipient = ref('')
 const testRecipientName = ref('')
+const selectedDeliveryIds = ref<string[]>([])
+const deliveryClearMessage = ref('')
+const deliveryClearError = ref('')
 
 const form = reactive({
   enabled: false,
@@ -43,6 +47,19 @@ const form = reactive({
 const providerLabel = computed(() => (
   form.provider === 'brevo' ? 'Brevo API' : 'SMTP'
 ))
+
+const clearableDeliveries = computed(() =>
+  emailStore.deliveries.filter((delivery) =>
+    delivery.status === 'sent' || delivery.status === 'failed',
+  ),
+)
+
+const allClearableSelected = computed(() =>
+  clearableDeliveries.value.length > 0
+  && clearableDeliveries.value.every((delivery) =>
+    selectedDeliveryIds.value.includes(delivery.id),
+  ),
+)
 
 function applySettings() {
   const settings = emailStore.settings
@@ -68,6 +85,13 @@ function applySettings() {
 watch(
   () => emailStore.settings,
   () => applySettings(),
+)
+
+watch(
+  () => emailStore.deliveries.map((delivery) => delivery.id),
+  (ids) => {
+    selectedDeliveryIds.value = selectedDeliveryIds.value.filter((id) => ids.includes(id))
+  },
 )
 
 async function saveSettings() {
@@ -135,14 +159,58 @@ async function retryDelivery(id: string) {
 }
 
 function displayDate(value: string | null | undefined) {
-  if (!value) {
-    return '—'
+  return formatUserDateTime(value, authStore.user?.preferences)
+}
+
+function toggleAllClearableDeliveries() {
+  selectedDeliveryIds.value = allClearableSelected.value
+    ? []
+    : clearableDeliveries.value.map((delivery) => delivery.id)
+}
+
+async function clearSelectedDeliveries() {
+  const ids = [...selectedDeliveryIds.value]
+  if (!ids.length) return
+
+  if (!window.confirm(
+    `Clear ${ids.length} selected terminal delivery record${ids.length === 1 ? '' : 's'}? Pending/retrying mail is never removed by this action.`,
+  )) {
+    return
   }
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) {
-    return value
+
+  deliveryClearMessage.value = ''
+  deliveryClearError.value = ''
+  try {
+    const result = await emailStore.clearDeliveries(ids, false)
+    selectedDeliveryIds.value = []
+    deliveryClearMessage.value = `Cleared ${result.deleted_count} delivery record${result.deleted_count === 1 ? '' : 's'}.${result.skipped_count ? ` ${result.skipped_count} pending/nonexistent record(s) were left untouched.` : ''}`
+  } catch (cause) {
+    deliveryClearError.value = cause instanceof Error
+      ? cause.message
+      : 'Unable to clear delivery history.'
   }
-  return date.toLocaleString()
+}
+
+async function clearAllDeliveries() {
+  if (!clearableDeliveries.value.length) return
+
+  if (!window.confirm(
+    'Clear all sent/failed email delivery history? Queued, retrying and in-flight mail will remain queued.',
+  )) {
+    return
+  }
+
+  deliveryClearMessage.value = ''
+  deliveryClearError.value = ''
+  try {
+    const result = await emailStore.clearDeliveries([], true)
+    selectedDeliveryIds.value = []
+    deliveryClearMessage.value = `Cleared ${result.deleted_count} terminal delivery record${result.deleted_count === 1 ? '' : 's'}.`
+  } catch (cause) {
+    deliveryClearError.value = cause instanceof Error
+      ? cause.message
+      : 'Unable to clear delivery history.'
+  }
 }
 
 onMounted(async () => {
@@ -358,10 +426,34 @@ onMounted(async () => {
             </p>
           </div>
 
-          <button type="button" class="secondary-button" @click="emailStore.loadDeliveries()">
-            Refresh
-          </button>
+          <div class="table-bulk-actions">
+            <button
+              type="button"
+              class="secondary-button"
+              :disabled="emailStore.clearing || selectedDeliveryIds.length === 0"
+              @click="clearSelectedDeliveries"
+            >
+              Clear selected
+            </button>
+            <button
+              type="button"
+              class="secondary-button"
+              :disabled="emailStore.clearing || clearableDeliveries.length === 0"
+              @click="clearAllDeliveries"
+            >
+              Clear all history
+            </button>
+            <button type="button" class="secondary-button" :disabled="emailStore.clearing" @click="emailStore.loadDeliveries()">
+              Refresh
+            </button>
+          </div>
         </div>
+
+        <p class="profile-muted-note">
+          Sent/failed rows are history and may be cleared at any time. Queued, retrying and in-flight messages are protected so cleanup cannot cancel delivery. Dates use your profile timezone.
+        </p>
+        <p v-if="deliveryClearError" class="login-error">{{ deliveryClearError }}</p>
+        <p v-if="deliveryClearMessage" class="profile-success">{{ deliveryClearMessage }}</p>
 
         <div v-if="!emailStore.deliveries.length" class="empty-state">
           No email delivery records yet.
@@ -371,6 +463,15 @@ onMounted(async () => {
           <table class="utility-table email-delivery-table">
             <thead>
               <tr>
+                <th class="table-selection-cell">
+                  <input
+                    type="checkbox"
+                    :checked="allClearableSelected"
+                    :disabled="clearableDeliveries.length === 0"
+                    aria-label="Select all clearable delivery history"
+                    @change="toggleAllClearableDeliveries"
+                  >
+                </th>
                 <th>When</th>
                 <th>Recipient</th>
                 <th>Type</th>
@@ -383,6 +484,16 @@ onMounted(async () => {
             </thead>
             <tbody>
               <tr v-for="delivery in emailStore.deliveries" :key="delivery.id">
+                <td class="table-selection-cell">
+                  <input
+                    v-if="delivery.status === 'sent' || delivery.status === 'failed'"
+                    v-model="selectedDeliveryIds"
+                    type="checkbox"
+                    :value="delivery.id"
+                    :aria-label="`Select ${delivery.subject}`"
+                  >
+                  <span v-else title="Pending deliveries cannot be cleared">—</span>
+                </td>
                 <td>{{ displayDate(delivery.sent_at || delivery.created_at) }}</td>
                 <td>
                   <strong>{{ delivery.recipient_name || delivery.recipient_email }}</strong>

@@ -17,6 +17,7 @@ import {
   type DatabaseMetricSample,
 } from '@/stores/databaseMetrics'
 import { useUiStore } from '@/stores/ui'
+import { useAuthStore } from '@/stores/auth'
 import { overviewMetricLabel } from '@/core/databasePresentation'
 
 
@@ -26,6 +27,7 @@ const props = defineProps<{
 
 const metricsStore = useDatabaseMetricsStore()
 const uiStore = useUiStore()
+const authStore = useAuthStore()
 
 
 type HistoryRange = 1 | 6 | 12 | 24
@@ -108,7 +110,16 @@ interface AggregatedWaitRow {
 }
 
 const ranges: HistoryRange[] = [1, 6, 12, 24]
-const hours = ref<HistoryRange>(1)
+
+function preferredHistoryRange(): HistoryRange {
+  const preference = authStore.user?.preferences.default_history_range
+  const parsed = Number.parseInt(preference ?? '1h', 10)
+  return ranges.includes(parsed as HistoryRange)
+    ? parsed as HistoryRange
+    : 1
+}
+
+const hours = ref<HistoryRange>(preferredHistoryRange())
 const metric = ref<HistoryMetric>('active')
 const selectedWindow = ref<[number, number] | null>(null)
 const historyChart = ref<any>(null)

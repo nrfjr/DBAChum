@@ -23,6 +23,23 @@ export type DensityPreference =
   | 'comfortable'
   | 'compact'
 
+export type DateTimeFormatPreference =
+  | 'system'
+  | '12h'
+  | '24h'
+
+export type LandingPagePreference =
+  | 'dashboard'
+  | 'databases'
+  | 'servers'
+  | 'alerts'
+
+export type HistoryRangePreference =
+  | '1h'
+  | '6h'
+  | '12h'
+  | '24h'
+
 export type NotificationSeverity =
   | 'critical'
   | 'warning'
@@ -47,6 +64,9 @@ export type NotificationScope =
 
 export interface UserPreferences {
   timezone: string
+  date_time_format: DateTimeFormatPreference
+  default_landing_page: LandingPagePreference
+  default_history_range: HistoryRangePreference
   theme: ThemePreference
   accent: AccentPreference
   density: DensityPreference
@@ -86,6 +106,9 @@ export interface ProfileUpdateInput {
 
 export interface PreferencesUpdateInput {
   timezone?: string
+  date_time_format?: DateTimeFormatPreference
+  default_landing_page?: LandingPagePreference
+  default_history_range?: HistoryRangePreference
   theme?: ThemePreference
   accent?: AccentPreference
   density?: DensityPreference

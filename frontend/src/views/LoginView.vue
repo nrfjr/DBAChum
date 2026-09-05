@@ -6,6 +6,7 @@ import {
 } from 'vue-router'
 
 import { useAuthStore } from '@/stores/auth'
+import { landingPath } from '@/core/dateTime'
 
 
 const router = useRouter()
@@ -30,7 +31,7 @@ async function submit() {
     const redirect =
       typeof route.query.redirect === 'string'
         ? route.query.redirect
-        : '/'
+        : landingPath(authStore.user?.preferences.default_landing_page)
 
     await router.push(redirect)
   } catch {

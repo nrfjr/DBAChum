@@ -37,6 +37,26 @@ class DensityPreference(str, Enum):
     COMPACT = "compact"
 
 
+class DateTimeFormatPreference(str, Enum):
+    SYSTEM = "system"
+    TWELVE_HOUR = "12h"
+    TWENTY_FOUR_HOUR = "24h"
+
+
+class LandingPagePreference(str, Enum):
+    DASHBOARD = "dashboard"
+    DATABASES = "databases"
+    SERVERS = "servers"
+    ALERTS = "alerts"
+
+
+class HistoryRangePreference(str, Enum):
+    ONE_HOUR = "1h"
+    SIX_HOURS = "6h"
+    TWELVE_HOURS = "12h"
+    TWENTY_FOUR_HOURS = "24h"
+
+
 class UserPreferences(BaseModel):
     """Personal presentation preferences stored with a DBAChum user.
 
@@ -49,6 +69,9 @@ class UserPreferences(BaseModel):
         min_length=1,
         max_length=80,
     )
+    date_time_format: DateTimeFormatPreference = DateTimeFormatPreference.SYSTEM
+    default_landing_page: LandingPagePreference = LandingPagePreference.DASHBOARD
+    default_history_range: HistoryRangePreference = HistoryRangePreference.ONE_HOUR
     theme: ThemePreference = ThemePreference.SYSTEM
     accent: AccentPreference = AccentPreference.PURPLE
     density: DensityPreference = DensityPreference.COMFORTABLE
@@ -68,6 +91,9 @@ class UserPreferencesUpdate(BaseModel):
         min_length=1,
         max_length=80,
     )
+    date_time_format: DateTimeFormatPreference | None = None
+    default_landing_page: LandingPagePreference | None = None
+    default_history_range: HistoryRangePreference | None = None
     theme: ThemePreference | None = None
     accent: AccentPreference | None = None
     density: DensityPreference | None = None
@@ -79,7 +105,9 @@ class UserPreferencesUpdate(BaseModel):
             return None
 
         normalized = value.strip()
-        return normalized or "system"
+        if not normalized:
+            return "system"
+        return normalized
 
 
 class UserResponse(BaseModel):

@@ -661,3 +661,19 @@ class BulkProvisionExecutionResponse(BaseModel):
     partial_count: int
     failed_count: int
     rows: list[BulkProvisionExecutionRow] = Field(default_factory=list)
+
+
+class ProvisioningHistoryClearRequest(BaseModel):
+    clear_all: bool = False
+    run_ids: list[str] = Field(default_factory=list, max_length=100)
+
+    @model_validator(mode="after")
+    def validate_target(self):
+        if not self.clear_all and not self.run_ids:
+            raise ValueError("Select at least one provisioning run or request clear_all.")
+        return self
+
+
+class ProvisioningHistoryClearResponse(BaseModel):
+    deleted_count: int = 0
+    skipped_count: int = 0

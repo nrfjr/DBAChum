@@ -85,4 +85,4 @@ def test_notification_delivery_routes_use_admin_permission_boundary():
         / "notification_delivery.py"
     ).read_text(encoding="utf-8")
 
-    assert endpoint.count("Permission.NOTIFICATION_MANAGE") == 5
+    assert endpoint.count("Permission.NOTIFICATION_MANAGE") == 6

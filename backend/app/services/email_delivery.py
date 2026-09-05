@@ -517,3 +517,56 @@ async def retry_email_delivery(database, delivery_id: str) -> EmailDeliveryRespo
 
     document = await database[EMAIL_DELIVERIES_COLLECTION].find_one({"_id": object_id})
     return _delivery_response(document)
+
+
+async def clear_email_deliveries(
+    database,
+    *,
+    delivery_ids: list[str] | None = None,
+    clear_all: bool = False,
+) -> dict[str, int]:
+    """Remove terminal delivery-history records only.
+
+    Queued/retry/sending documents are intentionally preserved so clearing the
+    status table cannot cancel mail that is still in-flight.
+    """
+    terminal_statuses = [
+        EmailDeliveryStatus.SENT.value,
+        EmailDeliveryStatus.FAILED.value,
+    ]
+
+    if clear_all:
+        result = await database[EMAIL_DELIVERIES_COLLECTION].delete_many(
+            {"status": {"$in": terminal_statuses}}
+        )
+        return {
+            "deleted_count": int(result.deleted_count),
+            "skipped_count": 0,
+        }
+
+    raw_ids = delivery_ids or []
+    object_ids: list[ObjectId] = []
+    for delivery_id in raw_ids:
+        try:
+            object_ids.append(ObjectId(delivery_id))
+        except Exception as exc:
+            raise AppError(
+                "Email delivery record not found.",
+                code="EMAIL_DELIVERY_NOT_FOUND",
+                status_code=404,
+            ) from exc
+
+    if not object_ids:
+        return {"deleted_count": 0, "skipped_count": 0}
+
+    result = await database[EMAIL_DELIVERIES_COLLECTION].delete_many(
+        {
+            "_id": {"$in": object_ids},
+            "status": {"$in": terminal_statuses},
+        }
+    )
+    deleted_count = int(result.deleted_count)
+    return {
+        "deleted_count": deleted_count,
+        "skipped_count": max(0, len(object_ids) - deleted_count),
+    }

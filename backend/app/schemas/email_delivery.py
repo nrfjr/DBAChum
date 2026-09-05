@@ -133,3 +133,19 @@ class EmailDeliverySummary(BaseModel):
     retry: int = 0
     sent: int = 0
     failed: int = 0
+
+
+class EmailDeliveryClearRequest(BaseModel):
+    clear_all: bool = False
+    delivery_ids: list[str] = Field(default_factory=list, max_length=200)
+
+    @model_validator(mode="after")
+    def validate_target(self):
+        if not self.clear_all and not self.delivery_ids:
+            raise ValueError("Select at least one delivery record or request clear_all.")
+        return self
+
+
+class EmailDeliveryClearResponse(BaseModel):
+    deleted_count: int = 0
+    skipped_count: int = 0

@@ -214,6 +214,56 @@ async def list_provisioning_runs(
     return [_summary(document) for document in documents]
 
 
+async def clear_provisioning_runs(
+    database,
+    parent_connection_id: str,
+    *,
+    run_ids: list[str] | None = None,
+    clear_all: bool = False,
+) -> dict[str, int]:
+    """Remove terminal provisioning lifecycle records for one parent DB.
+
+    Active/running lifecycle records are protected. Clearing history does not
+    modify Oracle accounts, application rows or LDAP entries; it only removes
+    DBAChum's stored lifecycle record, which also removes retry/history context
+    for that run.
+    """
+    terminal_filter = {"$in": ["succeeded", "partial", "failed"]}
+
+    if clear_all:
+        result = await database.provisioning_runs.delete_many(
+            {
+                "parent_connection_id": parent_connection_id,
+                "status": terminal_filter,
+            }
+        )
+        return {
+            "deleted_count": int(result.deleted_count),
+            "skipped_count": 0,
+        }
+
+    raw_ids = run_ids or []
+    object_ids: list[ObjectId] = []
+    for run_id in raw_ids:
+        object_ids.append(_parse_run_id(run_id))
+
+    if not object_ids:
+        return {"deleted_count": 0, "skipped_count": 0}
+
+    result = await database.provisioning_runs.delete_many(
+        {
+            "_id": {"$in": object_ids},
+            "parent_connection_id": parent_connection_id,
+            "status": terminal_filter,
+        }
+    )
+    deleted_count = int(result.deleted_count)
+    return {
+        "deleted_count": deleted_count,
+        "skipped_count": max(0, len(object_ids) - deleted_count),
+    }
+
+
 async def get_provisioning_run(
     database,
     parent_connection_id: str,

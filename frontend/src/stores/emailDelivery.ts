@@ -38,6 +38,11 @@ export interface EmailSettingsUpdate {
   smtp_password?: string | null
 }
 
+export interface EmailDeliveryClearResult {
+  deleted_count: number
+  skipped_count: number
+}
+
 export interface EmailDeliveryItem {
   id: string
   kind: string
@@ -89,6 +94,7 @@ export const useEmailDeliveryStore = defineStore('emailDelivery', {
     loading: false,
     saving: false,
     testing: false,
+    clearing: false,
     error: '' as string,
   }),
 
@@ -165,6 +171,30 @@ export const useEmailDeliveryStore = defineStore('emailDelivery', {
       this.deliveries = await request<EmailDeliveryItem[]>(
         '/notification-delivery/email/deliveries?limit=50',
       )
+    },
+
+    async clearDeliveries(deliveryIds: string[] = [], clearAll = false) {
+      this.clearing = true
+      this.error = ''
+      try {
+        const result = await request<EmailDeliveryClearResult>(
+          '/notification-delivery/email/deliveries/clear',
+          {
+            method: 'POST',
+            body: JSON.stringify({
+              clear_all: clearAll,
+              delivery_ids: deliveryIds,
+            }),
+          },
+        )
+        await this.loadDeliveries()
+        return result
+      } catch (error) {
+        this.error = error instanceof Error ? error.message : 'Unable to clear email delivery history.'
+        throw error
+      } finally {
+        this.clearing = false
+      }
     },
 
     async retry(deliveryId: string) {

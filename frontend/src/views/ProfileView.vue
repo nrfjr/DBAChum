@@ -10,7 +10,10 @@ import {
 import {
   useAuthStore,
   type AccentPreference,
+  type DateTimeFormatPreference,
   type DensityPreference,
+  type HistoryRangePreference,
+  type LandingPagePreference,
   type NotificationCategory,
   type NotificationEngine,
   type NotificationScope,
@@ -33,6 +36,9 @@ const preferencesMessage = ref<string | null>(null)
 const preferencesError = ref<string | null>(null)
 const notificationsMessage = ref<string | null>(null)
 const notificationsError = ref<string | null>(null)
+const preferenceDataMessage = ref<string | null>(null)
+const preferenceDataError = ref<string | null>(null)
+const preferenceImportInput = ref<HTMLInputElement | null>(null)
 
 const identity = reactive({
   display_name: '',
@@ -41,6 +47,9 @@ const identity = reactive({
 
 const preferences = reactive({
   timezone: 'system',
+  date_time_format: 'system' as DateTimeFormatPreference,
+  default_landing_page: 'dashboard' as LandingPagePreference,
+  default_history_range: '1h' as HistoryRangePreference,
   theme: 'system' as ThemePreference,
   accent: 'purple' as AccentPreference,
   density: 'comfortable' as DensityPreference,
@@ -142,6 +151,9 @@ function syncFromUser() {
   identity.email = user.email ?? ''
 
   preferences.timezone = user.preferences.timezone
+  preferences.date_time_format = user.preferences.date_time_format
+  preferences.default_landing_page = user.preferences.default_landing_page
+  preferences.default_history_range = user.preferences.default_history_range
   preferences.theme = user.preferences.theme
   preferences.accent = user.preferences.accent
   preferences.density = user.preferences.density
@@ -200,6 +212,9 @@ async function savePreferences() {
   try {
     const user = await authStore.updatePreferences({
       timezone: preferences.timezone.trim() || 'system',
+      date_time_format: preferences.date_time_format,
+      default_landing_page: preferences.default_landing_page,
+      default_history_range: preferences.default_history_range,
       theme: preferences.theme,
       accent: preferences.accent,
       density: preferences.density,
@@ -238,6 +253,161 @@ async function saveNotifications() {
     notificationsError.value = cause instanceof Error
       ? cause.message
       : 'Unable to save alert subscription.'
+  }
+}
+
+function downloadJson(filename: string, payload: unknown) {
+  const blob = new Blob(
+    [JSON.stringify(payload, null, 2)],
+    { type: 'application/json' },
+  )
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = filename
+  document.body.appendChild(anchor)
+  anchor.click()
+  anchor.remove()
+  URL.revokeObjectURL(url)
+}
+
+function exportPreferences() {
+  const user = authStore.user
+  if (!user) return
+
+  preferenceDataError.value = null
+  preferenceDataMessage.value = null
+
+  downloadJson(
+    `dbachum-preferences-${user.username}.json`,
+    {
+      format: 'DBAChum user preferences',
+      version: 1,
+      exported_at: new Date().toISOString(),
+      preferences: user.preferences,
+      notifications: user.notifications,
+    },
+  )
+  preferenceDataMessage.value = 'Preferences exported.'
+}
+
+function choosePreferenceImport() {
+  preferenceImportInput.value?.click()
+}
+
+async function importPreferences(event: Event) {
+  preferenceDataError.value = null
+  preferenceDataMessage.value = null
+
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = ''
+  if (!file) return
+
+  try {
+    const payload = JSON.parse(await file.text()) as Record<string, unknown>
+    if (payload.format !== 'DBAChum user preferences' || payload.version !== 1) {
+      throw new Error('This is not a supported DBAChum preferences export.')
+    }
+
+    if (!payload.preferences || typeof payload.preferences !== 'object') {
+      throw new Error('The preferences section is missing.')
+    }
+    if (!payload.notifications || typeof payload.notifications !== 'object') {
+      throw new Error('The notification preferences section is missing.')
+    }
+
+    const importedPreferences = payload.preferences as Record<string, unknown>
+    const importedNotifications = payload.notifications as Record<string, unknown>
+
+    const user = await authStore.updatePreferences({
+      timezone: String(importedPreferences.timezone ?? 'system'),
+      date_time_format: importedPreferences.date_time_format as DateTimeFormatPreference,
+      default_landing_page: importedPreferences.default_landing_page as LandingPagePreference,
+      default_history_range: importedPreferences.default_history_range as HistoryRangePreference,
+      theme: importedPreferences.theme as ThemePreference,
+      accent: importedPreferences.accent as AccentPreference,
+      density: importedPreferences.density as DensityPreference,
+    })
+
+    await authStore.updateNotifications({
+      email_enabled: Boolean(importedNotifications.email_enabled),
+      severities: Array.isArray(importedNotifications.severities)
+        ? importedNotifications.severities as NotificationSeverity[]
+        : [],
+      categories: Array.isArray(importedNotifications.categories)
+        ? importedNotifications.categories as NotificationCategory[]
+        : [],
+      engines: Array.isArray(importedNotifications.engines)
+        ? importedNotifications.engines as NotificationEngine[]
+        : [],
+      include_servers: importedNotifications.include_servers !== false,
+      include_system: importedNotifications.include_system !== false,
+      scope: importedNotifications.scope === 'selected' ? 'selected' : 'all',
+      database_connection_ids: Array.isArray(importedNotifications.database_connection_ids)
+        ? importedNotifications.database_connection_ids.map(String)
+        : [],
+      server_ids: Array.isArray(importedNotifications.server_ids)
+        ? importedNotifications.server_ids.map(String)
+        : [],
+    })
+
+    uiStore.applyUserPreferences(user.preferences)
+    preferenceDataMessage.value = 'Preferences imported.'
+  } catch (cause) {
+    preferenceDataError.value = cause instanceof Error
+      ? cause.message
+      : 'Unable to import preferences.'
+  }
+}
+
+async function resetPreferences() {
+  if (!window.confirm(
+    'Reset your personal preferences and alert subscriptions to DBAChum defaults? Your profile name and email are not changed.',
+  )) {
+    return
+  }
+
+  preferenceDataError.value = null
+  preferenceDataMessage.value = null
+
+  try {
+    const user = await authStore.updatePreferences({
+      timezone: 'system',
+      date_time_format: 'system',
+      default_landing_page: 'dashboard',
+      default_history_range: '1h',
+      theme: 'system',
+      accent: 'purple',
+      density: 'comfortable',
+    })
+
+    await authStore.updateNotifications({
+      email_enabled: false,
+      severities: ['critical', 'warning'],
+      categories: [
+        'availability',
+        'blocking',
+        'storage',
+        'performance',
+        'jobs',
+        'backup',
+        'system',
+      ],
+      engines: ['oracle', 'sqlserver', 'mysql'],
+      include_servers: true,
+      include_system: true,
+      scope: 'all',
+      database_connection_ids: [],
+      server_ids: [],
+    })
+
+    uiStore.applyUserPreferences(user.preferences)
+    preferenceDataMessage.value = 'Preferences reset to defaults.'
+  } catch (cause) {
+    preferenceDataError.value = cause instanceof Error
+      ? cause.message
+      : 'Unable to reset preferences.'
   }
 }
 
@@ -367,6 +537,35 @@ function engineLabel(engine: NotificationEngine) {
         </label>
 
         <label>
+          Date / time format
+          <select v-model="preferences.date_time_format">
+            <option value="system">System / browser</option>
+            <option value="12h">12-hour</option>
+            <option value="24h">24-hour</option>
+          </select>
+        </label>
+
+        <label>
+          Default landing page
+          <select v-model="preferences.default_landing_page">
+            <option value="dashboard">Dashboard</option>
+            <option value="databases">Databases</option>
+            <option value="servers">Servers</option>
+            <option value="alerts">Alerts</option>
+          </select>
+        </label>
+
+        <label>
+          Default History range
+          <select v-model="preferences.default_history_range">
+            <option value="1h">Last 1 hour</option>
+            <option value="6h">Last 6 hours</option>
+            <option value="12h">Last 12 hours</option>
+            <option value="24h">Last 24 hours</option>
+          </select>
+        </label>
+
+        <label>
           Theme
           <select v-model="preferences.theme">
             <option value="system">System</option>
@@ -402,7 +601,7 @@ function engineLabel(engine: NotificationEngine) {
             <option value="compact">Compact</option>
           </select>
           <small>
-            Density is stored now so the Phase 8 UI polish can honor the same preference everywhere.
+            Compact/comfortable density is stored with your account and is available to the Phase 8 polish.
           </small>
         </label>
 
@@ -423,6 +622,41 @@ function engineLabel(engine: NotificationEngine) {
           </button>
         </div>
       </form>
+    </section>
+
+    <section class="panel profile-card profile-card-wide preference-data-card">
+      <div class="panel-header">
+        <div>
+          <h3>Preference data</h3>
+          <p>Move your personal DBAChum setup between browsers or restore it later. Profile identity and credentials are never included.</p>
+        </div>
+      </div>
+
+      <input
+        ref="preferenceImportInput"
+        type="file"
+        accept="application/json,.json"
+        class="preference-file-input"
+        @change="importPreferences"
+      >
+
+      <div class="preference-data-actions">
+        <button type="button" class="secondary-button" @click="exportPreferences">
+          Export preferences
+        </button>
+        <button type="button" class="secondary-button" @click="choosePreferenceImport">
+          Import preferences
+        </button>
+        <button type="button" class="danger-button" @click="resetPreferences">
+          Reset to defaults
+        </button>
+      </div>
+
+      <p class="profile-muted-note">
+        Export includes personal appearance, timezone, landing/history defaults and alert subscriptions. It does not include username, email, passwords, connection credentials or installation settings.
+      </p>
+      <p v-if="preferenceDataError" class="login-error">{{ preferenceDataError }}</p>
+      <p v-if="preferenceDataMessage" class="profile-success">{{ preferenceDataMessage }}</p>
     </section>
 
     <section class="panel profile-card profile-card-wide">
@@ -459,7 +693,7 @@ function engineLabel(engine: NotificationEngine) {
           </p>
 
           <p class="notification-foundation-note">
-            Phase 7B.3 saves and matches subscriptions now. Actual Brevo/SMTP delivery is added in 7B.4.
+            These subscriptions are used by the active Brevo/SMTP delivery service. In-app Alert Center visibility is unchanged.
           </p>
         </div>
 
