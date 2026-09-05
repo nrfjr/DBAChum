@@ -104,7 +104,7 @@ const filteredUsers = computed(() => {
 })
 
 const userPage = ref(1)
-const userPageSize = ref(25)
+const userPageSize = ref(10)
 
 const userPageCount = computed(() =>
   Math.max(1, Math.ceil(filteredUsers.value.length / userPageSize.value)),
@@ -1498,7 +1498,10 @@ onBeforeUnmount(() => {
           <button type="button" class="secondary-button compact-button" @click="actionNotice = null">Dismiss</button>
         </div>
 
-        <div class="utility-table-wrap user-list-table-wrap">
+        <div
+          class="utility-table-wrap user-list-table-wrap"
+          :class="{ 'user-list-table-wrap--scroll': userPageSize > 10 }"
+        >
           <table class="utility-table">
             <thead>
               <tr>
@@ -1618,8 +1621,9 @@ onBeforeUnmount(() => {
           </span>
           <div class="oracle-user-pagination-controls">
             <label>
-              Rows
+              Rows per page
               <select v-model.number="userPageSize">
+                <option :value="10">10</option>
                 <option :value="25">25</option>
                 <option :value="50">50</option>
                 <option :value="100">100</option>
@@ -2938,6 +2942,16 @@ onBeforeUnmount(() => {
   .access-object-toolbar input { min-width: 0; width: 100%; }
 }
 
+.user-list-table-wrap--scroll {
+  max-height: clamp(26rem, 55vh, 46rem);
+  overflow: auto;
+}
+.user-list-table-wrap--scroll thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--color-surface);
+}
 .oracle-user-pagination { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: .75rem 0 0; font-size: .85rem; }
 .oracle-user-pagination-controls { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; }
 .oracle-user-pagination-controls label { display: flex; align-items: center; gap: .4rem; }

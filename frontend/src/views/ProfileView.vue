@@ -40,6 +40,53 @@ const preferenceDataMessage = ref<string | null>(null)
 const preferenceDataError = ref<string | null>(null)
 const preferenceImportInput = ref<HTMLInputElement | null>(null)
 
+type ProfileSection =
+  | 'profile'
+  | 'customization'
+  | 'alerts'
+  | 'transfer'
+
+const activeSection = ref<ProfileSection>('profile')
+
+const profileSectionMeta: Record<
+  ProfileSection,
+  { title: string; description: string }
+> = {
+  profile: {
+    title: 'My profile',
+    description: 'Your DBAChum identity and account contact information.',
+  },
+  customization: {
+    title: 'Customization',
+    description: 'Personalize how DBAChum looks and behaves for your account.',
+  },
+  alerts: {
+    title: 'Alert subscriptions',
+    description: 'Choose which centrally-defined alerts are delivered to you.',
+  },
+  transfer: {
+    title: 'Import / Export',
+    description: 'Back up, restore or reset your personal DBAChum preferences.',
+  },
+}
+
+const activeSectionMeta = computed(() =>
+  profileSectionMeta[activeSection.value],
+)
+
+function selectProfileSection(section: ProfileSection) {
+  activeSection.value = section
+
+  identityMessage.value = null
+  identityError.value = null
+  preferencesMessage.value = null
+  preferencesError.value = null
+  notificationsMessage.value = null
+  notificationsError.value = null
+  preferenceDataMessage.value = null
+  preferenceDataError.value = null
+}
+
 const identity = reactive({
   display_name: '',
   email: '',
@@ -425,13 +472,55 @@ function engineLabel(engine: NotificationEngine) {
     <div>
       <h2>My profile</h2>
       <p>
-        Your DBAChum identity, personal workspace defaults and alert subscriptions.
+        Manage your DBAChum identity, customization, alert subscriptions and preference data.
       </p>
     </div>
   </section>
 
-  <div class="profile-layout">
-    <section class="panel profile-card">
+  <div class="settings-layout profile-settings-layout">
+    <aside class="settings-nav profile-settings-nav" aria-label="Profile sections">
+      <button
+        type="button"
+        class="settings-nav-item profile-section-button"
+        :class="{ active: activeSection === 'profile' }"
+        @click="selectProfileSection('profile')"
+      >
+        My Profile
+      </button>
+      <button
+        type="button"
+        class="settings-nav-item profile-section-button"
+        :class="{ active: activeSection === 'customization' }"
+        @click="selectProfileSection('customization')"
+      >
+        Customization
+      </button>
+      <button
+        type="button"
+        class="settings-nav-item profile-section-button"
+        :class="{ active: activeSection === 'alerts' }"
+        @click="selectProfileSection('alerts')"
+      >
+        Alert subscriptions
+      </button>
+      <button
+        type="button"
+        class="settings-nav-item profile-section-button"
+        :class="{ active: activeSection === 'transfer' }"
+        @click="selectProfileSection('transfer')"
+      >
+        Import / Export
+      </button>
+    </aside>
+
+    <section class="settings-content profile-settings-content">
+      <header class="settings-section-header">
+        <h2>{{ activeSectionMeta.title }}</h2>
+        <p>{{ activeSectionMeta.description }}</p>
+      </header>
+
+      <div class="profile-section-stack">
+        <section v-if="activeSection === 'profile'" class="panel profile-card">
       <div class="profile-identity-heading">
         <div class="profile-avatar-large">
           {{ authStore.user?.avatar_initials || 'DB' }}
@@ -504,7 +593,7 @@ function engineLabel(engine: NotificationEngine) {
       </form>
     </section>
 
-    <section class="panel profile-card">
+        <section v-if="activeSection === 'customization'" class="panel profile-card">
       <div class="panel-header">
         <div>
           <h3>Personal preferences</h3>
@@ -624,7 +713,7 @@ function engineLabel(engine: NotificationEngine) {
       </form>
     </section>
 
-    <section class="panel profile-card profile-card-wide preference-data-card">
+        <section v-if="activeSection === 'transfer'" class="panel profile-card preference-data-card">
       <div class="panel-header">
         <div>
           <h3>Preference data</h3>
@@ -659,7 +748,7 @@ function engineLabel(engine: NotificationEngine) {
       <p v-if="preferenceDataMessage" class="profile-success">{{ preferenceDataMessage }}</p>
     </section>
 
-    <section class="panel profile-card profile-card-wide">
+        <section v-if="activeSection === 'alerts'" class="panel profile-card">
       <div class="panel-header">
         <div>
           <h3>Alert subscriptions</h3>
@@ -904,6 +993,8 @@ function engineLabel(engine: NotificationEngine) {
           </button>
         </div>
       </form>
+    </section>
+      </div>
     </section>
   </div>
 </template>

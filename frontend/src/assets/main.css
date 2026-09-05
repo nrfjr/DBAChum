@@ -4497,6 +4497,56 @@ button {
 }
 
 /* ==============================================
+   Phase 7B.6 — Profile workspace navigation
+   ============================================== */
+.profile-settings-layout {
+  align-items: start;
+}
+
+.profile-settings-nav {
+  position: sticky;
+  top: calc(var(--topbar-height) + 1rem);
+}
+
+.profile-section-button {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.profile-section-button.active {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.profile-settings-content .settings-section-header p {
+  margin: 0.35rem 0 0;
+  color: var(--text-muted);
+}
+
+.profile-section-stack {
+  display: grid;
+  gap: 1rem;
+}
+
+.profile-section-stack > .profile-card {
+  max-width: 70rem;
+}
+
+@media (max-width: 800px) {
+  .profile-settings-nav {
+    position: static;
+  }
+
+  .profile-section-button {
+    width: auto;
+  }
+}
+
+/* ==============================================
    Phase 7B.1 — User identity/profile foundation
    ============================================== */
 .profile-layout {
