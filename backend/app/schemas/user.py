@@ -8,6 +8,8 @@ from pydantic import (
     field_validator,
 )
 
+from app.schemas.notification import UserNotificationPreferences
+
 
 class UserRole(str, Enum):
     VIEWER = "viewer"
@@ -38,9 +40,8 @@ class DensityPreference(str, Enum):
 class UserPreferences(BaseModel):
     """Personal presentation preferences stored with a DBAChum user.
 
-    Notification subscriptions intentionally do not live here yet. Phase 7B.3
-    owns that model so identity/appearance can evolve without coupling the
-    profile foundation to alert delivery rules.
+    Notification subscriptions live in a sibling user field rather than here,
+    keeping identity/appearance independent from alert-delivery choices.
     """
 
     timezone: str = Field(
@@ -92,6 +93,9 @@ class UserResponse(BaseModel):
     avatar_initials: str = "DB"
     preferences: UserPreferences = Field(
         default_factory=UserPreferences
+    )
+    notifications: UserNotificationPreferences = Field(
+        default_factory=UserNotificationPreferences
     )
     created_at: datetime | None = None
     updated_at: datetime | None = None

@@ -23,11 +23,45 @@ export type DensityPreference =
   | 'comfortable'
   | 'compact'
 
+export type NotificationSeverity =
+  | 'critical'
+  | 'warning'
+
+export type NotificationCategory =
+  | 'availability'
+  | 'blocking'
+  | 'storage'
+  | 'performance'
+  | 'jobs'
+  | 'backup'
+  | 'system'
+
+export type NotificationEngine =
+  | 'oracle'
+  | 'sqlserver'
+  | 'mysql'
+
+export type NotificationScope =
+  | 'all'
+  | 'selected'
+
 export interface UserPreferences {
   timezone: string
   theme: ThemePreference
   accent: AccentPreference
   density: DensityPreference
+}
+
+export interface UserNotificationPreferences {
+  email_enabled: boolean
+  severities: NotificationSeverity[]
+  categories: NotificationCategory[]
+  engines: NotificationEngine[]
+  include_servers: boolean
+  include_system: boolean
+  scope: NotificationScope
+  database_connection_ids: string[]
+  server_ids: string[]
 }
 
 export interface User {
@@ -40,6 +74,7 @@ export interface User {
   permissions?: Permission[]
   avatar_initials: string
   preferences: UserPreferences
+  notifications: UserNotificationPreferences
   created_at?: string | null
   updated_at?: string | null
 }
@@ -54,6 +89,18 @@ export interface PreferencesUpdateInput {
   theme?: ThemePreference
   accent?: AccentPreference
   density?: DensityPreference
+}
+
+export interface NotificationPreferencesUpdateInput {
+  email_enabled?: boolean
+  severities?: NotificationSeverity[]
+  categories?: NotificationCategory[]
+  engines?: NotificationEngine[]
+  include_servers?: boolean
+  include_system?: boolean
+  scope?: NotificationScope
+  database_connection_ids?: string[]
+  server_ids?: string[]
 }
 
 interface LoginPayload {
@@ -106,6 +153,7 @@ export const useAuthStore = defineStore(
       loading: false,
       profileSaving: false,
       preferencesSaving: false,
+      notificationsSaving: false,
     }),
 
     getters: {
@@ -218,6 +266,27 @@ export const useAuthStore = defineStore(
           return user
         } finally {
           this.preferencesSaving = false
+        }
+      },
+
+      async updateNotifications(
+        data: NotificationPreferencesUpdateInput,
+      ) {
+        this.notificationsSaving = true
+
+        try {
+          const user = await apiRequest<User>(
+            '/profile/notifications',
+            {
+              method: 'PUT',
+              body: JSON.stringify(data),
+            },
+          )
+
+          this.user = user
+          return user
+        } finally {
+          this.notificationsSaving = false
         }
       },
 

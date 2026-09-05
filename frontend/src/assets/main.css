@@ -4637,3 +4637,157 @@ button {
     display: none;
   }
 }
+
+/* ==========================================================
+   Phase 7B.3 — Per-user notification subscription foundation
+   ========================================================== */
+.profile-card-wide {
+  grid-column: 1 / -1;
+}
+
+.notification-form {
+  display: grid;
+  gap: 1rem;
+}
+
+.notification-delivery-card,
+.notification-section,
+.notification-source-column {
+  padding: 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: 0.8rem;
+  background: var(--surface-muted);
+}
+
+.notification-toggle-row,
+.notification-check-row,
+.notification-source-row {
+  display: flex !important;
+  grid-template-columns: none !important;
+  flex-direction: row !important;
+  align-items: flex-start;
+  gap: 0.7rem;
+  cursor: pointer;
+}
+
+.notification-toggle-row {
+  align-items: center;
+  justify-content: space-between;
+}
+
+.notification-toggle-row > span,
+.notification-check-row > span,
+.notification-source-row > span {
+  display: grid;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.notification-toggle-row input,
+.notification-check-row input,
+.notification-source-row input,
+.notification-chip input {
+  width: auto !important;
+  flex: 0 0 auto;
+  margin-top: 0.15rem;
+}
+
+.notification-toggle-row input {
+  margin-top: 0;
+}
+
+.notification-toggle-row small,
+.notification-check-row small,
+.notification-source-row small,
+.notification-source-heading small {
+  color: var(--text-muted);
+}
+
+.notification-grid,
+.notification-source-picker {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.notification-section {
+  align-content: start;
+}
+
+.notification-section .notification-check-row + .notification-check-row,
+.notification-source-row + .notification-source-row {
+  margin-top: 0.65rem;
+}
+
+.notification-chip-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.notification-chip {
+  display: inline-flex !important;
+  grid-template-columns: none !important;
+  flex-direction: row !important;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.5rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 0.7rem;
+  cursor: pointer;
+  background: var(--surface);
+}
+
+.notification-chip:has(input:checked) {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.notification-scope-options {
+  display: grid;
+  gap: 0.8rem;
+}
+
+.notification-source-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.notification-source-list {
+  max-height: 300px;
+  overflow-y: auto;
+  padding-right: 0.2rem;
+}
+
+.notification-source-row {
+  padding: 0.55rem;
+  border-radius: 0.6rem;
+}
+
+.notification-source-row:hover {
+  background: var(--surface);
+}
+
+.notification-warning,
+.notification-foundation-note {
+  margin: 0.65rem 0 0;
+  font-size: 0.86rem;
+}
+
+.notification-warning {
+  color: var(--warning);
+}
+
+.notification-foundation-note {
+  color: var(--text-muted);
+}
+
+@media (max-width: 800px) {
+  .notification-grid,
+  .notification-source-picker {
+    grid-template-columns: 1fr;
+  }
+}

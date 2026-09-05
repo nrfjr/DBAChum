@@ -6,6 +6,10 @@ from pymongo.errors import DuplicateKeyError
 from app.core.exceptions import AppError
 from app.core.permissions import permission_values_for_role
 from app.core.security import hash_password
+from app.schemas.notification import (
+    UserNotificationPreferences,
+    UserNotificationPreferencesUpdate,
+)
 from app.schemas.user import (
     UserCreate,
     UserPasswordUpdate,
@@ -70,6 +74,22 @@ def preferences_from_document(
         # Older/development records should never make login fail merely
         # because a preference value became invalid during development.
         return UserPreferences()
+
+
+def notification_preferences_from_document(
+    user: dict,
+) -> UserNotificationPreferences:
+    raw = user.get("notifications")
+
+    if not isinstance(raw, dict):
+        return UserNotificationPreferences()
+
+    try:
+        return UserNotificationPreferences.model_validate(raw)
+    except Exception:
+        # Development/legacy user rows should fall back safely rather than
+        # making authentication fail because subscription fields changed.
+        return UserNotificationPreferences()
 
 
 async def get_user_by_username(
@@ -154,6 +174,10 @@ def user_to_response(
             user
         ),
 
+        notifications=notification_preferences_from_document(
+            user
+        ),
+
         created_at=user.get(
             "created_at"
         ),
@@ -223,6 +247,10 @@ async def create_managed_user(
         "is_active": data.is_active,
         "preferences": (
             UserPreferences()
+            .model_dump(mode="json")
+        ),
+        "notifications": (
+            UserNotificationPreferences()
             .model_dump(mode="json")
         ),
         "created_at": now,
@@ -432,6 +460,45 @@ async def update_current_user_preferences(
 
     set_fields = {
         f"preferences.{key}": value
+        for key, value in changes.items()
+    }
+    set_fields["updated_at"] = datetime.now(
+        timezone.utc
+    )
+
+    result = await database.users.update_one(
+        {"_id": object_id},
+        {"$set": set_fields},
+    )
+
+    if result.matched_count == 0:
+        raise AppError(
+            "User not found.",
+            code="USER_NOT_FOUND",
+            status_code=404,
+        )
+
+    updated = await database.users.find_one(
+        {"_id": object_id}
+    )
+    return user_to_response(updated)
+
+
+async def update_current_user_notifications(
+    database,
+    user_id: str,
+    data: UserNotificationPreferencesUpdate,
+) -> UserResponse:
+    object_id = parse_user_id(user_id)
+
+    changes = data.model_dump(
+        exclude_unset=True,
+        exclude_none=True,
+        mode="json",
+    )
+
+    set_fields = {
+        f"notifications.{key}": value
         for key, value in changes.items()
     }
     set_fields["updated_at"] = datetime.now(
