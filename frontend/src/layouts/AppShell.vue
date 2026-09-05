@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted } from 'vue'
+import { computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import { useUiStore } from '@/stores/ui'
@@ -20,6 +20,17 @@ const authStore = useAuthStore()
 const terminalStore = useTerminalSessionsStore()
 const alertsStore = useAlertsStore()
 let alertSummaryTimer: ReturnType<typeof setInterval> | undefined
+
+watch(
+  () => authStore.user?.preferences,
+  (preferences) => {
+    uiStore.applyUserPreferences(preferences)
+  },
+  {
+    immediate: true,
+    deep: true,
+  },
+)
 
 const pageSubtitle = computed(() =>
   String(route.meta.subtitle ?? 'Database administration workspace.'),
@@ -82,6 +93,19 @@ const navigation = computed(() => {
   })
 })
 
+async function toggleTheme() {
+  const previous = uiStore.themePreference
+  uiStore.toggleTheme()
+
+  try {
+    await authStore.updatePreferences({
+      theme: uiStore.themePreference,
+    })
+  } catch {
+    uiStore.setThemePreference(previous)
+  }
+}
+
 async function logout() {
   terminalStore.clear()
   await authStore.logout()
@@ -138,7 +162,7 @@ onUnmounted(() => {
         <span class="status-dot status-dot--online" />
 
         <div>
-          <strong>DBAChum v2</strong>
+          <strong>DBAChum v1</strong>
           <span>Development build</span>
         </div>
       </div>
@@ -162,7 +186,7 @@ onUnmounted(() => {
           <div v-if="!uiStore.isOnline" class="offline-badge">
             Offline
           </div>
-          <button class="theme-button" type="button" @click="uiStore.toggleTheme">
+          <button class="theme-button" type="button" @click="toggleTheme">
             <FontAwesomeIcon :icon="uiStore.isDark ? 'sun' : 'moon'" />
 
             <span>
@@ -170,12 +194,14 @@ onUnmounted(() => {
             </span>
           </button>
 
-          <div class="avatar">
-            DB
-          </div>
-          <span class="current-user">
-            {{ authStore.user?.display_name }}
-          </span>
+          <RouterLink to="/profile" class="profile-link">
+            <div class="avatar">
+              {{ authStore.user?.avatar_initials || 'DB' }}
+            </div>
+            <span class="current-user">
+              {{ authStore.user?.display_name }}
+            </span>
+          </RouterLink>
 
           <button type="button" class="secondary-button" @click="logout">
             Logout

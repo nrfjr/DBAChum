@@ -11,6 +11,7 @@ import { useAuthStore } from '@/stores/auth'
 import DatabaseWorkspaceView from '@/views/DatabaseWorkspaceView.vue'
 import DatabaseDetailView from '@/views/DatabaseDetailView.vue'
 import SettingsView from '@/views/SettingsView.vue'
+import ProfileView from '@/views/ProfileView.vue'
 import SettingsConnectionsView from '@/views/SettingsConnectionsView.vue'
 import ServersView from '@/views/ServersView.vue'
 import ServerDetailView from '@/views/ServerDetailView.vue'
@@ -97,6 +98,16 @@ const router = createRouter({
       meta: {
         title: 'Alerts',
         subtitle: 'Warnings, incidents and recovery history.',
+      },
+    },
+
+    {
+      path: '/profile',
+      name: 'profile',
+      component: ProfileView,
+      meta: {
+        title: 'My profile',
+        subtitle: 'Identity and personal DBAChum preferences.',
       },
     },
 

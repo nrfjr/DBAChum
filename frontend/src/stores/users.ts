@@ -13,6 +13,9 @@ export type {
 export interface ManagedUser {
   id: string
   username: string
+  display_name: string
+  email: string | null
+  avatar_initials: string
   role: UserRole
   is_active: boolean
 
@@ -23,6 +26,8 @@ export interface ManagedUser {
 
 export interface CreateUserInput {
   username: string
+  display_name?: string | null
+  email?: string | null
   password: string
   role: UserRole
   is_active: boolean
@@ -32,6 +37,8 @@ export interface CreateUserInput {
 export interface UpdateUserInput {
   role: UserRole
   is_active: boolean
+  display_name?: string | null
+  email?: string | null
 }
 
 

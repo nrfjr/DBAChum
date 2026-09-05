@@ -19,6 +19,8 @@ const error = ref<string | null>(null)
 
 const form = reactive({
   username: '',
+  display_name: '',
+  email: '',
   password: '',
   role: 'viewer' as UserRole,
   is_active: true,
@@ -39,6 +41,8 @@ const passwordError =
 
 function resetForm() {
     form.username = ''
+    form.display_name = ''
+    form.email = ''
     form.password = ''
     form.role = 'viewer'
     form.is_active = true
@@ -96,6 +100,12 @@ async function createUser() {
         await usersStore.create({
             username:
                 form.username.trim(),
+
+            display_name:
+                form.display_name.trim() || null,
+
+            email:
+                form.email.trim() || null,
 
             password:
                 form.password,
@@ -224,7 +234,9 @@ onMounted(() => {
         <table class="utility-table">
             <thead>
                 <tr>
+                    <th>Display name</th>
                     <th>Username</th>
+                    <th>Email</th>
                     <th>Role</th>
                     <th>Status</th>
                     <th>Actions</th>
@@ -234,7 +246,15 @@ onMounted(() => {
             <tbody>
                 <tr v-for="user in usersStore.users" :key="user.id">
                     <td>
+                        <strong>{{ user.display_name }}</strong>
+                    </td>
+
+                    <td>
                         {{ user.username }}
+                    </td>
+
+                    <td>
+                        {{ user.email || '—' }}
                     </td>
 
                     <td>
@@ -327,6 +347,18 @@ onMounted(() => {
                     Username
 
                     <input v-model="form.username" required minlength="3" autocomplete="off" />
+                </label>
+
+                <label>
+                    Display name
+
+                    <input v-model="form.display_name" maxlength="120" autocomplete="name" placeholder="Optional; defaults to username" />
+                </label>
+
+                <label>
+                    Email
+
+                    <input v-model="form.email" type="email" maxlength="254" autocomplete="email" placeholder="Optional; used for future alert subscriptions" />
                 </label>
 
                 <label>

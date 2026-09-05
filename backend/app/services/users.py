@@ -8,6 +8,9 @@ from app.core.security import hash_password
 from app.schemas.user import (
     UserCreate,
     UserPasswordUpdate,
+    UserPreferences,
+    UserPreferencesUpdate,
+    UserProfileUpdate,
     UserResponse,
     UserRole,
     UserUpdate,
@@ -18,6 +21,54 @@ def normalize_username(
     username: str,
 ) -> str:
     return username.strip().lower()
+
+
+def normalize_email(
+    email: str | None,
+) -> str | None:
+    if email is None:
+        return None
+
+    normalized = email.strip().lower()
+    return normalized or None
+
+
+def build_avatar_initials(
+    display_name: str,
+    username: str,
+) -> str:
+    parts = [
+        part
+        for part in display_name.strip().split()
+        if part
+    ]
+
+    if len(parts) >= 2:
+        return (
+            parts[0][0]
+            + parts[-1][0]
+        ).upper()
+
+    if parts:
+        return parts[0][:2].upper()
+
+    return username[:2].upper() or "DB"
+
+
+def preferences_from_document(
+    user: dict,
+) -> UserPreferences:
+    raw = user.get("preferences")
+
+    if not isinstance(raw, dict):
+        return UserPreferences()
+
+    try:
+        return UserPreferences.model_validate(raw)
+    except Exception:
+        # Older/development records should never make login fail merely
+        # because a preference value became invalid during development.
+        return UserPreferences()
 
 
 async def get_user_by_username(
@@ -57,15 +108,27 @@ async def get_user_by_id(
 def user_to_response(
     user: dict,
 ) -> UserResponse:
+    username = user["username"]
+    display_name = (
+        user.get("display_name")
+        or username
+    )
+
+    raw_email = user.get("email")
+    email = normalize_email(
+        str(raw_email)
+        if raw_email
+        else None
+    )
+
     return UserResponse(
         id=str(user["_id"]),
 
-        username=user["username"],
+        username=username,
 
-        display_name=user.get(
-            "display_name",
-            user["username"],
-        ),
+        display_name=display_name,
+
+        email=email,
 
         role=user.get(
             "role",
@@ -77,6 +140,15 @@ def user_to_response(
             True,
         ),
 
+        avatar_initials=build_avatar_initials(
+            display_name,
+            username,
+        ),
+
+        preferences=preferences_from_document(
+            user
+        ),
+
         created_at=user.get(
             "created_at"
         ),
@@ -85,6 +157,7 @@ def user_to_response(
             "updated_at"
         ),
     )
+
 
 def parse_user_id(user_id: str) -> ObjectId:
     try:
@@ -95,6 +168,7 @@ def parse_user_id(user_id: str) -> ObjectId:
             code="USER_NOT_FOUND",
             status_code=404,
         )
+
 
 async def list_users(
     database,
@@ -111,6 +185,7 @@ async def list_users(
         for user in users
     ]
 
+
 async def create_managed_user(
     database,
     data: UserCreate,
@@ -121,17 +196,37 @@ async def create_managed_user(
         data.username
     )
 
+    email = normalize_email(
+        str(data.email)
+        if data.email is not None
+        else None
+    )
+
+    display_name = (
+        data.display_name
+        or username
+    )
+
     document = {
         "username": username,
         "username_key": username,
+        "display_name": display_name,
         "password_hash": hash_password(
             data.password
         ),
         "role": data.role.value,
         "is_active": data.is_active,
+        "preferences": (
+            UserPreferences()
+            .model_dump(mode="json")
+        ),
         "created_at": now,
         "updated_at": now,
     }
+
+    if email is not None:
+        document["email"] = email
+        document["email_key"] = email
 
     try:
         result = await database.users.insert_one(
@@ -140,9 +235,9 @@ async def create_managed_user(
 
     except DuplicateKeyError:
         raise AppError(
-            "A user with this username "
+            "A user with this username or email "
             "already exists.",
-            code="USERNAME_EXISTS",
+            code="USER_IDENTITY_EXISTS",
             status_code=409,
         )
 
@@ -153,6 +248,7 @@ async def create_managed_user(
     )
 
     return user_to_response(user)
+
 
 async def update_managed_user(
     database,
@@ -190,20 +286,55 @@ async def update_managed_user(
                 code="CANNOT_DEMOTE_SELF",
                 status_code=400,
             )
-    await database.users.update_one(
-        {
-            "_id": object_id,
-        },
-        {
-            "$set": {
-                "role": data.role.value,
-                "is_active": data.is_active,
-                "updated_at": datetime.now(
-                    timezone.utc
-                ),
-            }
-        },
-    )
+
+    set_fields = {
+        "role": data.role.value,
+        "is_active": data.is_active,
+        "updated_at": datetime.now(
+            timezone.utc
+        ),
+    }
+    unset_fields: dict[str, str] = {}
+
+    if "display_name" in data.model_fields_set:
+        if data.display_name is not None:
+            set_fields["display_name"] = (
+                data.display_name
+            )
+
+    if "email" in data.model_fields_set:
+        email = normalize_email(
+            str(data.email)
+            if data.email is not None
+            else None
+        )
+
+        if email is None:
+            unset_fields["email"] = ""
+            unset_fields["email_key"] = ""
+        else:
+            set_fields["email"] = email
+            set_fields["email_key"] = email
+
+    update_document: dict[str, dict] = {
+        "$set": set_fields,
+    }
+    if unset_fields:
+        update_document["$unset"] = unset_fields
+
+    try:
+        await database.users.update_one(
+            {
+                "_id": object_id,
+            },
+            update_document,
+        )
+    except DuplicateKeyError:
+        raise AppError(
+            "A user with this email already exists.",
+            code="USER_EMAIL_EXISTS",
+            status_code=409,
+        )
 
     updated = await database.users.find_one(
         {
@@ -219,6 +350,106 @@ async def update_managed_user(
         )
 
     return user_to_response(updated)
+
+
+async def update_current_user_profile(
+    database,
+    user_id: str,
+    data: UserProfileUpdate,
+) -> UserResponse:
+    object_id = parse_user_id(user_id)
+
+    email = normalize_email(
+        str(data.email)
+        if data.email is not None
+        else None
+    )
+
+    set_fields = {
+        "display_name": data.display_name,
+        "updated_at": datetime.now(
+            timezone.utc
+        ),
+    }
+    unset_fields: dict[str, str] = {}
+
+    if email is None:
+        unset_fields["email"] = ""
+        unset_fields["email_key"] = ""
+    else:
+        set_fields["email"] = email
+        set_fields["email_key"] = email
+
+    update_document: dict[str, dict] = {
+        "$set": set_fields,
+    }
+    if unset_fields:
+        update_document["$unset"] = unset_fields
+
+    try:
+        result = await database.users.update_one(
+            {"_id": object_id},
+            update_document,
+        )
+    except DuplicateKeyError:
+        raise AppError(
+            "That email is already used by another "
+            "DBAChum account.",
+            code="USER_EMAIL_EXISTS",
+            status_code=409,
+        )
+
+    if result.matched_count == 0:
+        raise AppError(
+            "User not found.",
+            code="USER_NOT_FOUND",
+            status_code=404,
+        )
+
+    updated = await database.users.find_one(
+        {"_id": object_id}
+    )
+    return user_to_response(updated)
+
+
+async def update_current_user_preferences(
+    database,
+    user_id: str,
+    data: UserPreferencesUpdate,
+) -> UserResponse:
+    object_id = parse_user_id(user_id)
+
+    changes = data.model_dump(
+        exclude_unset=True,
+        exclude_none=True,
+        mode="json",
+    )
+
+    set_fields = {
+        f"preferences.{key}": value
+        for key, value in changes.items()
+    }
+    set_fields["updated_at"] = datetime.now(
+        timezone.utc
+    )
+
+    result = await database.users.update_one(
+        {"_id": object_id},
+        {"$set": set_fields},
+    )
+
+    if result.matched_count == 0:
+        raise AppError(
+            "User not found.",
+            code="USER_NOT_FOUND",
+            status_code=404,
+        )
+
+    updated = await database.users.find_one(
+        {"_id": object_id}
+    )
+    return user_to_response(updated)
+
 
 async def reset_managed_user_password(
     database,
@@ -261,6 +492,7 @@ async def reset_managed_user_password(
             code="USER_NOT_FOUND",
             status_code=404,
         )
+
 
 async def delete_managed_user(
     database,

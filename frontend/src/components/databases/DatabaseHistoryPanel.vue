@@ -394,7 +394,9 @@ function cssVariable(name: string) {
 }
 
 const chartOption = computed(() => {
-  void uiStore.theme
+  // Recompute ECharts options whenever the persisted appearance changes.
+  void uiStore.resolvedTheme
+  void uiStore.accent
 
   const textColor = cssVariable('--color-text-secondary')
   const purple = cssVariable('--color-purple')

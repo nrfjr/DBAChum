@@ -13,6 +13,18 @@ async def create_indexes(
         name="uq_users_username",
     )
 
+    # Email is optional during the 7B.1 identity rollout. The partial unique
+    # index only applies to users that actually have an email_key, preserving
+    # compatibility with existing local accounts.
+    await database.users.create_index(
+        "email_key",
+        unique=True,
+        partialFilterExpression={
+            "email_key": {"$type": "string"}
+        },
+        name="uq_users_email_key",
+    )
+
     await database.auth_sessions.create_index(
         "token_hash",
         unique=True,
