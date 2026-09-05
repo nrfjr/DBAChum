@@ -25,6 +25,8 @@ const sectionTitle = computed(() => {
       return 'Users'
     case 'settings-infrastructure':
       return 'Infrastructure'
+    case 'settings-alerts-email':
+      return 'Alerts & Email'
     default:
       return 'Settings'
   }
@@ -59,6 +61,13 @@ const canAccessConnections = computed(() =>
   ),
 )
 
+const canManageNotifications = computed(() =>
+  hasPermission(
+    authStore.user,
+    'notifications:manage',
+  ),
+)
+
 </script>
 
 <template>
@@ -71,20 +80,23 @@ const canAccessConnections = computed(() =>
 
   <div class="settings-layout">
     <aside class="settings-nav">
-      <RouterLink v-if="canAccessConnections" to="/settings/connections">
+      <RouterLink v-if="canAccessConnections" class="settings-nav-item" to="/settings/connections">
         Connections
       </RouterLink>
-      <RouterLink v-if="canManageProvisioning" to="/settings/provisioning">
+      <RouterLink v-if="canManageProvisioning" class="settings-nav-item" to="/settings/provisioning">
         Provisioning
       </RouterLink>
-      <RouterLink v-if="canManageLdap" to="/settings/ldap">
+      <RouterLink v-if="canManageLdap" class="settings-nav-item" to="/settings/ldap">
         LDAP
       </RouterLink>
-      <RouterLink v-if="canManageInfrastructure" to="/settings/infrastructure">
+      <RouterLink v-if="canManageInfrastructure" class="settings-nav-item" to="/settings/infrastructure">
         Infrastructure
       </RouterLink>
-      <RouterLink v-if="canManageUsers" to="/settings/users">
+      <RouterLink v-if="canManageUsers" class="settings-nav-item" to="/settings/users">
         Users
+      </RouterLink>
+      <RouterLink v-if="canManageNotifications" class="settings-nav-item" to="/settings/alerts-email">
+        Alerts &amp; Email
       </RouterLink>
 
       <div class="settings-nav-item disabled">

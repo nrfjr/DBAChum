@@ -19,6 +19,7 @@ import SettingsUsersView from '@/views/SettingsUsersView.vue'
 import SettingsProvisioningView from '@/views/SettingsProvisioningView.vue'
 import SettingsLdapView from '@/views/SettingsLdapView.vue'
 import SettingsInfrastructureView from '@/views/SettingsInfrastructureView.vue'
+import SettingsAlertsEmailView from '@/views/SettingsAlertsEmailView.vue'
 import { hasPermission, } from '@/core/permissions'
 
 
@@ -164,6 +165,14 @@ const router = createRouter({
           component: SettingsInfrastructureView,
           meta: {
             permission: 'servers:manage',
+          },
+        },
+        {
+          path: 'alerts-email',
+          name: 'settings-alerts-email',
+          component: SettingsAlertsEmailView,
+          meta: {
+            permission: 'notifications:manage',
           },
         },
       ],

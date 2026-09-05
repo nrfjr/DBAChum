@@ -23,6 +23,7 @@ class Permission(str, Enum):
     DBA_OPERATE = "database:operate"
 
     ALERT_MANAGE = "alerts:manage"
+    NOTIFICATION_MANAGE = "notifications:manage"
 
     USER_MANAGE = "users:manage"
     PROVISIONING_MANAGE = "provisioning:manage"
@@ -64,6 +65,7 @@ ROLE_PERMISSIONS: dict[
             Permission.DBA_OPERATE,
 
             Permission.ALERT_MANAGE,
+            Permission.NOTIFICATION_MANAGE,
 
             Permission.USER_MANAGE,
             Permission.PROVISIONING_MANAGE,

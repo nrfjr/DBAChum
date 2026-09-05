@@ -12,6 +12,7 @@ export type Permission =
   | 'database:inspect'
   | 'database:operate'
   | 'alerts:manage'
+  | 'notifications:manage'
   | 'users:manage'
   | 'provisioning:manage'
   | 'ldap:manage'
@@ -50,6 +51,7 @@ const rolePermissions:
       'database:inspect',
       'database:operate',
       'alerts:manage',
+      'notifications:manage',
       'users:manage',
       'provisioning:manage',
       'ldap:manage',

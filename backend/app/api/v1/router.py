@@ -13,6 +13,7 @@ from app.api.v1.endpoints import (
     profile,
     provisioning,
     mysql_dba,
+    notification_delivery,
     sqlserver_dba,
     servers,
     server_monitoring,
@@ -38,6 +39,7 @@ api_router.include_router(profile.router)
 api_router.include_router(provisioning.router)
 api_router.include_router(sqlserver_dba.router)
 api_router.include_router(mysql_dba.router)
+api_router.include_router(notification_delivery.router)
 api_router.include_router(servers.router)
 api_router.include_router(server_monitoring.router)
 api_router.include_router(server_terminal.router)

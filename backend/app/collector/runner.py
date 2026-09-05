@@ -20,6 +20,7 @@ from app.services.metrics_collector import (
     CollectorDeltaState,
     collect_collector_cycle,
 )
+from app.services.email_delivery import process_pending_email_deliveries
 
 
 logger = logging.getLogger(__name__)
@@ -254,6 +255,24 @@ class CollectorRuntime:
                         self.database,
                         self.state,
                     )
+
+                    # Mail is deliberately processed by the leased collector
+                    # process. This keeps retries single-owner and prevents the
+                    # FastAPI web process from spawning duplicate deliveries.
+                    try:
+                        sent_emails = await process_pending_email_deliveries(
+                            self.database
+                        )
+                        if sent_emails:
+                            logger.info(
+                                "Email delivery batch sent count=%s",
+                                sent_emails,
+                            )
+                    except Exception:
+                        # Notification transport is secondary to telemetry. A
+                        # provider outage must not degrade the collector lease.
+                        logger.exception("Email delivery batch failed")
+
                     duration_ms = (
                         time.monotonic() - cycle_started_monotonic
                     ) * 1000

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import logging
 from datetime import datetime, timezone
 from typing import Any
 
@@ -9,6 +10,13 @@ from bson import ObjectId
 from app.core.collections import ALERTS_COLLECTION_NAME, COLLECTOR_STATUS_COLLECTION_NAME
 from app.core.config import settings
 from app.core.exceptions import AppError
+from app.services.email_delivery import (
+    enqueue_alert_email_deliveries,
+    should_enqueue_alert_email,
+)
+
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -664,6 +672,7 @@ async def _evaluate_source(
     source_id: str,
     source_name: str,
     conditions: list[AlertCondition],
+    source_engine: str | None = None,
     fully_evaluated_prefixes: tuple[str, ...] = (),
 ) -> None:
     collection = database[ALERTS_COLLECTION_NAME]
@@ -711,6 +720,8 @@ async def _evaluate_source(
             "required_samples": condition.required_samples,
             "recovery_samples": condition.recovery_samples,
         }
+        if source_engine:
+            base["source_engine"] = source_engine
         update = {**base, **(change or {})}
         set_on_insert = {"first_seen_at": now}
         await collection.update_one(
@@ -718,6 +729,22 @@ async def _evaluate_source(
             {"$set": update, "$setOnInsert": set_on_insert},
             upsert=True,
         )
+
+        # Email delivery is event-driven, not sample-driven. Queue only when
+        # an incident first becomes active or when its severity escalates.
+        if action == "update":
+            updated_alert = await collection.find_one({"alert_key": alert_key})
+            if updated_alert and should_enqueue_alert_email(existing, updated_alert):
+                try:
+                    await enqueue_alert_email_deliveries(database, updated_alert)
+                except Exception:
+                    # Alert persistence is more important than notification
+                    # transport. A mail configuration/provider issue must never
+                    # break the collector's monitoring state machine.
+                    logger.exception(
+                        "Failed to queue email notification alert_key=%s",
+                        alert_key,
+                    )
 
 
 async def evaluate_database_sample(
@@ -740,6 +767,7 @@ async def evaluate_database_sample(
             include_sqlserver_instance_conditions=include_sqlserver_instance_alerts,
             include_mysql_instance_conditions=include_mysql_instance_alerts,
         ),
+        source_engine=str(connection.get("engine") or "").lower() or None,
         fully_evaluated_prefixes=("tablespace:",) if storage_present else (),
     )
 

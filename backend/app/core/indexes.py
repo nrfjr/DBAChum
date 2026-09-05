@@ -186,4 +186,23 @@ async def create_indexes(
         ],
         name="ix_alerts_source_rule",
     )
+    # Phase 7B.4 outbound-email outbox. Event keys deduplicate alert
+    # notifications per incident/severity/user, while the TTL keeps delivery
+    # diagnostics useful without becoming permanent application telemetry.
+    await database.email_deliveries.create_index(
+        "event_key",
+        unique=True,
+        name="uq_email_deliveries_event_key",
+    )
+
+    await database.email_deliveries.create_index(
+        [("status", 1), ("next_attempt_at", 1), ("created_at", 1)],
+        name="ix_email_deliveries_status_next_created",
+    )
+
+    await database.email_deliveries.create_index(
+        "expires_at",
+        expireAfterSeconds=0,
+        name="ttl_email_deliveries_expires_at",
+    )
 

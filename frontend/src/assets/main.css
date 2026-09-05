@@ -4791,3 +4791,124 @@ button {
     grid-template-columns: 1fr;
   }
 }
+
+/* ==========================================================
+   Phase 7B.4 — Email delivery administration
+   ========================================================== */
+.email-settings-stack {
+  display: grid;
+  gap: 1rem;
+}
+
+.email-settings-panel {
+  overflow: hidden;
+}
+
+.email-master-toggle {
+  padding: 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: 0.8rem;
+  background: var(--surface-muted);
+}
+
+.email-master-toggle span {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.email-master-toggle small,
+.email-provider-card p,
+.email-recipient-note,
+.email-delivery-table small {
+  color: var(--text-muted);
+}
+
+.email-provider-row {
+  grid-template-columns: minmax(0, 1fr) minmax(180px, 0.45fr);
+}
+
+.email-sender-row {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.email-smtp-host-row {
+  grid-template-columns: minmax(0, 1fr) 140px;
+}
+
+.email-provider-card {
+  display: grid;
+  gap: 0.9rem;
+  padding: 1rem;
+  border: 1px solid var(--border);
+  border-radius: 0.8rem;
+  background: var(--surface-muted);
+}
+
+.email-provider-card > div:first-child p {
+  margin: 0.3rem 0 0;
+}
+
+.email-recipient-note {
+  margin: 0;
+  padding: 0.8rem 0.9rem;
+  border-left: 3px solid var(--accent);
+  background: var(--accent-soft);
+}
+
+.email-delivery-table td {
+  min-width: 120px;
+}
+
+.email-delivery-table td:nth-child(2),
+.email-delivery-table td:nth-child(6),
+.email-delivery-table td:nth-child(8) {
+  min-width: 190px;
+}
+
+.email-delivery-table td strong,
+.email-delivery-table td small {
+  display: block;
+}
+
+.email-status-sent {
+  color: var(--success);
+}
+
+.email-status-failed {
+  color: var(--danger);
+}
+
+.email-status-retry,
+.email-status-queued,
+.email-status-sending {
+  color: var(--warning);
+}
+
+.email-delivery-error {
+  color: var(--danger);
+  font-size: 0.82rem;
+}
+
+.email-message-id {
+  display: inline-block;
+  max-width: 260px;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.email-retry-button {
+  display: block;
+  margin-top: 0.45rem;
+  padding: 0.35rem 0.6rem;
+}
+
+@media (max-width: 720px) {
+  .email-provider-row,
+  .email-sender-row,
+  .email-smtp-host-row {
+    grid-template-columns: 1fr;
+  }
+}
