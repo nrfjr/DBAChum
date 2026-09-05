@@ -36,12 +36,7 @@ def _is_protected_oracle_user(username: str) -> bool:
 
 
 async def _lifecycle_context(database, parent_connection_id: str, username: str) -> tuple[int, dict]:
-    """Return run count and a non-secret identity context for generic cleanup.
 
-    Deprovision does not require a lifecycle run. When one exists, its persisted
-    non-secret identity fields can help identify legacy table steps that use an
-    employee ID instead of the Oracle username.
-    """
     cursor = (
         database.provisioning_runs.find(
             {
@@ -84,14 +79,7 @@ def _deprovision_match_values(
     username: str,
     lifecycle_inputs: dict,
 ) -> tuple[dict[str, object] | None, str | None]:
-    """Build a user-specific lookup from the provisioning mapping itself.
 
-    Prefer the configured upsert identity when it contains the generated
-    username. This keeps fixed literals (for example an application code) in
-    the key. For older profiles whose match key is not username-based, a single
-    generated-username mapping can still safely identify the row. Employee ID
-    is a fallback only when lifecycle history provides it.
-    """
     mappings = {
         str(mapping.get("column_name", "")).strip().upper(): mapping
         for mapping in (step.get("mappings") or [])
@@ -152,9 +140,6 @@ def _deprovision_match_values(
     if len(employee_columns) == 1 and employee_id not in (None, ""):
         return {employee_columns[0]: employee_id}, None
 
-    # A provisioning table without a username (or known employee ID) mapping
-    # is not provably tied to this Oracle account, so it is intentionally not
-    # treated as a deprovision target.
     return None, None
 
 
@@ -289,8 +274,7 @@ async def build_oracle_user_deprovision_preview(
                 continue
 
             if not match_values:
-                # This profile step does not persist a reconstructible account
-                # identity and therefore is not considered linked cleanup.
+
                 continue
 
             key = (
@@ -575,8 +559,6 @@ async def execute_oracle_user_deprovision(
     deleted_ldap_entries = 0
     account_dropped = False
 
-    # Delete linked provisioning rows first. If any one fails, stop before the
-    # Oracle DROP USER. A retry can safely re-preview already-removed rows.
     for item in preview.items:
         if item.component != "table" or item.state != "candidate":
             continue
@@ -632,8 +614,6 @@ async def execute_oracle_user_deprovision(
                 error=error,
             )
 
-    # Remove unambiguous LDAP entries only when LDAP is enabled by an active
-    # provisioning profile. Any failure stops before the Oracle account drop.
     for item in preview.items:
         if item.component != "ldap" or item.state != "candidate":
             continue

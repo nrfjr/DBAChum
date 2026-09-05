@@ -48,11 +48,7 @@ def _severity_rank(value: str | None) -> int:
 
 
 def should_enqueue_alert_email(existing: dict | None, updated: dict) -> bool:
-    """Notify once when an incident becomes active and once on escalation.
 
-    Alert rows are updated every collector sample. This guard is what prevents
-    a persistent incident from generating an email every 30 seconds.
-    """
 
     if str(updated.get("status") or "") != "active":
         return False
@@ -290,7 +286,6 @@ async def enqueue_alert_email_deliveries(database, alert: dict) -> int:
             await database[EMAIL_DELIVERIES_COLLECTION].insert_one(document)
             queued += 1
         except DuplicateKeyError:
-            # Same incident/severity/user has already been queued or sent.
             continue
 
     return queued
@@ -525,11 +520,7 @@ async def clear_email_deliveries(
     delivery_ids: list[str] | None = None,
     clear_all: bool = False,
 ) -> dict[str, int]:
-    """Remove terminal delivery-history records only.
 
-    Queued/retry/sending documents are intentionally preserved so clearing the
-    status table cannot cancel mail that is still in-flight.
-    """
     terminal_statuses = [
         EmailDeliveryStatus.SENT.value,
         EmailDeliveryStatus.FAILED.value,

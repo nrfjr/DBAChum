@@ -14,7 +14,7 @@ _runtime_info: dict | None = None
 
 
 def initialize_oracle_client() -> dict:
-    """Initialize python-oracledb once and return runtime information."""
+
     global _initialized, _runtime_info
 
     if _initialized and _runtime_info is not None:

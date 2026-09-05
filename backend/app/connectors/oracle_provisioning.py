@@ -126,7 +126,6 @@ async def find_existing_oracle_users(
     existing: set[str] = set()
     async with open_oracle_connection(connection) as oracle_connection:
         try:
-            # Oracle limits IN lists; keep well below the limit and use binds.
             for offset in range(0, len(normalized), 500):
                 chunk = normalized[offset:offset + 500]
                 binds = {f"u{i}": value for i, value in enumerate(chunk)}
@@ -461,12 +460,7 @@ async def reconcile_oracle_user(
     temporary_tablespace: str | None = None,
     profile: str | None = None,
 ) -> dict:
-    """Create or reconcile one Oracle account idempotently.
 
-    The reviewed password is applied on both CREATE and ALTER so password-mapped
-    application rows stay aligned with the database account during an upsert run.
-    Existing unrelated roles are preserved; only missing reviewed roles are added.
-    """
     username = normalize_oracle_identifier(username, field_name="Username")
     password_sql = quote_oracle_password(password)
     normalized_roles = [
@@ -605,7 +599,7 @@ async def reconcile_oracle_roles(
     username: str,
     roles: list[str],
 ) -> dict:
-    """Grant only missing reviewed roles without touching account attributes/password."""
+
     username = normalize_oracle_identifier(username, field_name="Username")
     normalized_roles = [
         normalize_oracle_identifier(role, field_name="Role")
@@ -684,7 +678,7 @@ async def fetch_oracle_provisioning_row(
     match_values: dict[str, object],
     columns: list[str],
 ) -> dict:
-    """Read one lifecycle row for conservative deprovision verification."""
+
     owner = normalize_oracle_identifier(owner, field_name="Schema")
     table_name = normalize_oracle_identifier(table_name, field_name="Table")
     if not match_values:
@@ -743,12 +737,7 @@ async def upsert_oracle_provisioning_row(
     update_values: dict[str, object],
     sequence_columns: dict[str, str],
 ) -> dict:
-    """Execute one profile table step as an idempotent INSERT-or-UPDATE.
 
-    Besides the action, return the non-redacted before/after row values to the
-    caller. The service layer is responsible for redacting sensitive columns
-    before anything is persisted in MongoDB.
-    """
     owner = normalize_oracle_identifier(owner, field_name="Schema")
     table_name = normalize_oracle_identifier(table_name, field_name="Table")
     if not match_values:
@@ -916,7 +905,7 @@ async def get_oracle_user_deprovision_state(
     connection: dict,
     username: str,
 ) -> dict:
-    """Return live account state and a conservative owned-object count."""
+
     username = normalize_oracle_identifier(username, field_name="Schema name")
     async with open_oracle_connection(connection) as oracle_connection:
         try:
@@ -959,7 +948,7 @@ async def delete_oracle_provisioning_row(
     table_name: str,
     match_values: dict[str, object],
 ) -> int:
-    """Delete exactly one verified provisioning-table row and commit it."""
+
     owner = normalize_oracle_identifier(owner, field_name="Schema")
     table_name = normalize_oracle_identifier(table_name, field_name="Table")
     if not match_values:
@@ -1014,7 +1003,7 @@ async def drop_oracle_user(
     *,
     cascade: bool,
 ) -> None:
-    """Drop one normalized Oracle user/schema after service-layer confirmation."""
+
     username = normalize_oracle_identifier(username, field_name="Schema name")
     sql = "DROP USER " + quote_oracle_identifier(username)
     if cascade:

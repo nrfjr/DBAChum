@@ -155,7 +155,6 @@ async function executeBatch() {
   } catch (caught) {
     error.value = caught instanceof Error ? caught.message : 'Unable to execute bulk provisioning.'
   } finally {
-    // Passwords stay only in this open modal and disappear when it is closed.
     loading.value = false
   }
 }

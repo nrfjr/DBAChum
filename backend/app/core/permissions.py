@@ -4,12 +4,7 @@ from app.schemas.user import UserRole
 
 
 class Permission(str, Enum):
-    """Stable DBAChum authorization boundaries.
 
-    Monitoring is intentionally separate from DBA inspection and mutation.
-    Settings/configuration permissions remain administrator-only, while
-    operators can perform approved day-to-day DBA work.
-    """
 
     MONITOR_READ = "monitor:read"
 

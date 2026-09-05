@@ -66,12 +66,7 @@ def _dedupe_strings(values: list[str]) -> list[str]:
 
 
 class UserNotificationPreferences(BaseModel):
-    """Per-user alert delivery subscription.
 
-    DBAChum's alert rules and severities remain centrally defined. This model
-    only controls which already-classified alerts a user wants delivered to
-    them. In-app Alert Center visibility is intentionally unaffected.
-    """
 
     email_enabled: bool = False
     severities: list[NotificationSeverity] = Field(

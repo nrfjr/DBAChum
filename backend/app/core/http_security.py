@@ -2,7 +2,7 @@ from starlette.datastructures import MutableHeaders
 
 
 class SecurityHeadersMiddleware:
-    """Apply conservative browser security headers to every response."""
+
 
     def __init__(
         self,

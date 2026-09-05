@@ -317,9 +317,6 @@ async def build_provisioning_preview(
         ldap_profile = await get_ldap_profile_document(
             database, profile["ldap_profile_id"]
         )
-        # Render with the real values only to validate the configured template.
-        # The rendered LDIF is intentionally not returned by the dry-run endpoint
-        # because it contains the password.
         render_ldif(
             ldap_profile.get("ldif_template") or DEFAULT_LDIF_TEMPLATE,
             username=username,

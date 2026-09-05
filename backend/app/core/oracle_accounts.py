@@ -1,9 +1,4 @@
-"""Oracle account classification shared by inventory and destructive actions."""
 
-# Keep this list version-neutral so DBAChum can safely support older Oracle
-# releases (including 11g, where DBA_USERS.ORACLE_MAINTAINED does not exist).
-# These accounts are Oracle-owned/internal schemas and should not appear in the
-# normal Users & Schemas workspace or be eligible for DBAChum deprovisioning.
 SYSTEM_ORACLE_USERS = {
     "SYS",
     "SYSTEM",

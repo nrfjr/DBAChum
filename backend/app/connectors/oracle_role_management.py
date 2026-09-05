@@ -20,10 +20,6 @@ from app.core.exceptions import AppError
 from app.core.oracle_accounts import is_oracle_system_account
 
 
-# On 12c+ DBA_ROLES.ORACLE_MAINTAINED is authoritative. 10g/11g do not
-# expose that column, so keep a conservative release-neutral fallback for
-# well-known Oracle supplied roles. These roles remain inspectable but cannot
-# be mutated through DBAChum.
 PROTECTED_ORACLE_ROLES = {
     "DBA",
     "CONNECT",
@@ -186,20 +182,11 @@ async def _catalog_object_privileges(oracle_connection) -> tuple[list[str], str 
 
 
 async def get_oracle_roles(connection: dict) -> dict:
-    """Return the lightweight role catalog used by the Roles workspace.
-
-    The role list intentionally does *not* scan DBA_ROLE_PRIVS, DBA_SYS_PRIVS,
-    DBA_TAB_PRIVS or DBA_COL_PRIVS. Those potentially large catalogs belong to
-    the per-role detail request that runs only after a DBA selects a role.
-    """
     warnings: list[str] = []
     async with open_oracle_connection(connection) as oracle_connection:
         try:
             role_rows, maintained_available = await _load_role_rows(oracle_connection)
 
-            # These two small Oracle catalogs are kept here because the role
-            # action form uses them as datalist suggestions. They do not scan
-            # every grant in the database.
             sys_catalog, sys_warning = await _catalog_system_privileges(oracle_connection)
             if sys_warning:
                 warnings.append(sys_warning)

@@ -594,8 +594,6 @@ async def _collect_database_sample(
                     connection_id,
                     exc,
                 )
-                # Availability is already proven by Overview. Do not turn a
-                # permission/secondary telemetry problem into a false outage.
                 sample["warnings"].append(
                     "SQL Server operational health snapshot unavailable."
                 )
@@ -627,10 +625,7 @@ async def _collect_database_sample(
             return sample
 
         if state.mysql_storage_due(connection_id, now):
-            # Storage is intentionally sampled less often than lightweight
-            # GLOBAL STATUS/processlist metrics. Record the attempt time even
-            # when permissions are insufficient so the collector does not
-            # retry an expensive INFORMATION_SCHEMA aggregation every cycle.
+
             state.last_mysql_storage_at[connection_id] = now
             try:
                 storage = await get_mysql_storage(connection)
@@ -652,9 +647,6 @@ async def _collect_database_sample(
         )
         sample["mysql"] = compact
 
-        # Prefer the richer health snapshot for shared history concepts while
-        # preserving Overview's latency/availability. These metrics are native
-        # instance counters, so alert evaluation deduplicates host:port owners.
         if compact.get("threads_running") is not None:
             sample["active"] = compact["threads_running"]
         if compact.get("connections_current") is not None:
@@ -686,8 +678,7 @@ async def _collect_database_sample(
     )
 
     if telemetry.get("status") == "unreachable":
-        # Do not calculate a recovery sample against stale counters from before
-        # an outage. The first healthy sample after a gap becomes a baseline.
+
         state.reset_connection(connection_id)
         return sample
 
@@ -739,13 +730,7 @@ def _sqlserver_instance_alert_owners(
     connections: list[dict],
     samples: list[dict] | None = None,
 ) -> set[str]:
-    """Pick one deterministic healthy DB connection per SQL Server instance.
 
-    tempdb and SQL Agent belong to the SQL Server instance, not an individual
-    database. Prefer the first healthy monitored connection for each host:port;
-    if every connection is unavailable, fall back to the first one so existing
-    instance alerts can still transition predictably.
-    """
     samples = samples or []
     owners: dict[str, tuple[str, bool]] = {}
     for index, connection in enumerate(connections):
@@ -770,12 +755,7 @@ def _mysql_instance_alert_owners(
     connections: list[dict],
     samples: list[dict] | None = None,
 ) -> set[str]:
-    """Pick one deterministic healthy connection per MySQL/MariaDB instance.
 
-    Threads_connected/running, max_connections, and the InnoDB lock snapshot
-    are instance-level signals. A server may be saved once per schema, so one
-    host:port owner prevents the Alert Center from emitting duplicate events.
-    """
     samples = samples or []
     owners: dict[str, tuple[str, bool]] = {}
     for index, connection in enumerate(connections):
@@ -1021,7 +1001,6 @@ async def collect_collector_cycle(
     )
 
 
-# Backward-compatible helper retained for the existing one-shot utility/tests.
 async def collect_metrics_once(database) -> int:
     state = CollectorDeltaState()
     result = await collect_database_metrics_once(database, state)

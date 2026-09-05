@@ -228,7 +228,6 @@ class LdapProfileTestResponse(BaseModel):
     message: str
 
 
-# Backward-compatible schema aliases for the old singleton /provisioning/ldap API.
 class LdapSettingsUpdate(BaseModel):
     enabled: bool = False
     host: str = Field(default="", max_length=255)

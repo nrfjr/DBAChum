@@ -129,6 +129,32 @@ const supportsAccessAndPrivileges = computed(() =>
   ),
 )
 
+
+async function syncEngineContext() {
+  const engine = connection.value?.engine
+  if (!engine || route.query.engine === engine) return
+
+  await router.replace({
+    name: 'database-detail',
+    params: { id: connectionId.value },
+    query: { ...route.query, engine },
+  })
+}
+
+function backToDatabases() {
+  router.push({
+    name: 'databases',
+    query: connection.value?.engine ? { engine: connection.value.engine } : {},
+  })
+}
+
+watch(
+  () => connection.value?.engine,
+  () => {
+    void syncEngineContext()
+  },
+)
+
 const relatedServers = computed(() => {
   if (!connection.value) {
     return []
@@ -161,6 +187,8 @@ onMounted(async () => {
   await databasesStore.loadOne(
     connectionId.value
   )
+
+  await syncEngineContext()
 })
 </script>
 
@@ -173,7 +201,7 @@ onMounted(async () => {
     <div v-else-if="!connection" class="database-empty-state">
       <h1>Database not found</h1>
 
-      <button type="button" class="secondary-button" @click="router.push('/databases')">
+      <button type="button" class="secondary-button" @click="backToDatabases">
         Back to databases
       </button>
     </div>
@@ -181,7 +209,7 @@ onMounted(async () => {
     <template v-else>
       <section class="database-detail-header">
         <div>
-          <button type="button" class="database-back-button" @click="router.push('/databases')">
+          <button type="button" class="database-back-button" @click="backToDatabases">
             ← Databases
           </button>
 

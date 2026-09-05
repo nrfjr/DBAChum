@@ -221,8 +221,6 @@ class SqlServerAgentJob(BaseModel):
     owner: str | None = None
     description: str | None = None
     last_status: str
-    # SQL Agent run_date/run_time are server-local values with no persisted
-    # timezone offset. The UI labels this accordingly.
     last_run_at: datetime | None = None
     last_duration_seconds: int | None = None
     last_message: str | None = None

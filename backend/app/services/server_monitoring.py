@@ -260,11 +260,7 @@ def _connect_transport_sync(target: ResolvedSshTarget) -> tuple[Any, float]:
                     code="SSH_PASSWORD_REQUIRED",
                     status_code=409,
                 )
-            # Treat a DBAChum "password" profile the same way an SSH client does:
-            # try normal password authentication, but allow Paramiko to fall back to
-            # keyboard-interactive/PAM when the server disables the plain
-            # "password" method.  A number of enterprise Linux/Unix SSH servers
-            # accept the exact same password only through keyboard-interactive.
+
             transport.auth_password(
                 target.username,
                 decrypt_secret(encrypted_password),
@@ -307,11 +303,6 @@ def _connect_transport_sync(target: ResolvedSshTarget) -> tuple[Any, float]:
         class_name = exc.__class__.__name__
         lower_text = text.lower()
 
-        # Paramiko raises AuthenticationException for both a real credential
-        # rejection and an authentication-response timeout.  Keep these
-        # separate so a slow PAM/SSHD path on older enterprise Linux does not
-        # look like a bad password.  Connection/banner timeouts intentionally
-        # remain short; only authentication gets the longer window.
         if "authentication" in lower_text and "timeout" in lower_text:
             raise AppError(
                 f"SSH authentication timed out after {AUTH_TIMEOUT_SECONDS:.0f} seconds. "
@@ -628,12 +619,7 @@ async def collect_server_health(database, server_id: str) -> ServerHealthSnapsho
 
 
 def _collect_posix_telemetry_sync(target: ResolvedSshTarget) -> dict:
-    """Collect the lightweight host subset used by the background collector.
 
-    Phase 5C's interactive health page also gathers processes and service
-    manager state. The continuous collector intentionally skips those heavier
-    commands and keeps only host/load/memory/filesystem telemetry.
-    """
     transport, latency_ms = _connect_transport_sync(target)
     warnings: list[str] = []
     try:

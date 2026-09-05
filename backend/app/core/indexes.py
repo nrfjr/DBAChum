@@ -13,9 +13,6 @@ async def create_indexes(
         name="uq_users_username",
     )
 
-    # Email is optional during the 7B.1 identity rollout. The partial unique
-    # index only applies to users that actually have an email_key, preserving
-    # compatibility with existing local accounts.
     await database.users.create_index(
         "email_key",
         unique=True,
@@ -186,9 +183,6 @@ async def create_indexes(
         ],
         name="ix_alerts_source_rule",
     )
-    # Phase 7B.4 outbound-email outbox. Event keys deduplicate alert
-    # notifications per incident/severity/user, while the TTL keeps delivery
-    # diagnostics useful without becoming permanent application telemetry.
     await database.email_deliveries.create_index(
         "event_key",
         unique=True,

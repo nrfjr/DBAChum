@@ -73,9 +73,7 @@ def _is_powerful_system_privilege(privilege: str) -> bool:
     normalized = privilege.upper()
     if normalized in POWERFUL_SYSTEM_PRIVILEGES:
         return True
-    # Keep the warning rule explicit and understandable: broad ANY privileges
-    # that can change/read common schema objects are elevated even when not in
-    # the curated list above.
+
     dangerous_prefixes = (
         "CREATE ANY ",
         "ALTER ANY ",
@@ -109,11 +107,6 @@ def _build_role_paths(
     direct_role_rows: list[tuple],
     role_grant_rows: list[tuple],
 ) -> dict[str, dict]:
-    """Return shortest known role paths from the user to every reachable role.
-
-    Oracle role inheritance exists on very old supported releases, so this is
-    resolved in Python rather than depending on release-specific recursive SQL.
-    """
     role_info: dict[str, dict] = {}
     queue: deque[str] = deque()
 
@@ -146,9 +139,7 @@ def _build_role_paths(
                 role_info[child] = {
                     "path": candidate_path,
                     "direct": False,
-                    # ADMIN OPTION on a role-to-role grant does not become an
-                    # admin option for the end user; retain it only as source
-                    # metadata in case it is useful during inspection.
+
                     "admin_option": admin_option,
                     "default_role": None,
                 }
@@ -427,8 +418,6 @@ async def get_oracle_user_access_inspector(connection: dict, username: str) -> d
                 {"username": username},
             )
 
-            # Version-neutral role hierarchy resolution. Fetching role-to-role
-            # grants avoids recursive SQL features that vary across old Oracle releases.
             role_grant_rows = await oracle_connection.fetchall(
                 """
                 SELECT grantee, granted_role, admin_option, default_role

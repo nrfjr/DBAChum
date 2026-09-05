@@ -39,9 +39,6 @@ class DatabaseOverviewResponse(BaseModel):
     connection_driver: str | None = None
     connection_encrypt: str | None = None
 
-    # MySQL-family identity/capability details. These stay optional on the
-    # common response so Oracle and SQL Server are not forced into MySQL
-    # semantics.
     database_product: str | None = None
     version_comment: str | None = None
     server_hostname: str | None = None

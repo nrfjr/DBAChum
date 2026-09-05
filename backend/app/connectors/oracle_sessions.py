@@ -27,9 +27,6 @@ async def get_oracle_sessions(
             except (TypeError, ValueError):
                 major_version = None
 
-            # SQL_EXEC_START is not exposed by Oracle 10g V$SESSION.
-            # Preserve the response shape with a typed NULL on legacy
-            # databases while keeping the real timestamp on 11g+.
             sql_exec_start_expr = (
                 "sql_exec_start"
                 if major_version is not None and major_version >= 11

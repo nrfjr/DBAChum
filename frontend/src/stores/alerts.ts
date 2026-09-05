@@ -88,8 +88,6 @@ export const useAlertsStore = defineStore('alerts', {
         this.summary = await apiRequest<AlertSummary>('/alerts/summary')
         return this.summary
       } catch {
-        // Summary is supplemental UI. Do not replace the page with an error if
-        // the API is temporarily unavailable.
         return this.summary
       }
     },

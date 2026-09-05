@@ -151,8 +151,7 @@ def _fetch_backup_rows(
         cursor.execute(sql, parameters)
         return _rows_as_dicts(cursor, cursor.fetchall()), True
     except Exception:
-        # Keep SQL Server 2000 and unusual upgraded msdb schemas usable by
-        # falling back to the long-lived backupset columns only.
+
         base_columns = [
             "backup_set_id",
             "media_set_id",
@@ -330,8 +329,6 @@ def _backup_item(row: dict, media: dict[int, list[dict]]) -> dict:
         "started_at": started_at,
         "finished_at": finished_at,
         "duration_seconds": duration_seconds,
-        # backup_size is the logical/uncompressed size. compressed_backup_size,
-        # where supported, is the bytes physically stored by the backup set.
         "input_bytes": backup_size,
         "output_bytes": compressed_size if compressed_size is not None else backup_size,
         "backup_size_bytes": compressed_size if compressed_size is not None else backup_size,

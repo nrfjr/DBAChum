@@ -28,15 +28,10 @@ class DatabaseMetricSampleResponse(BaseModel):
 
     error: str | None = None
 
-    # Oracle-specific collector payload used by the 24-hour history UI.
-    # The raw per-sample shape remains flexible so older telemetry samples
-    # can still be rendered as Phase 6 evolves.
     oracle: dict | None = None
-    # SQL Server operational snapshot (log, tempdb, Agent, workload). The
-    # shape remains flexible so 24-hour history survives capability changes.
+
     sqlserver: dict | None = None
-    # MySQL/MariaDB collector payload: native current state plus per-interval
-    # deltas for cumulative GLOBAL STATUS counters.
+
     mysql: dict | None = None
 
 

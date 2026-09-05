@@ -12,7 +12,6 @@ MAX_SQL_TEXT_ROWS = 2000
 
 
 def _oracle_sql_ids(items: list[dict]) -> list[str]:
-    """Return the unique SQL IDs represented by the returned history window."""
     seen: set[str] = set()
     result: list[str] = []
 
@@ -73,8 +72,7 @@ async def get_database_metric_history(
         connection_id,
     )
 
-    # History is intentionally bounded to DBAChum's rolling 24-hour
-    # telemetry window even for internal callers that bypass API validation.
+
     hours = min(max(int(hours), 1), 24)
 
     to_at = datetime.now(timezone.utc)
@@ -106,8 +104,7 @@ async def get_database_metric_history(
 
     items = await cursor.to_list(None)
 
-    # Mongo returned newest → oldest because we want the newest N points.
-    # Charts and range aggregation want chronological order.
+
     items.reverse()
 
     oracle_sql_texts: list[dict] = []

@@ -102,7 +102,7 @@ def _redact_values(values: dict[str, object], sensitive_columns: set[str]) -> di
 
 
 def _profile_snapshot(profile: dict) -> dict:
-    """Persist retry-safe profile structure without storing password-like custom values."""
+
     steps = deepcopy(profile.get("table_steps") or [])
     for step in steps:
         for mapping in step.get("mappings") or []:
@@ -182,13 +182,7 @@ async def execute_provisioning_profile(
     *,
     requester_ip: str | None = None,
 ) -> ProvisioningExecutionResponse:
-    """Execute one reviewed provisioning profile from its parent DB context.
 
-    Phase 4B intentionally uses controlled partial execution rather than
-    pretending Oracle DDL plus multiple application connections can share one
-    atomic transaction. Each successful table step commits independently and is
-    persisted immediately in provisioning_runs for future retry/deprovisioning.
-    """
     preview = await build_provisioning_preview(
         database,
         profile_id,

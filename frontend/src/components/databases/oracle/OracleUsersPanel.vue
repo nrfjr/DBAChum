@@ -395,8 +395,6 @@ function retryLabel(run: ProvisioningRunSummary) {
 }
 
 async function retryRun(run: ProvisioningRunSummary) {
-  // No confirmation dialog: retry either starts immediately or asks only for
-  // the non-persisted password when a remaining step actually needs it.
   if (run.password_required) {
     retryPasswordRun.value = run
     retryPassword.value = ''
@@ -415,7 +413,6 @@ async function submitRetryPassword() {
   const run = retryPasswordRun.value
   const password = retryPassword.value
   await performRetry(run, password)
-  // Drop the password from component state immediately after the request.
   retryPassword.value = ''
 }
 
@@ -774,8 +771,7 @@ async function executeUserDeprovision() {
     )
     deprovisionResult.value = result
 
-    // Always refresh because a partial run may have removed linked rows even
-    // when the final Oracle DROP USER failed.
+
     await oracleStore.loadUsers(props.connectionId)
     if (historyOpen.value) {
       await loadProvisioningHistory()
@@ -784,7 +780,6 @@ async function executeUserDeprovision() {
     if (result.status === 'succeeded') {
       closeDeprovisionPreview()
     } else {
-      // Rebuild the preview so a retry reflects rows already cleaned up.
       deprovisionPreview.value = await provisioningStore.previewOracleUserDeprovision(
         props.connectionId,
         result.username,
@@ -1242,7 +1237,6 @@ async function executeProvisioning() {
     resultPassword.value = provisioningResult.value.account.password_applied
       ? submittedPassword
       : ''
-    // Never keep the submitted password in the editable form after execution.
     createForm.password = ''
     createStep.value = 'success'
     await oracleStore.loadUsers(props.connectionId)
@@ -1331,7 +1325,6 @@ async function createUser() {
     )
 
     resultPassword.value = submittedPassword
-    // Do not retain the submitted database password in the editable form.
     createForm.password = ''
     createStep.value = 'success'
 

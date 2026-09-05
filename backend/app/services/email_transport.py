@@ -178,7 +178,6 @@ def _send_smtp_sync(settings_document: dict[str, Any], message: OutboundEmail) -
             code="SMTP_SEND_FAILED",
         ) from exc
 
-    # smtplib returns a mapping only for recipients the SMTP server refused.
     if response:
         raise _safe_provider_error(
             "SMTP server refused the recipient.",

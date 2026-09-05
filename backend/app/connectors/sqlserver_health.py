@@ -49,9 +49,6 @@ def _agent_datetime(run_date: object, run_time: object) -> datetime | None:
     second = time_value % 100
 
     try:
-        # SQL Agent stores these fields in SQL Server local time and does not
-        # persist a timezone offset. Keep the datetime naive rather than
-        # inventing UTC; the API/UI labels it as server-local time.
         return datetime(year, month, day, hour, minute, second)
     except ValueError:
         return None
@@ -315,8 +312,7 @@ def _tempdb(cursor, current_database: str | None, warnings: list[str]) -> dict:
         try:
             cursor.execute(f"USE [{escaped_original}]")
         except Exception:
-            # The connection is short-lived; failing to restore the context is
-            # harmless and should not hide telemetry that was already collected.
+
             pass
 
     row_files = [item for item in files if item["file_type"] == "ROWS"]

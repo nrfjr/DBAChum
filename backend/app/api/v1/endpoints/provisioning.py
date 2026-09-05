@@ -151,8 +151,6 @@ async def test_ldap(
     return await test_ldap_profile(request.app.state.database, profile_id)
 
 
-# Backward-compatible singleton endpoints. They now read/write the migrated
-# "Default LDAP" profile so older clients are not broken by this upgrade.
 @router.get("/ldap", response_model=LdapSettingsResponse)
 async def read_legacy_ldap(
     request: Request,

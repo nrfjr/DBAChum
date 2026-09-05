@@ -149,7 +149,6 @@ async def update_email_settings(
         "updated_by": updated_by,
     }
 
-    # Blank secret fields deliberately preserve the existing value.
     if data.brevo_api_key:
         document["brevo_api_key_encrypted"] = encrypt_secret(data.brevo_api_key)
     elif existing.get("brevo_api_key_encrypted"):

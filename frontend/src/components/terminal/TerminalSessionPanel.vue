@@ -120,7 +120,7 @@ async function connect() {
   try {
     socket?.close()
   } catch {
-    // no-op
+
   }
 
   sessionsStore.markConnecting(current.client_id)
@@ -187,13 +187,13 @@ async function reconnect() {
     try {
       socket.send(JSON.stringify({ type: 'close' }))
     } catch {
-      // no-op
+
     }
   }
   try {
     socket?.close()
   } catch {
-    // no-op
+
   }
   await new Promise((resolve) => window.setTimeout(resolve, 250))
   await connect()
@@ -233,14 +233,14 @@ function closeTerminal() {
     try {
       socket.send(JSON.stringify({ type: 'close' }))
     } catch {
-      // no-op
+
     }
   }
   window.setTimeout(() => {
     try {
       socket?.close()
     } catch {
-      // no-op
+
     }
     sessionsStore.remove(props.sessionId)
   }, 120)
@@ -253,7 +253,6 @@ function fitTerminal() {
       fitAddon?.fit()
       send({ type: 'resize', ...terminalSize() })
     } catch {
-      // hidden/detached terminal can briefly report zero dimensions while layout changes
     }
   })
 }
@@ -337,12 +336,12 @@ onBeforeUnmount(() => {
   try {
     if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: 'close' }))
   } catch {
-    // no-op
+
   }
   try {
     socket?.close()
   } catch {
-    // no-op
+
   }
   inputDisposable?.dispose()
   resizeObserver?.disconnect()

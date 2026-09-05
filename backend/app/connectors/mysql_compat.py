@@ -61,13 +61,6 @@ def parse_mysql_version(value: object) -> MySqlVersion:
 
 
 def mysql_capabilities(version: MySqlVersion) -> dict[str, bool]:
-    """Return version-level capabilities only.
-
-    Runtime probes refine these flags after a connection is established.
-    This distinction matters for installations where Performance Schema is
-    compiled/installed but disabled, which is common on older XAMPP/MariaDB
-    deployments.
-    """
     if version.major is None:
         return {
             "performance_schema_supported": False,
@@ -84,9 +77,6 @@ def mysql_capabilities(version: MySqlVersion) -> dict[str, bool]:
     version_tuple = (version.major, version.minor or 0)
 
     if version.mariadb:
-        # MariaDB has a related but distinct feature timeline from Oracle
-        # MySQL. Keep this conservative and let the runtime probe prove what
-        # the connected server actually exposes.
         return {
             "performance_schema_supported": version_tuple >= (5, 5),
             "performance_schema": False,

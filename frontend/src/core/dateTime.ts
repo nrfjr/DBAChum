@@ -39,7 +39,6 @@ export function formatUserDateTime(
   try {
     return new Intl.DateTimeFormat(undefined, options).format(date)
   } catch {
-    // A legacy/invalid timezone must never break an operational table.
     delete options.timeZone
     return new Intl.DateTimeFormat(undefined, options).format(date)
   }

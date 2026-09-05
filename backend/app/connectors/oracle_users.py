@@ -34,13 +34,7 @@ BASE_USER_COLUMNS = """
 
 
 async def _fetch_user_rows(oracle_connection):
-    """Return every user plus whether Oracle-maintained metadata is available.
 
-    Oracle 12c+ exposes DBA_USERS.ORACLE_MAINTAINED, which is the best source of
-    truth for hiding Oracle-owned accounts. Oracle 11g and older do not expose
-    that column, so fall back to the same unlimited DBA_USERS query and the
-    version-neutral built-in account classifier.
-    """
     try:
         rows = await oracle_connection.fetchall(
             f"""

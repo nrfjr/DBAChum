@@ -200,8 +200,7 @@ async def get_oracle_access_compare(
     left_username: str,
     right_username: str,
 ) -> dict[str, Any]:
-    # Keep the pure compare helpers import-light for unit testing. Oracle runtime
-    # dependencies are only needed when the live endpoint executes.
+
     from app.connectors.oracle_access_inspector import get_oracle_user_access_inspector
     from app.connectors.oracle_provisioning import normalize_oracle_identifier
     from app.core.exceptions import AppError

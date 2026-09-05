@@ -122,8 +122,6 @@ def _get_mysql_health_sync(connection: dict) -> dict:
         tmp_tables = _status(cursor, "Created_tmp_tables")
         tmp_disk_tables = _status(cursor, "Created_tmp_disk_tables")
 
-        # Remove DBAChum's own connection from the current snapshot where it
-        # can be identified safely. Cumulative counters remain untouched.
         connected_display = (
             max(threads_connected - 1, 0)
             if threads_connected is not None

@@ -30,8 +30,6 @@ class Settings(BaseSettings):
     oracle_driver_mode: str = "thin"
     oracle_client_lib_dir: str | None = None
 
-    # Phase 6A collector settings. The collector runs as a separate process
-    # (python -m app.collector), not inside the FastAPI web process.
     metrics_collector_enabled: bool = True
     metrics_collector_interval_seconds: int = Field(
         default=30,
@@ -68,17 +66,13 @@ class Settings(BaseSettings):
         ge=10,
         le=300,
     )
-    # DBAChum intentionally retains telemetry for only one rolling day.
-    # Keeping this fixed prevents the product from drifting into a long-term
-    # telemetry warehouse.
+
     metrics_retention_hours: int = Field(
         default=24,
         ge=24,
         le=24,
     )
 
-    # Phase 6D alert thresholds. Alerts are intentionally short-horizon and
-    # collector-backed; they do not extend telemetry beyond the 24-hour cap.
     alert_collector_stale_seconds: int = Field(default=30, ge=20, le=300)
     alert_active_sessions_warning: int = Field(default=100, ge=0, le=100000)
     alert_active_sessions_critical: int = Field(default=200, ge=0, le=100000)
@@ -93,17 +87,12 @@ class Settings(BaseSettings):
     alert_server_memory_warning_percent: float = Field(default=90.0, ge=1, le=100)
     alert_server_memory_critical_percent: float = Field(default=97.0, ge=1, le=100)
 
-    # SQL Server operational alerts. Long-running requests stay informational
-    # until explicitly enabled because acceptable duration is workload-specific.
     alert_sqlserver_log_warning_percent: float = Field(default=80.0, ge=1, le=100)
     alert_sqlserver_log_critical_percent: float = Field(default=90.0, ge=1, le=100)
     alert_sqlserver_tempdb_warning_percent: float = Field(default=90.0, ge=1, le=100)
     alert_sqlserver_tempdb_critical_percent: float = Field(default=98.0, ge=1, le=100)
     alert_sqlserver_long_running_seconds: int = Field(default=0, ge=0, le=604800)
 
-    # MySQL/MariaDB operational alerts. Connection saturation has a stable
-    # meaning across the family. Long-running workload remains opt-in because
-    # acceptable execution time is application-specific.
     alert_mysql_connection_warning_percent: float = Field(default=80.0, ge=1, le=100)
     alert_mysql_connection_critical_percent: float = Field(default=90.0, ge=1, le=100)
     alert_mysql_long_running_seconds: int = Field(default=0, ge=0, le=604800)

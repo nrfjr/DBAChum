@@ -144,7 +144,6 @@ def probe_mysql_capabilities(
     cursor,
     version_info,
 ) -> dict[str, bool]:
-    """Refine version hints with what the connected server really exposes."""
     capabilities = mysql_capabilities(version_info)
 
     performance_schema_value = None
@@ -180,9 +179,7 @@ def probe_mysql_capabilities(
         "innodb_lock_waits",
     )
 
-    # Performance Schema feature presence is runtime-probed rather than inferred
-    # from version alone. MySQL/MariaDB installations can ship the schema while
-    # leaving the instrumentation disabled, as seen on common XAMPP builds.
+
     capabilities["performance_schema_processlist"] = bool(
         capabilities["performance_schema"]
         and _schema_object_exists(cursor, "performance_schema", "processlist")
@@ -280,10 +277,7 @@ def _test_mysql_connection_sync(connection: dict) -> dict:
 
 async def test_mysql_connection(connection: dict) -> dict:
     try:
-        # Connector/Python's aio transport can fail against older MariaDB/
-        # non-TLS endpoints while inspecting socket cipher information. Use
-        # the mature synchronous connector in a worker thread so FastAPI's
-        # event loop remains non-blocking while retaining broad compatibility.
+
         return await asyncio.to_thread(
             _test_mysql_connection_sync,
             connection,
@@ -399,8 +393,7 @@ def _get_mysql_overview_sync(connection: dict) -> dict:
                 "available to this connection."
             )
 
-        # DBAChum's own connection contributes one connected/running thread,
-        # so subtract it from the human-facing workload count.
+
         active = (
             max(threads_running - 1, 0)
             if threads_running is not None

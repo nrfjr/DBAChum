@@ -73,8 +73,6 @@ async def get_database_metrics_history(
     ),
 
     limit: int = Query(
-        # 30-second sampling yields 2,880 points/day. Keep the default
-        # large enough for the complete rolling 24-hour window.
         default=3000,
         ge=1,
         le=5000,

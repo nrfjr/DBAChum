@@ -39,9 +39,6 @@ async def lifespan(
 
     await connect_to_mongodb(app)
 
-    # Phase 6A telemetry runs in a dedicated `python -m app.collector`
-    # process. Keeping it out of FastAPI prevents duplicate collection when
-    # web workers/restarts change and avoids telemetry gaps during UI deploys.
     try:
         yield
     finally:

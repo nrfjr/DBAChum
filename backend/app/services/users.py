@@ -71,8 +71,6 @@ def preferences_from_document(
     try:
         return UserPreferences.model_validate(raw)
     except Exception:
-        # Older/development records should never make login fail merely
-        # because a preference value became invalid during development.
         return UserPreferences()
 
 
@@ -87,8 +85,6 @@ def notification_preferences_from_document(
     try:
         return UserNotificationPreferences.model_validate(raw)
     except Exception:
-        # Development/legacy user rows should fall back safely rather than
-        # making authentication fail because subscription fields changed.
         return UserNotificationPreferences()
 
 
@@ -615,7 +611,6 @@ async def delete_managed_user(
         }
     )
 
-    # Remove their active sessions too.
     await database.auth_sessions.delete_many(
         {
             "user_id": {

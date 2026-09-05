@@ -20,24 +20,19 @@ def normalize_connection_name(name: str) -> str:
 
 
 def connection_is_active(connection: dict) -> bool:
-    """Return whether DBAChum may use a connection for admin/manual work.
 
-    Existing records predate the `active` field. Because the old checkbox was
-    explicitly labelled "Monitor this connection", legacy records default to
-    active even when their old `enabled` monitoring flag is false.
-    """
     return bool(connection.get("active", True))
 
 
 def connection_is_monitored(connection: dict) -> bool:
-    """Return whether a connection belongs in monitoring/workspace flows."""
+
     if "monitor_enabled" in connection:
         return bool(connection.get("monitor_enabled"))
     return bool(connection.get("enabled", True))
 
 
 def monitored_connections_filter() -> dict:
-    """Mongo filter supporting both legacy and new connection documents."""
+
     return {
         "$and": [
             {
@@ -60,12 +55,7 @@ def monitored_connections_filter() -> dict:
 
 
 async def ensure_connection_flags_migrated(database) -> None:
-    """Backfill the split connection flags without changing old intent.
 
-    The historic `enabled` field represented monitoring. Therefore old rows
-    become active=True and monitor_enabled=<old enabled>. The legacy field is
-    retained as a mirror so rollback to an older build remains predictable.
-    """
     await database.database_connections.update_many(
         {
             "$or": [

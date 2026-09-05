@@ -243,8 +243,6 @@ class CollectorRuntime:
         try:
             while True:
                 if self._heartbeat_task is not None and self._heartbeat_task.done():
-                    # Propagate lease/heartbeat failure instead of continuing to
-                    # collect after another collector has taken ownership.
                     await self._heartbeat_task
 
                 cycle_started_at = _utcnow()
@@ -256,9 +254,6 @@ class CollectorRuntime:
                         self.state,
                     )
 
-                    # Mail is deliberately processed by the leased collector
-                    # process. This keeps retries single-owner and prevents the
-                    # FastAPI web process from spawning duplicate deliveries.
                     try:
                         sent_emails = await process_pending_email_deliveries(
                             self.database
@@ -269,8 +264,6 @@ class CollectorRuntime:
                                 sent_emails,
                             )
                     except Exception:
-                        # Notification transport is secondary to telemetry. A
-                        # provider outage must not degrade the collector lease.
                         logger.exception("Email delivery batch failed")
 
                     duration_ms = (
@@ -304,8 +297,6 @@ class CollectorRuntime:
                 next_cycle_monotonic += interval
                 sleep_seconds = max(0.0, next_cycle_monotonic - time.monotonic())
                 if sleep_seconds == 0:
-                    # If a cycle takes longer than the interval, start one fresh
-                    # interval from now instead of creating a catch-up storm.
                     next_cycle_monotonic = time.monotonic()
                 await asyncio.sleep(sleep_seconds)
         finally:

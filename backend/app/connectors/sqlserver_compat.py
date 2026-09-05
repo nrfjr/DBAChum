@@ -12,23 +12,19 @@ from app.core.exceptions import AppError
 from app.core.security import decrypt_secret
 
 try:
-    import pyodbc  # type: ignore
-except ImportError:  # pragma: no cover - exercised on deployments without legacy support
+    import pyodbc  
+except ImportError:  
     pyodbc = None
 
 
 logger = logging.getLogger(__name__)
 
 
-# Auto mode must finish well inside the collector's target timeout. Each
-# provider attempt gets a short connection timeout, and a successful route is
-# cached in-process so later API/collector calls do not rediscover the same
-# legacy driver/encryption combination every time. Passwords are never cached.
+
 AUTO_CONNECT_TIMEOUT_SECONDS = 2
 AUTO_CONNECT_BUDGET_SECONDS = 30
 EXPLICIT_CONNECT_TIMEOUT_SECONDS = 5
 
-# key -> (provider, driver, encrypt)
 _AUTO_ROUTE_CACHE: dict[tuple[str, int, str, str, str], tuple[str, str | None, str]] = {}
 
 
@@ -128,9 +124,6 @@ def parse_sqlserver_version(value: object) -> SqlServerVersion:
 def sqlserver_capabilities(version: SqlServerVersion) -> dict[str, bool]:
     major = version.major
 
-    # Keep the capability map intentionally conservative. It controls query
-    # selection, not marketing labels. Unknown versions fall back to the
-    # legacy-safe surface until a modern capability is positively known.
     modern = major is not None and major >= 9
 
     return {
@@ -141,8 +134,6 @@ def sqlserver_capabilities(version: SqlServerVersion) -> dict[str, bool]:
         "live_sql_text": modern,
         "backup_history_msdb": True,
         "backup_media_history": True,
-        # Operational monitoring keeps a legacy-safe core: SQLPERF LOGSPACE,
-        # SQL Agent's msdb tables, and dbo.sysfiles all predate the DMV era.
         "dbcc_logspace": True,
         "sql_agent_tables": True,
         "sql_agent_activity": major is not None and major >= 9,
@@ -206,8 +197,7 @@ def _installed_pyodbc_drivers() -> list[str]:
         if name.lower() in by_lower
     ]
 
-    # Keep other SQL Server-capable drivers as a final fallback without
-    # selecting unrelated ODBC providers.
+
     for driver in installed:
         if "sql server" in driver.lower() and driver not in result:
             result.append(driver)
@@ -236,10 +226,7 @@ def _pyodbc_connect(
         f"Connection Timeout={timeout}",
     ]
 
-    # The Windows-era "SQL Server" ODBC driver is one of the paths that
-    # can still be useful for SQL Server 2000. Avoid feeding it newer driver
-    # keywords when encryption is disabled; some legacy drivers reject unknown
-    # attributes instead of ignoring them.
+
     if driver.strip().lower() == "sql server" and encrypt == "no":
         pass
     else:
@@ -331,13 +318,7 @@ def _format_connection_errors(errors: list[str]) -> str:
 
 @contextmanager
 def open_sqlserver_connection(connection: dict) -> Iterator[SqlServerConnectionAdapter]:
-    """Open SQL Server with bounded auto-fallback and route reuse.
 
-    Auto mode tries the last successful provider/driver/encryption route first.
-    If that route stops working it is evicted and DBAChum performs a bounded
-    modern-to-legacy discovery pass. Explicit provider settings keep the longer
-    per-attempt timeout because the operator already chose that path.
-    """
     password = _connection_password(connection)
     provider = str(connection.get("sqlserver_provider") or "auto").lower()
     errors: list[str] = []

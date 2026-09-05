@@ -72,12 +72,7 @@ def _decode_ldif_value(raw: str, *, base64_encoded: bool) -> str:
 
 
 def parse_single_entry_ldif(content: str) -> tuple[str, dict[str, object]]:
-    """Parse DBAChum's rendered one-entry LDIF into ldap3 add arguments.
 
-    The profile template is intentionally limited to one LDAP entry. Standard
-    continuation lines and base64 values are supported. change records and URL
-    values are rejected because provisioning should only create one entry.
-    """
     unfolded: list[str] = []
     for raw_line in content.splitlines():
         if raw_line.startswith(" "):

@@ -26,9 +26,6 @@ async def get_oracle_activity(
             except (TypeError, ValueError):
                 major_version = None
 
-            # SQL_EXEC_START was added after Oracle 10g. Use a typed NULL
-            # on legacy databases so Activity remains available and the
-            # frontend can render the execution-start value as unavailable.
             sql_exec_start_expr = (
                 "s.sql_exec_start"
                 if major_version is not None and major_version >= 11

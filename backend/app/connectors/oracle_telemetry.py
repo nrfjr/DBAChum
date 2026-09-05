@@ -254,19 +254,13 @@ async def collect_oracle_telemetry(
     *,
     include_storage: bool = False,
 ) -> dict:
-    """Collect one lightweight Oracle telemetry snapshot.
 
-    This intentionally uses dynamic performance views and DBA tables only; it
-    does not depend on AWR/ASH so the Phase 6 history remains license-neutral
-    and compatible with the old Oracle estates DBAChum already supports.
-    """
     collected_at = datetime.now(timezone.utc)
     warnings: list[str] = []
 
     try:
         async with open_oracle_connection(connection) as db:
-            # Tag the dedicated telemetry session so its own V$ queries do not
-            # become "Top SQL" candidates in the history we are collecting.
+
             try:
                 await db.execute(
                     "BEGIN DBMS_APPLICATION_INFO.SET_MODULE(:module, :action); END;",

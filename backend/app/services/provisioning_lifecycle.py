@@ -221,13 +221,7 @@ async def clear_provisioning_runs(
     run_ids: list[str] | None = None,
     clear_all: bool = False,
 ) -> dict[str, int]:
-    """Remove terminal provisioning lifecycle records for one parent DB.
 
-    Active/running lifecycle records are protected. Clearing history does not
-    modify Oracle accounts, application rows or LDAP entries; it only removes
-    DBAChum's stored lifecycle record, which also removes retry/history context
-    for that run.
-    """
     terminal_filter = {"$in": ["succeeded", "partial", "failed"]}
 
     if clear_all:
@@ -410,7 +404,6 @@ async def retry_provisioning_run(
     ldif_content: str | None = None
 
     try:
-        # Account is retried only if that step never completed.
         if account is None or account.action == "failed":
             try:
                 account_raw = await reconcile_oracle_user(
@@ -674,7 +667,6 @@ async def retry_provisioning_run(
         },
     )
 
-    # Return a fresh LDIF only to this request; persisted LDAP content remains None.
     response_ldap = ldap or ProvisioningExecutionLdap(enabled=False)
     if ldif_content and response_ldap.action in COMPLETED_LDAP_ACTIONS:
         response_ldap.content = ldif_content

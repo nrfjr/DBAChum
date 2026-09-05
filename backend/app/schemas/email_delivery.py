@@ -55,7 +55,6 @@ class EmailSettingsUpdate(BaseModel):
     application_url: str | None = Field(default=None, max_length=500)
     max_retries: int = Field(default=3, ge=0, le=5)
 
-    # Secrets are write-only. Blank/None means "keep the existing secret".
     brevo_api_key: str | None = Field(default=None, max_length=500)
 
     smtp_host: str | None = Field(default=None, max_length=255)

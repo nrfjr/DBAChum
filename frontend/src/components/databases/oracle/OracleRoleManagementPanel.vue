@@ -320,9 +320,6 @@ async function executeDropRole() {
   }
 }
 
-// Load only when the Roles sub-workspace is first visited. The parent keeps
-// this component mounted afterward, so switching between Access Lookup,
-// Compare Users and Roles preserves all local role-management state.
 watch(
   () => props.active,
   (active) => {

@@ -20,12 +20,7 @@ logger = logging.getLogger(__name__)
 
 
 def _normalize_warnings(items) -> list[str]:
-    """Return stable, human-facing monitoring warnings.
 
-    Connector fallbacks can discover the same limitation through more than one
-    probe. Keep the Overview contract deterministic and avoid repeating the same
-    warning in the UI while preserving the connector's original wording.
-    """
     normalized: list[str] = []
     seen: set[str] = set()
 
@@ -147,8 +142,6 @@ async def list_database_overviews(database):
 
     connections = await cursor.to_list(None)
 
-    # Don't open fifty databases simultaneously
-    # just because somebody has fifty entries.
     semaphore = asyncio.Semaphore(5)
 
     async def collect_with_limit(connection):

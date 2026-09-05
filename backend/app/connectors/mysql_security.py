@@ -52,7 +52,6 @@ def _sql_literal(value: str) -> str:
 
 
 def _redact_grant(statement: str) -> str:
-    """Keep native grant text useful without exposing password/auth hashes."""
     value = statement
     patterns = [
         (r"(?i)(IDENTIFIED\s+BY\s+PASSWORD\s+)'(?:''|[^'])*'", r"\1'[REDACTED]'"),
@@ -99,8 +98,6 @@ def _parse_grant(statement: str) -> tuple[list[dict], list[str], bool]:
     role_match = re.search(r"(?is)^\s*GRANT\s+(.*?)\s+TO\s+", statement)
     if role_match:
         role_text = role_match.group(1).strip()
-        # Role grants do not have an ON clause. Keep the server's role names,
-        # but normalize quoting for readability.
         for role in role_text.split(","):
             cleaned = _strip_identifier(role.strip())
             if cleaned and not cleaned.upper().startswith(("USAGE", "PROXY")):
@@ -364,8 +361,6 @@ def _get_mysql_security_sync(connection: dict) -> dict:
         else:
             accounts, metadata_source = fetched
 
-        # The connected account must always be represented, even when metadata
-        # views omit it due to privilege filtering.
         if not any(
             item["user"] == current_user and item["host"] == current_host
             for item in accounts
@@ -402,7 +397,6 @@ def _get_mysql_security_sync(connection: dict) -> dict:
                 privileges.extend(parsed_privileges)
                 roles.extend(parsed_roles)
 
-            # Deduplicate while preserving server order.
             roles = list(dict.fromkeys(roles))
             unique_privileges: list[dict] = []
             seen_privileges: set[tuple] = set()

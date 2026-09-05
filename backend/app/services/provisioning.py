@@ -68,9 +68,6 @@ def effective_match_columns(step: dict) -> list[str]:
     if configured:
         return configured
 
-    # Backward-compatible inference for profiles created before Phase 4A added
-    # explicit upsert keys. Generated username is the canonical cross-system
-    # identity in DBAChum, so a single such mapping is safe to infer.
     inferred = [
         str(mapping.get("column_name", "")).strip().upper()
         for mapping in (step.get("mappings") or [])
@@ -106,12 +103,7 @@ def ldap_profile_database_id(profile_id: str):
 
 
 async def ensure_ldap_profiles_migrated(database):
-    """Non-destructively migrate the old singleton LDAP record.
 
-    The old ldap_settings/global document is deliberately retained as a rollback
-    copy. A stable ldap_profiles/global document is created once, and existing
-    provisioning profiles that merely had ldap_enabled=true are pointed at it.
-    """
     existing = await database.ldap_profiles.find_one({"_id": LEGACY_LDAP_PROFILE_ID})
     if existing is None:
         legacy = await database.ldap_settings.find_one({"_id": "global"})
@@ -141,8 +133,6 @@ async def ensure_ldap_profiles_migrated(database):
                     upsert=True,
                 )
             except DuplicateKeyError:
-                # Parallel Settings/Provisioning loads can race on first migration.
-                # The stable _id means the other request already created the same profile.
                 pass
             existing = await database.ldap_profiles.find_one(
                 {"_id": LEGACY_LDAP_PROFILE_ID}
@@ -249,7 +239,6 @@ async def validate_profile_dependencies(database, profile: dict) -> list[str]:
     if profile.get("ldap_enabled"):
         ldap_profile_id = profile.get("ldap_profile_id")
         if not ldap_profile_id:
-            # Old records are supported until ensure_ldap_profiles_migrated() runs.
             legacy = await database.ldap_settings.find_one({"_id": "global"})
             if not legacy or not legacy.get("enabled") or not legacy.get("bind_password_encrypted"):
                 issues.append("LDAP is enabled but no LDAP profile is selected.")
@@ -299,13 +288,9 @@ async def list_provisioning_profiles_for_connection(
     database,
     connection_id: str,
 ):
-    """Profiles visible from one parent database connection.
 
-    The parent/schema connection is the database context that owns the profile.
-    Table steps may still use separate application connections.
-    """
     await ensure_ldap_profiles_migrated(database)
-    # Validate the parent connection exists before returning child profiles.
+
     await _validate_oracle_connection(
         database,
         connection_id,
@@ -659,8 +644,6 @@ async def test_ldap_profile(database, profile_id: str):
     return await asyncio.to_thread(_test_ldap_sync, document)
 
 
-# Compatibility wrappers for the previous singleton API. They now target the
-# migrated Default LDAP profile, so older UI/API clients do not suddenly break.
 async def get_ldap_settings(database) -> LdapSettingsResponse:
     await ensure_ldap_profiles_migrated(database)
     document = await database.ldap_profiles.find_one({"_id": LEGACY_LDAP_PROFILE_ID})

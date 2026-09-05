@@ -13,7 +13,7 @@ import {
   faGaugeHigh,
   faDatabase,
   faServer,
-  faBoxesStacked,
+  faBookOpen,
   faBell,
   faGear,
   faBars,
@@ -21,6 +21,7 @@ import {
   faSun,
   faTrashCan,
   faEllipsisVertical,
+  faChevronDown,
 } from '@fortawesome/free-solid-svg-icons'
 
 import { useUiStore } from './stores/ui'
@@ -29,7 +30,7 @@ library.add(
   faGaugeHigh,
   faDatabase,
   faServer,
-  faBoxesStacked,
+  faBookOpen,
   faBell,
   faGear,
   faBars,
@@ -37,6 +38,7 @@ library.add(
   faSun,
   faTrashCan,
   faEllipsisVertical,
+  faChevronDown,
 )
 
 const app = createApp(App)

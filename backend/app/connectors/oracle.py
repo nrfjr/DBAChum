@@ -57,14 +57,7 @@ def oracle_error_message(exc: oracledb.Error) -> str:
 
 
 class OracleConnectionAdapter:
-    """Async facade around one synchronous python-oracledb Thick connection.
 
-    python-oracledb 2.5.x supports the old OCI client needed by Oracle 10g,
-    but AsyncConnection is Thin-mode only in that driver generation.  Each
-    adapter therefore owns a single-worker executor so the synchronous OCI
-    connection is created, queried, and closed on the same worker thread while
-    FastAPI's event loop remains non-blocking.
-    """
 
     def __init__(self, connect_kwargs: dict):
         self._connect_kwargs = connect_kwargs
@@ -172,7 +165,7 @@ class OracleConnectionAdapter:
 
 @asynccontextmanager
 async def open_oracle_connection(connection: dict):
-    """Open Oracle through the common async facade over sync OCI calls."""
+
     encrypted_password = connection.get("password_encrypted")
 
     if not encrypted_password:
@@ -182,7 +175,7 @@ async def open_oracle_connection(connection: dict):
             status_code=400,
         )
 
-    # Idempotent. In Thick mode this loads OCI before ConnectParams/connect.
+
     initialize_oracle_client()
 
     password = decrypt_secret(encrypted_password)
@@ -288,9 +281,6 @@ async def get_oracle_overview(connection: dict) -> dict:
                 1,
             )
 
-            # CON_NAME is a multitenant-era USERENV attribute and is not
-            # available on Oracle 10g/11g.  Keep the common identity query
-            # legacy-safe, then read CON_NAME only on 12c+.
             identity = await db.fetchone(
                 """
                 SELECT

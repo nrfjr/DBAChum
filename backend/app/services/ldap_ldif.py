@@ -6,8 +6,6 @@ import unicodedata
 from app.core.exceptions import AppError
 
 
-# Based on the working v1 LDIF layout, but converted to a configurable template.
-# Company-specific values remain editable under Settings -> LDAP.
 DEFAULT_LDIF_TEMPLATE = """dn: cn=<USERNAME>,cn=Users,<BASE_DN>
 objectclass: top
 objectclass: organizationalperson

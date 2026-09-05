@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useDatabasesStore } from '@/stores/databases'
 import {
   engineLabel,
@@ -17,14 +17,39 @@ import {
   type DatabaseEngine,
 } from '@/stores/connections'
 
+const route = useRoute()
 const router = useRouter()
 const connectionsStore = useConnectionsStore()
 const databasesStore = useDatabasesStore()
 
+const engineFilter = computed<DatabaseEngine | null>(() => {
+  const engine = String(route.query.engine ?? '')
+  return ['oracle', 'sqlserver', 'mysql'].includes(engine)
+    ? engine as DatabaseEngine
+    : null
+})
+
 const monitoredConnections = computed(() =>
   connectionsStore.connections.filter(
-    (connection) => connection.active && connection.monitor_enabled,
+    (connection) =>
+      connection.active
+      && connection.monitor_enabled
+      && (!engineFilter.value || connection.engine === engineFilter.value),
   ),
+)
+
+const workspaceTitle = computed(() =>
+  engineFilter.value ? `${engineLabel(engineFilter.value)} databases` : 'Databases',
+)
+
+const workspaceFilterNote = computed(() =>
+  engineFilter.value ? `Showing only ${engineLabel(engineFilter.value)}.` : '',
+)
+
+const emptyDatabaseMessage = computed(() =>
+  engineFilter.value
+    ? `No monitored ${engineLabel(engineFilter.value)} connections match this view.`
+    : 'Enable monitoring for a database connection from Settings.',
 )
 
 const engineOrder: DatabaseEngine[] = ['oracle', 'sqlserver', 'mysql']
@@ -53,6 +78,7 @@ function openDatabase(connection: DatabaseConnection) {
   router.push({
     name: 'database-detail',
     params: { id: connection.id },
+    query: { engine: connection.engine },
   })
 }
 
@@ -71,10 +97,10 @@ onMounted(async () => {
 <template>
   <section class="page-header">
     <div>
-      <h1>Databases</h1>
+      <h1>{{ workspaceTitle }}</h1>
       <p>
-        Monitor and work with configured databases
-        from one place.
+        Monitor and work with configured databases from one place.
+        <template v-if="workspaceFilterNote">{{ workspaceFilterNote }}</template>
       </p>
     </div>
 
@@ -99,7 +125,7 @@ onMounted(async () => {
     <h2>No monitored databases</h2>
 
     <p>
-      Enable monitoring for a database connection from Settings.
+      {{ emptyDatabaseMessage }}
     </p>
 
     <RouterLink to="/settings/connections" class="primary-button">

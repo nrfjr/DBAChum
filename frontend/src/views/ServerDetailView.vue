@@ -128,7 +128,6 @@ async function initializeMonitoring() {
       await monitoringStore.testSsh(serverId.value)
     }
   } catch {
-    // The monitoring card owns the error state so server inventory still renders.
   }
 }
 
@@ -136,7 +135,6 @@ async function testSsh() {
   try {
     await monitoringStore.testSsh(serverId.value)
   } catch {
-    // Store exposes the error inline.
   }
 }
 
@@ -154,7 +152,6 @@ async function trustHostKey() {
     server.value = await serversStore.loadOne(serverId.value)
     if (canCollectHostMetrics.value) await monitoringStore.loadHealth(serverId.value)
   } catch {
-    // Store exposes the error inline.
   }
 }
 
@@ -162,7 +159,6 @@ async function refreshHost() {
   try {
     await monitoringStore.loadHealth(serverId.value)
   } catch {
-    // Store exposes the error inline.
   }
 }
 
@@ -463,7 +459,7 @@ onMounted(async () => {
           <td>{{ engineLabel(database.engine) }}</td>
           <td>{{ database.host }}:{{ database.port }}</td>
           <td>{{ database.monitor_enabled ? 'Enabled' : 'Off' }}</td>
-          <td><RouterLink class="text-link" :to="`/databases/${database.id}`">Open database →</RouterLink></td>
+          <td><RouterLink class="text-link" :to="{ name: 'database-detail', params: { id: database.id }, query: { engine: database.engine } }">Open database →</RouterLink></td>
         </tr>
       </ScrollableDataTable>
     </section>

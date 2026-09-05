@@ -1,27 +1,21 @@
 import { createRouter, createWebHistory } from 'vue-router'
 
-import DashboardView from '@/views/DashboardView.vue'
-import PlaceholderView from '@/views/PlaceholderView.vue'
 import AlertsView from '@/views/AlertsView.vue'
-
-import LoginView from '@/views/LoginView.vue'
-
-import { useAuthStore } from '@/stores/auth'
-
-import DatabaseWorkspaceView from '@/views/DatabaseWorkspaceView.vue'
+import DashboardView from '@/views/DashboardView.vue'
 import DatabaseDetailView from '@/views/DatabaseDetailView.vue'
-import SettingsView from '@/views/SettingsView.vue'
+import DatabaseWorkspaceView from '@/views/DatabaseWorkspaceView.vue'
+import LoginView from '@/views/LoginView.vue'
 import ProfileView from '@/views/ProfileView.vue'
-import SettingsConnectionsView from '@/views/SettingsConnectionsView.vue'
-import ServersView from '@/views/ServersView.vue'
+import RecordsView from '@/views/RecordsView.vue'
 import ServerDetailView from '@/views/ServerDetailView.vue'
-import SettingsUsersView from '@/views/SettingsUsersView.vue'
-import SettingsProvisioningView from '@/views/SettingsProvisioningView.vue'
-import SettingsLdapView from '@/views/SettingsLdapView.vue'
-import SettingsInfrastructureView from '@/views/SettingsInfrastructureView.vue'
+import ServersView from '@/views/ServersView.vue'
 import SettingsAlertsEmailView from '@/views/SettingsAlertsEmailView.vue'
-import { hasPermission, } from '@/core/permissions'
+import SettingsConnectionsView from '@/views/SettingsConnectionsView.vue'
+import SettingsUsersView from '@/views/SettingsUsersView.vue'
+import SettingsView from '@/views/SettingsView.vue'
 
+import { hasPermission } from '@/core/permissions'
+import { useAuthStore } from '@/stores/auth'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -31,7 +25,6 @@ const router = createRouter({
       path: '/login',
       name: 'login',
       component: LoginView,
-
       meta: {
         public: true,
         title: 'Sign in',
@@ -46,13 +39,13 @@ const router = createRouter({
         subtitle: 'Infrastructure overview and database health.',
       },
     },
-
     {
       path: '/databases',
       name: 'databases',
       component: DatabaseWorkspaceView,
       meta: {
         title: 'Databases',
+        subtitle: 'Monitored Oracle, SQL Server and MySQL / MariaDB databases.',
       },
     },
     {
@@ -63,8 +56,6 @@ const router = createRouter({
         title: 'Database',
       },
     },
-
-
     {
       path: '/servers',
       name: 'servers',
@@ -81,17 +72,19 @@ const router = createRouter({
         title: 'Server',
       },
     },
-
     {
-      path: '/assets',
-      name: 'assets',
-      component: PlaceholderView,
+      path: '/records',
+      name: 'records',
+      component: RecordsView,
       meta: {
-        title: 'Assets',
-        subtitle: 'Infrastructure and application inventory.',
+        title: 'Records',
+        subtitle: 'Fast DBA operational lookup and reference catalog.',
       },
     },
-
+    {
+      path: '/assets',
+      redirect: '/records',
+    },
     {
       path: '/alerts',
       name: 'alerts',
@@ -101,7 +94,6 @@ const router = createRouter({
         subtitle: 'Warnings, incidents and recovery history.',
       },
     },
-
     {
       path: '/profile',
       name: 'profile',
@@ -111,7 +103,6 @@ const router = createRouter({
         subtitle: 'Identity and personal DBAChum preferences.',
       },
     },
-
     {
       path: '/settings',
       component: SettingsView,
@@ -127,44 +118,21 @@ const router = createRouter({
           path: 'connections',
           name: 'settings-connections',
           component: SettingsConnectionsView,
-
           meta: {
-            permission: 'connections:test',
+            permissionsAny: [
+              'connections:test',
+              'servers:manage',
+              'ldap:manage',
+              'provisioning:manage',
+            ],
           },
         },
         {
           path: 'users',
           name: 'settings-users',
           component: SettingsUsersView,
-
           meta: {
             permission: 'users:manage',
-          },
-        },
-        {
-          path: 'provisioning',
-          name: 'settings-provisioning',
-          component: SettingsProvisioningView,
-
-          meta: {
-            permission: 'provisioning:manage',
-          },
-        },
-        {
-          path: 'ldap',
-          name: 'settings-ldap',
-          component: SettingsLdapView,
-
-          meta: {
-            permission: 'ldap:manage',
-          },
-        },
-        {
-          path: 'infrastructure',
-          name: 'settings-infrastructure',
-          component: SettingsInfrastructureView,
-          meta: {
-            permission: 'servers:manage',
           },
         },
         {
@@ -175,9 +143,20 @@ const router = createRouter({
             permission: 'notifications:manage',
           },
         },
+        {
+          path: 'provisioning',
+          redirect: { path: '/settings/connections', query: { type: 'provisioning' } },
+        },
+        {
+          path: 'ldap',
+          redirect: { path: '/settings/connections', query: { type: 'ldap' } },
+        },
+        {
+          path: 'infrastructure',
+          redirect: { path: '/settings/connections', query: { type: 'servers' } },
+        },
       ],
     },
-
     {
       path: '/:pathMatch(.*)*',
       redirect: '/',
@@ -190,42 +169,30 @@ router.beforeEach(async (to) => {
 
   await authStore.initialize()
 
-  if (
-    to.meta.public
-    && authStore.isAuthenticated
-    && to.name === 'login'
-  ) {
-    return {
-      name: 'dashboard',
-    }
+  if (to.meta.public && authStore.isAuthenticated && to.name === 'login') {
+    return { name: 'dashboard' }
   }
 
-  if (
-    !to.meta.public
-    && !authStore.isAuthenticated
-  ) {
+  if (!to.meta.public && !authStore.isAuthenticated) {
     return {
       name: 'login',
-
       query: {
         redirect: to.fullPath,
       },
     }
   }
 
-  const requiredPermission =
-    to.meta.permission
+  const requiredPermission = to.meta.permission
+  if (requiredPermission && !hasPermission(authStore.user, requiredPermission)) {
+    return { name: 'dashboard' }
+  }
 
+  const anyPermissions = to.meta.permissionsAny
   if (
-    requiredPermission &&
-    !hasPermission(
-      authStore.user,
-      requiredPermission,
-    )
+    anyPermissions?.length
+    && !anyPermissions.some((permission) => hasPermission(authStore.user, permission))
   ) {
-    return {
-      name: 'dashboard',
-    }
+    return { name: 'dashboard' }
   }
 })
 

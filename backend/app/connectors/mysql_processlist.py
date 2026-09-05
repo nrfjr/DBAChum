@@ -47,13 +47,6 @@ def fetch_processlist(
     capabilities: dict[str, bool] | None = None,
     database_name: str | None = None,
 ) -> tuple[list[tuple], str]:
-    """Return current processlist rows plus the metadata source used.
-
-    Performance Schema is preferred only when runtime capability probing proves
-    that its processlist table is usable. INFORMATION_SCHEMA is the broad
-    compatibility fallback for older MySQL/MariaDB installations and for
-    deployments where Performance Schema exists but is disabled.
-    """
     capabilities = capabilities or {}
 
     if capabilities.get("performance_schema_processlist"):
@@ -65,8 +58,6 @@ def fetch_processlist(
             cursor.execute(sql, params)
             return cursor.fetchall(), "performance_schema.processlist"
         except MySQLError:
-            # A runtime permission/table mismatch should not make processlist
-            # monitoring unavailable when INFORMATION_SCHEMA still works.
             pass
 
     sql, params = _processlist_sql(

@@ -75,12 +75,7 @@ def _cell_text(value: object) -> str:
 
 
 def _xlsx_employee_id_text(cell) -> str:
-    """Preserve employee IDs as text, including zero-padded Excel formats.
 
-    If Excel already stored 0289 as a plain General numeric value 289, the
-    original leading zero is unrecoverable. The downloadable XLSX template
-    therefore formats employee_id as Text.
-    """
     value = cell.value
     if value is None:
         return ""
@@ -88,7 +83,6 @@ def _xlsx_employee_id_text(cell) -> str:
         return value.strip()
     if isinstance(value, (int, float)):
         number_format = str(getattr(cell, "number_format", "") or "").strip()
-        # Common ID format: 000000. Preserve the width represented by zeros.
         if number_format and set(number_format) <= {"0"} and "." not in number_format:
             width = len(number_format)
             try:
@@ -107,9 +101,7 @@ def _generate_password() -> str:
 
 
 def _validate_name(raw: str, field_label: str, *, required: bool) -> tuple[str, str | None]:
-    # Punctuation in human names is accepted and removed by normalization for
-    # username generation (e.g. John-Doe, O'Connor, Last-name). Digits are
-    # treated as input mistakes rather than silently stripped.
+
     cleaned = normalize_person_name(raw)
     if required and not cleaned:
         return "", f"{field_label} is required."
@@ -358,7 +350,6 @@ def build_bulk_template_xlsx() -> bytes:
     sheet.append(["001234", "Juan", "M", "Santos", "", ""])
     for cell in sheet[1]:
         cell.font = Font(bold=True)
-    # Employee IDs are identifiers, not numbers. Text format protects leading zeros.
     for cell in sheet["A"]:
         cell.number_format = "@"
     widths = {"A": 18, "B": 20, "C": 20, "D": 24, "E": 20, "F": 22}
@@ -606,9 +597,7 @@ async def execute_bulk_provisioning(
                     audit_id=created["audit_id"],
                 ))
         except AppError as exc:
-            # Continue through the batch so one failed account does not hide the
-            # result of every later row. Existing lifecycle runs retain their own
-            # partial/retry state when profile provisioning was used.
+
             results.append(BulkProvisionExecutionRow(
                 row_number=row.row_number,
                 username=preview.username,

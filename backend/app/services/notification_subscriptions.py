@@ -14,7 +14,7 @@ def category_for_alert(
     rule_key: str,
     source_type: str,
 ) -> NotificationCategory:
-    """Map current/future alert rule keys to a stable user-facing category."""
+
 
     rule = str(rule_key or "").strip().lower()
     source = str(source_type or "").strip().lower()
@@ -56,11 +56,6 @@ def email_subscription_matches_alert(
     *,
     source_engine: str | None = None,
 ) -> bool:
-    """Return whether an alert belongs in this user's future email channel.
-
-    Phase 7B.3 deliberately stops at subscription/matching. Phase 7B.4 owns
-    transport, retries and delivery logging.
-    """
 
     if not subscription.email_enabled:
         return False
@@ -102,8 +97,6 @@ def email_subscription_matches_alert(
         or alert.get("source_engine")
     )
     if not engine_value:
-        # Delivery code should resolve old alert rows from their connection
-        # before matching. Failing closed avoids accidental broad delivery.
         return False
 
     try:

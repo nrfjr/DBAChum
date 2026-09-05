@@ -11,7 +11,6 @@ ALERTS_COLLECTION_NAME = "alerts"
 
 
 def telemetry_retention_seconds() -> int:
-    # Phase 6 is deliberately capped to one rolling day of telemetry.
     return settings.metrics_retention_hours * 60 * 60
 
 
@@ -38,10 +37,6 @@ async def _ensure_timeseries_collection(
         except CollectionInvalid:
             pass
 
-    # Existing Phase 4/5 installs may have a longer TTL. Force the practical
-    # Phase 6 ceiling back to a rolling 24 hours on every startup. The old
-    # collector already relied on collMod for retention changes, so failure is
-    # surfaced rather than silently keeping stale telemetry.
     await database.command(
         {
             "collMod": name,
@@ -68,9 +63,6 @@ async def ensure_telemetry_collections(database) -> None:
     await ensure_metrics_collection(database)
     await ensure_server_metrics_collection(database)
 
-    # SQL text is deduplicated by SQL_ID/child instead of copied into every
-    # 30-second metric sample. `expires_at` is refreshed whenever the SQL is
-    # seen and therefore follows the same rolling 24-hour policy.
     await database[ORACLE_SQL_TEXT_COLLECTION_NAME].create_index(
         [
             ("connection_id", 1),
