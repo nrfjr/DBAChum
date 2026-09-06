@@ -12,6 +12,7 @@ from app.api.v1.endpoints import (
     oracle_dba,
     profile,
     provisioning,
+    records,
     mysql_dba,
     notification_delivery,
     sqlserver_dba,
@@ -37,6 +38,7 @@ api_router.include_router(databases.router)
 api_router.include_router(oracle_dba.router)
 api_router.include_router(profile.router)
 api_router.include_router(provisioning.router)
+api_router.include_router(records.router)
 api_router.include_router(sqlserver_dba.router)
 api_router.include_router(mysql_dba.router)
 api_router.include_router(notification_delivery.router)

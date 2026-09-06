@@ -6,6 +6,7 @@ import DatabaseDetailView from '@/views/DatabaseDetailView.vue'
 import DatabaseWorkspaceView from '@/views/DatabaseWorkspaceView.vue'
 import LoginView from '@/views/LoginView.vue'
 import ProfileView from '@/views/ProfileView.vue'
+import RecordDetailView from '@/views/RecordDetailView.vue'
 import RecordsView from '@/views/RecordsView.vue'
 import ServerDetailView from '@/views/ServerDetailView.vue'
 import ServersView from '@/views/ServersView.vue'
@@ -79,6 +80,15 @@ const router = createRouter({
       meta: {
         title: 'Records',
         subtitle: 'Fast DBA operational lookup and reference catalog.',
+      },
+    },
+    {
+      path: '/records/:id',
+      name: 'record-detail',
+      component: RecordDetailView,
+      meta: {
+        title: 'Record',
+        subtitle: 'DBA operational reference record.',
       },
     },
     {

@@ -4,9 +4,15 @@ from app.schemas.user import UserRole
 
 
 class Permission(str, Enum):
+    """Stable DBAChum authorization boundaries.
 
+    Monitoring is intentionally separate from DBA inspection and mutation.
+    Settings/configuration permissions remain administrator-only, while
+    operators can perform approved day-to-day DBA work.
+    """
 
     MONITOR_READ = "monitor:read"
+    RECORD_MANAGE = "records:manage"
 
     CONNECTION_TEST = "connections:test"
     CONNECTION_MANAGE = "connections:manage"
@@ -38,6 +44,7 @@ ROLE_PERMISSIONS: dict[
     UserRole.OPERATOR: frozenset(
         {
             Permission.MONITOR_READ,
+            Permission.RECORD_MANAGE,
             Permission.CONNECTION_TEST,
             Permission.DATABASE_INSPECT,
             Permission.DBA_OPERATE,
@@ -49,6 +56,7 @@ ROLE_PERMISSIONS: dict[
     UserRole.ADMIN: frozenset(
         {
             Permission.MONITOR_READ,
+            Permission.RECORD_MANAGE,
 
             Permission.CONNECTION_TEST,
             Permission.CONNECTION_MANAGE,

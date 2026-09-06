@@ -13,6 +13,9 @@ async def create_indexes(
         name="uq_users_username",
     )
 
+    # Email is optional during the 7B.1 identity rollout. The partial unique
+    # index only applies to users that actually have an email_key, preserving
+    # compatibility with existing local accounts.
     await database.users.create_index(
         "email_key",
         unique=True,
@@ -38,6 +41,34 @@ async def create_indexes(
         "MongoDB indexes verified"
     )
     
+
+    # Phase 8.3 human-readable operational Records catalog.
+    await database.records.create_index(
+        "identity_key",
+        unique=True,
+        name="uq_records_identity_key",
+    )
+
+    await database.records.create_index(
+        "record_type",
+        name="ix_records_type",
+    )
+
+    await database.records.create_index(
+        "environment",
+        name="ix_records_environment",
+    )
+
+    await database.records.create_index(
+        "connection_id",
+        name="ix_records_connection_id",
+    )
+
+    await database.records.create_index(
+        "server_id",
+        name="ix_records_server_id",
+    )
+
     await database.database_connections.create_index(
         "name_key",
         unique=True,
@@ -183,6 +214,9 @@ async def create_indexes(
         ],
         name="ix_alerts_source_rule",
     )
+    # Phase 7B.4 outbound-email outbox. Event keys deduplicate alert
+    # notifications per incident/severity/user, while the TTL keeps delivery
+    # diagnostics useful without becoming permanent application telemetry.
     await database.email_deliveries.create_index(
         "event_key",
         unique=True,

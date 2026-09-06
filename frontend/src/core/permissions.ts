@@ -5,6 +5,7 @@ export type UserRole =
 
 export type Permission =
   | 'monitor:read'
+  | 'records:manage'
   | 'connections:test'
   | 'connections:manage'
   | 'servers:manage'
@@ -35,6 +36,7 @@ const rolePermissions:
 
     operator: new Set([
       'monitor:read',
+      'records:manage',
       'connections:test',
       'database:inspect',
       'database:operate',
@@ -44,6 +46,7 @@ const rolePermissions:
 
     admin: new Set([
       'monitor:read',
+      'records:manage',
       'connections:test',
       'connections:manage',
       'servers:manage',
