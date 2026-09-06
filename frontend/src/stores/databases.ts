@@ -35,6 +35,16 @@ export interface DatabaseOverview {
   connection_driver: string | null
   connection_encrypt: string | null
 
+  database_role: string | null
+  database_state: string | null
+  instance_status: string | null
+  character_set: string | null
+  collation: string | null
+  recovery_model: string | null
+  log_mode: string | null
+  compatibility_level: number | null
+  read_only: boolean | null
+
   database_product: string | null
   version_comment: string | null
   server_hostname: string | null

@@ -5864,3 +5864,276 @@ button {
     gap: .2rem;
   }
 }
+
+/* ========================================================================== */
+/* Phase 8.4 — Database Detail Workspace + linked SSH terminal                */
+/* ========================================================================== */
+
+.database-workspace-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1.25rem;
+  margin-bottom: 1rem;
+  padding: 1.25rem;
+  border: 1px solid var(--border);
+  border-radius: 1rem;
+  background: var(--surface);
+}
+
+.database-workspace-header__identity {
+  min-width: 0;
+}
+
+.database-workspace-title-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0.55rem 0 0.3rem;
+}
+
+.database-workspace-title-row h1 {
+  margin: 0 0.25rem 0 0;
+}
+
+.database-workspace-header__identity > p {
+  margin: 0;
+  color: var(--text-muted);
+}
+
+.database-workspace-context-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem 1rem;
+  margin-top: 0.65rem;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.database-workspace-context-line a,
+.database-context-links a,
+.database-linked-server a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.database-workspace-context-line a:hover,
+.database-context-links a:hover,
+.database-linked-server a:hover:hover {
+  text-decoration: underline;
+}
+
+.database-workspace-header__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.55rem;
+  max-width: 520px;
+}
+
+.workspace-status-pill {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  padding: 0.28rem 0.55rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-muted);
+  background: var(--surface-muted);
+  font-size: 0.74rem;
+  line-height: 1.1;
+  white-space: nowrap;
+}
+
+.workspace-status-pill--engine {
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
+  color: var(--accent);
+}
+
+.workspace-status-pill--success {
+  border-color: color-mix(in srgb, var(--success) 40%, var(--border));
+  color: var(--success);
+}
+
+.workspace-status-pill--warning {
+  border-color: color-mix(in srgb, var(--warning) 45%, var(--border));
+  color: var(--warning);
+}
+
+.workspace-status-pill--muted {
+  color: var(--text-muted);
+}
+
+.database-workspace-message {
+  margin: 0 0 1rem;
+  padding: 0.7rem 0.85rem;
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+  background: var(--surface);
+  font-size: 0.85rem;
+}
+
+.database-workspace-message--success {
+  border-color: color-mix(in srgb, var(--success) 35%, var(--border));
+  color: var(--success);
+}
+
+.database-workspace-message--error {
+  border-color: color-mix(in srgb, var(--danger) 35%, var(--border));
+  color: var(--danger);
+}
+
+.database-workspace-message--info {
+  color: var(--text-muted);
+}
+
+.database-workspace-tabs {
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.database-workspace-tabs button {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.database-detail-metrics {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.database-context-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.database-context-card {
+  min-width: 0;
+}
+
+.database-context-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.8rem 1rem;
+  margin: 0;
+}
+
+.database-context-list div {
+  min-width: 0;
+}
+
+.database-context-list dt {
+  margin-bottom: 0.2rem;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+}
+
+.database-context-list dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.database-context-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem 0.8rem;
+  margin-top: 1rem;
+  padding-top: 0.85rem;
+  border-top: 1px solid var(--border);
+  font-size: 0.85rem;
+}
+
+.database-linked-server-list {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.database-linked-server {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+  background: var(--surface-muted);
+}
+
+.database-linked-server > div {
+  display: grid;
+  min-width: 0;
+  gap: 0.2rem;
+}
+
+.database-linked-server > div span {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+
+.database-workspace-empty {
+  display: grid;
+  justify-items: start;
+  gap: 0.45rem;
+  padding: 1rem;
+  border: 1px dashed var(--border);
+  border-radius: 0.85rem;
+  color: var(--text-muted);
+  background: var(--surface-muted);
+}
+
+.database-workspace-empty strong {
+  color: var(--text);
+}
+
+.database-workspace-empty--compact {
+  padding: 0.8rem;
+}
+
+
+@media (max-width: 1050px) {
+  .database-workspace-header {
+    flex-direction: column;
+  }
+
+  .database-workspace-header__actions {
+    justify-content: flex-start;
+    max-width: none;
+  }
+
+  .database-detail-metrics {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .database-context-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .database-detail-metrics,
+  .database-context-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .database-linked-server {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+
+@media (max-width: 480px) {
+  .database-workspace-header {
+    padding: 1rem;
+  }
+
+  .database-detail-metrics,
+  .database-context-list {
+    grid-template-columns: 1fr;
+  }
+}

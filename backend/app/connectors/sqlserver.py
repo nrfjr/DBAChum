@@ -79,6 +79,11 @@ def _get_sqlserver_overview_sync(connection: dict) -> dict:
 
                 identity = probe_sqlserver_identity(db)
 
+                # This path deliberately uses the SQL Server 2000-era system
+                # surface. Microsoft retains it as compatibility views on
+                # modern releases, giving Overview one query family from 2000
+                # through current SQL Server instead of branching on every
+                # generation.
                 cursor.execute(
                     """
                     SELECT
@@ -112,6 +117,38 @@ def _get_sqlserver_overview_sync(connection: dict) -> dict:
                     warnings,
                 )
 
+                detail_warnings: list[str] = []
+                database_state = _sqlserver_scalar(
+                    cursor,
+                    "SELECT CONVERT(varchar(60), DATABASEPROPERTYEX(DB_NAME(), 'Status'))",
+                    "Database state",
+                    detail_warnings,
+                )
+                collation = _sqlserver_scalar(
+                    cursor,
+                    "SELECT CONVERT(varchar(128), DATABASEPROPERTYEX(DB_NAME(), 'Collation'))",
+                    "Collation",
+                    detail_warnings,
+                )
+                recovery_model = _sqlserver_scalar(
+                    cursor,
+                    "SELECT CONVERT(varchar(60), DATABASEPROPERTYEX(DB_NAME(), 'Recovery'))",
+                    "Recovery model",
+                    detail_warnings,
+                )
+                compatibility_level = _sqlserver_scalar(
+                    cursor,
+                    "SELECT cmptlevel FROM master.dbo.sysdatabases WHERE name = DB_NAME()",
+                    "Compatibility level",
+                    detail_warnings,
+                )
+                updateability = _sqlserver_scalar(
+                    cursor,
+                    "SELECT CONVERT(varchar(60), DATABASEPROPERTYEX(DB_NAME(), 'Updateability'))",
+                    "Read-only state",
+                    detail_warnings,
+                )
+
                 return {
                     "response_time_ms": response_time_ms,
                     "active": int(counts[0] or 0) if counts else None,
@@ -133,6 +170,19 @@ def _get_sqlserver_overview_sync(connection: dict) -> dict:
                     "connection_provider": identity.provider,
                     "connection_driver": identity.driver,
                     "connection_encrypt": identity.encrypt,
+                    "database_state": database_state,
+                    "collation": collation,
+                    "recovery_model": recovery_model,
+                    "compatibility_level": (
+                        int(compatibility_level)
+                        if compatibility_level is not None
+                        else None
+                    ),
+                    "read_only": (
+                        str(updateability).strip().upper() == "READ_ONLY"
+                        if updateability is not None
+                        else None
+                    ),
                     "capabilities": identity.capabilities,
                     "warnings": warnings,
                 }

@@ -144,6 +144,7 @@ def probe_mysql_capabilities(
     cursor,
     version_info,
 ) -> dict[str, bool]:
+    """Refine version hints with what the connected server really exposes."""
     capabilities = mysql_capabilities(version_info)
 
     performance_schema_value = None
@@ -179,7 +180,9 @@ def probe_mysql_capabilities(
         "innodb_lock_waits",
     )
 
-
+    # Performance Schema feature presence is runtime-probed rather than inferred
+    # from version alone. MySQL/MariaDB installations can ship the schema while
+    # leaving the instrumentation disabled, as seen on common XAMPP builds.
     capabilities["performance_schema_processlist"] = bool(
         capabilities["performance_schema"]
         and _schema_object_exists(cursor, "performance_schema", "processlist")
@@ -277,7 +280,10 @@ def _test_mysql_connection_sync(connection: dict) -> dict:
 
 async def test_mysql_connection(connection: dict) -> dict:
     try:
-
+        # Connector/Python's aio transport can fail against older MariaDB/
+        # non-TLS endpoints while inspecting socket cipher information. Use
+        # the mature synchronous connector in a worker thread so FastAPI's
+        # event loop remains non-blocking while retaining broad compatibility.
         return await asyncio.to_thread(
             _test_mysql_connection_sync,
             connection,
@@ -357,6 +363,25 @@ def _get_mysql_overview_sync(connection: dict) -> dict:
             "Data directory",
             warnings,
         )
+        detail_warnings: list[str] = []
+        character_set = _mysql_variable_value(
+            cursor,
+            "character_set_database",
+            "Database character set",
+            detail_warnings,
+        )
+        collation = _mysql_variable_value(
+            cursor,
+            "collation_database",
+            "Database collation",
+            detail_warnings,
+        )
+        read_only_raw = _mysql_variable_value(
+            cursor,
+            "read_only",
+            "Read-only state",
+            detail_warnings,
+        )
 
         try:
             max_connections = (
@@ -393,7 +418,8 @@ def _get_mysql_overview_sync(connection: dict) -> dict:
                 "available to this connection."
             )
 
-
+        # DBAChum's own connection contributes one connected/running thread,
+        # so subtract it from the human-facing workload count.
         active = (
             max(threads_running - 1, 0)
             if threads_running is not None
@@ -435,6 +461,13 @@ def _get_mysql_overview_sync(connection: dict) -> dict:
             "questions": questions,
             "slow_queries": slow_queries,
             "data_directory": data_directory,
+            "character_set": character_set,
+            "collation": collation,
+            "read_only": (
+                str(read_only_raw).strip().lower() in {"1", "on", "yes", "true"}
+                if read_only_raw is not None
+                else None
+            ),
             "performance_schema_enabled": performance_schema_enabled,
             "capabilities": capabilities,
             "warnings": warnings,

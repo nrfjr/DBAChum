@@ -1,20 +1,17 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { useDatabasesStore } from '@/stores/databases'
 
+import DatabaseAccessPanel from '@/components/databases/DatabaseAccessPanel.vue'
+import DatabaseActivityPanel from '@/components/databases/DatabaseActivityPanel.vue'
+import DatabaseBackupsPanel from '@/components/databases/DatabaseBackupsPanel.vue'
+import DatabaseHistoryPanel from '@/components/databases/DatabaseHistoryPanel.vue'
+import DatabaseMonitoringNotice from '@/components/databases/DatabaseMonitoringNotice.vue'
 import DatabaseSessionsPanel from '@/components/databases/DatabaseSessionsPanel.vue'
 import DatabaseStoragePanel from '@/components/databases/DatabaseStoragePanel.vue'
-import DatabaseActivityPanel from '@/components/databases/DatabaseActivityPanel.vue'
-import DatabaseHistoryPanel from '@/components/databases/DatabaseHistoryPanel.vue'
-import DatabaseBackupsPanel from '@/components/databases/DatabaseBackupsPanel.vue'
 import DatabaseUsersPanel from '@/components/databases/DatabaseUsersPanel.vue'
-import DatabaseAccessPanel from '@/components/databases/DatabaseAccessPanel.vue'
-import DatabaseMonitoringNotice from '@/components/databases/DatabaseMonitoringNotice.vue'
-import SqlServerHealthPanel from '@/components/databases/sqlserver/SqlServerHealthPanel.vue'
 import MySqlHealthPanel from '@/components/databases/mysql/MySqlHealthPanel.vue'
-import { useServersStore } from '@/stores/servers'
-import { useAuthStore } from '@/stores/auth'
+import SqlServerHealthPanel from '@/components/databases/sqlserver/SqlServerHealthPanel.vue'
 import { hasPermission } from '@/core/permissions'
 import {
   engineLabel,
@@ -24,19 +21,29 @@ import {
   overviewMetricLabel,
   statusLabel,
 } from '@/core/databasePresentation'
-
+import { useAuthStore } from '@/stores/auth'
 import { useConnectionsStore } from '@/stores/connections'
+import { useDatabasesStore } from '@/stores/databases'
+import { useRecordsStore } from '@/stores/records'
+import { useServersStore } from '@/stores/servers'
+import type { Server } from '@/stores/servers'
+import { useTerminalSessionsStore } from '@/stores/terminalSessions'
 
 const route = useRoute()
 const router = useRouter()
 const connectionsStore = useConnectionsStore()
 const databasesStore = useDatabasesStore()
 const serversStore = useServersStore()
+const recordsStore = useRecordsStore()
 const authStore = useAuthStore()
+const terminalStore = useTerminalSessionsStore()
 
-const connectionId = computed(
-  () => route.params.id as string,
-)
+const refreshing = ref(false)
+const testingConnection = ref(false)
+const workspaceMessage = ref<string | null>(null)
+const workspaceMessageTone = ref<'success' | 'error' | 'info'>('info')
+
+const connectionId = computed(() => route.params.id as string)
 
 const connection = computed(() =>
   connectionsStore.connections.find(
@@ -45,45 +52,57 @@ const connection = computed(() =>
 )
 
 const overview = computed(() =>
-  databasesStore.overviews[
-  connectionId.value
-  ],
+  databasesStore.overviews[connectionId.value],
 )
 
 type DatabaseTab =
   | 'overview'
-  | 'history'
-  | 'backups'
   | 'health'
   | 'sessions'
   | 'storage'
   | 'activity'
   | 'users'
   | 'access'
+  | 'backups'
+  | 'history'
+
+const validTabs = new Set<DatabaseTab>([
+  'overview',
+  'health',
+  'sessions',
+  'storage',
+  'activity',
+  'users',
+  'access',
+  'backups',
+  'history',
+])
 
 const activeTab = ref<DatabaseTab>('overview')
 
 const visitedTabs = reactive<Record<DatabaseTab, boolean>>({
   overview: true,
-  history: false,
-  backups: false,
   health: false,
   sessions: false,
   storage: false,
   activity: false,
   users: false,
   access: false,
+  backups: false,
+  history: false,
 })
 
 function selectTab(tab: DatabaseTab) {
+  if (!tabIsAvailable(tab)) return
   visitedTabs[tab] = true
   activeTab.value = tab
 }
 
 function applyTabFromRoute() {
-  if (String(route.query.tab ?? '') !== 'history') return
-  visitedTabs.history = true
-  activeTab.value = 'history'
+  const requested = String(route.query.tab ?? '') as DatabaseTab
+  if (!validTabs.has(requested) || !tabIsAvailable(requested)) return
+  visitedTabs[requested] = true
+  activeTab.value = requested
 }
 
 function resetVisitedTabs() {
@@ -114,21 +133,34 @@ const supportsOperationalHealth = computed(() =>
 )
 
 const supportsUsersAndSchemas = computed(() =>
-  ['oracle', 'sqlserver', 'mysql'].includes(connection.value?.engine ?? '') &&
-  hasPermission(
-    authStore.user,
-    'database:inspect',
-  ),
+  supportsDbaUtilities.value
+  && hasPermission(authStore.user, 'database:inspect'),
 )
 
 const supportsAccessAndPrivileges = computed(() =>
-  ['oracle', 'sqlserver', 'mysql'].includes(connection.value?.engine ?? '') &&
-  hasPermission(
-    authStore.user,
-    'database:inspect',
-  ),
+  supportsDbaUtilities.value
+  && hasPermission(authStore.user, 'database:inspect'),
 )
 
+const canTestConnection = computed(() =>
+  hasPermission(authStore.user, 'connections:test'),
+)
+
+const canManageConnections = computed(() =>
+  hasPermission(authStore.user, 'connections:manage'),
+)
+
+const canUseTerminal = computed(() =>
+  hasPermission(authStore.user, 'terminal:use'),
+)
+
+function tabIsAvailable(tab: DatabaseTab) {
+  if (tab === 'health') return supportsOperationalHealth.value
+  if (['sessions', 'storage', 'activity'].includes(tab)) return supportsDbaUtilities.value
+  if (tab === 'users') return supportsUsersAndSchemas.value
+  if (tab === 'access') return supportsAccessAndPrivileges.value
+  return true
+}
 
 async function syncEngineContext() {
   const engine = connection.value?.engine
@@ -156,38 +188,116 @@ watch(
 )
 
 const relatedServers = computed(() => {
-  if (!connection.value) {
-    return []
+  if (!connection.value) return []
+  const ids = connection.value.server_ids ?? []
+  return serversStore.servers.filter((server) => ids.includes(server.id))
+})
+
+const linkedRecords = computed(() =>
+  recordsStore.records.filter(
+    (record) => record.connection_id === connectionId.value,
+  ),
+)
+
+const primaryRecord = computed(() =>
+  linkedRecords.value.find((record) => record.record_type === 'database')
+  ?? linkedRecords.value[0]
+  ?? null,
+)
+
+const workspaceEnvironment = computed(() =>
+  primaryRecord.value?.environment ?? 'Environment not recorded',
+)
+
+const readyTerminalServers = computed(() =>
+  relatedServers.value.filter(
+    (server) => Boolean(server.ssh_profile_id && server.ssh_host_key_fingerprint),
+  ),
+)
+
+function showWorkspaceMessage(
+  message: string,
+  tone: 'success' | 'error' | 'info' = 'info',
+) {
+  workspaceMessage.value = message
+  workspaceMessageTone.value = tone
+}
+
+async function refreshWorkspace() {
+  refreshing.value = true
+  workspaceMessage.value = null
+
+  try {
+    await Promise.allSettled([
+      databasesStore.loadOne(connectionId.value),
+      serversStore.load(),
+      recordsStore.load(),
+    ])
+    showWorkspaceMessage('Database workspace refreshed.', 'success')
+  } finally {
+    refreshing.value = false
+  }
+}
+
+async function testDatabaseConnection() {
+  if (!canTestConnection.value) return
+  testingConnection.value = true
+  workspaceMessage.value = null
+
+  try {
+    const result = await connectionsStore.test(connectionId.value)
+    showWorkspaceMessage(
+      result.success
+        ? `Connection test succeeded${result.database_version ? ` · ${result.database_version}` : ''}.`
+        : result.message,
+      result.success ? 'success' : 'error',
+    )
+  } catch (error) {
+    showWorkspaceMessage(
+      error instanceof Error ? error.message : 'Connection test failed.',
+      'error',
+    )
+  } finally {
+    testingConnection.value = false
+  }
+}
+
+function openSshTerminal(server: Server) {
+  if (!canUseTerminal.value) return
+
+  const existing = terminalStore.sessions.find(
+    (session) => session.server_id === server.id,
+  )
+
+  if (existing) {
+    terminalStore.restore(existing.client_id)
+    return
   }
 
-  const ids =
-    connection.value.server_ids ?? []
-
-  return serversStore.servers.filter(
-    (server) =>
-      ids.includes(server.id),
-  )
-})
+  try {
+    terminalStore.open(server)
+  } catch (error) {
+    showWorkspaceMessage(
+      error instanceof Error ? error.message : 'Unable to open SSH terminal.',
+      'error',
+    )
+  }
+}
 
 onMounted(async () => {
   applyTabFromRoute()
 
-  if (
-    connectionsStore.connections.length === 0
-  ) {
+  if (connectionsStore.connections.length === 0) {
     await connectionsStore.load()
   }
 
-  if (
-    serversStore.servers.length === 0
-  ) {
-    await serversStore.load()
-  }
+  await Promise.allSettled([
+    serversStore.servers.length === 0 ? serversStore.load() : Promise.resolve(),
+    recordsStore.records.length === 0 ? recordsStore.load() : Promise.resolve(),
+    databasesStore.loadOne(connectionId.value),
+  ])
 
-  await databasesStore.loadOne(
-    connectionId.value
-  )
-
+  applyTabFromRoute()
   await syncEngineContext()
 })
 </script>
@@ -207,51 +317,102 @@ onMounted(async () => {
     </div>
 
     <template v-else>
-      <section class="database-detail-header">
-        <div>
+      <section class="database-workspace-header">
+        <div class="database-workspace-header__identity">
           <button type="button" class="database-back-button" @click="backToDatabases">
             ← Databases
           </button>
 
-          <h1>{{ connection.name }}</h1>
+          <div class="database-workspace-title-row">
+            <h1>{{ connection.name }}</h1>
+
+            <span class="workspace-status-pill workspace-status-pill--engine">
+              {{ engineLabel(connection.engine) }}
+            </span>
+
+            <span class="workspace-status-pill workspace-status-pill--muted">
+              {{ workspaceEnvironment }}
+            </span>
+
+            <span
+              class="database-state"
+              :class="overview?.status ?? 'unknown'"
+            >
+              {{ statusLabel(overview?.status) }}
+            </span>
+          </div>
 
           <p>
-            {{
-              engineProductLabel(
-                connection.engine,
-                overview?.database_product,
-              )
-            }}
-            ·
-            {{ connection.host }}:{{ connection.port }}
+            {{ engineProductLabel(connection.engine, overview?.database_product) }}
+            · {{ connection.host }}:{{ connection.port }}
+            <template v-if="overview?.instance_name"> · {{ overview.instance_name }}</template>
           </p>
+
+          <div v-if="primaryRecord" class="database-workspace-context-line">
+            <span v-if="primaryRecord.application">Application: {{ primaryRecord.application }}</span>
+            <span v-if="primaryRecord.owner">Owner: {{ primaryRecord.owner }}</span>
+            <RouterLink :to="{ name: 'record-detail', params: { id: primaryRecord.id } }">
+              Open Record
+            </RouterLink>
+          </div>
         </div>
 
-        <span
-          class="database-state"
-          :class="overview?.status ?? 'unknown'"
-        >
-          {{ statusLabel(overview?.status) }}
-        </span>
+        <div class="database-workspace-header__actions">
+          <button
+            type="button"
+            class="secondary-button"
+            :disabled="refreshing"
+            @click="refreshWorkspace"
+          >
+            {{ refreshing ? 'Refreshing…' : 'Refresh' }}
+          </button>
+
+          <button
+            v-if="canTestConnection"
+            type="button"
+            class="secondary-button"
+            :disabled="testingConnection"
+            @click="testDatabaseConnection"
+          >
+            {{ testingConnection ? 'Testing…' : 'Test connection' }}
+          </button>
+
+          <template v-if="canUseTerminal && readyTerminalServers.length">
+            <button
+              v-for="server in readyTerminalServers"
+              :key="`ssh-terminal-${server.id}`"
+              type="button"
+              class="primary-button"
+              @click="openSshTerminal(server)"
+            >
+              SSH terminal
+              <template v-if="readyTerminalServers.length > 1">
+                · {{ server.name }}
+              </template>
+            </button>
+          </template>
+
+          <RouterLink
+            v-if="canManageConnections"
+            class="secondary-button"
+            :to="{ name: 'settings-connections', query: { type: 'databases' } }"
+          >
+            Manage connection
+          </RouterLink>
+        </div>
       </section>
 
-      <nav class="database-tabs">
-        <button :class="{
-          active: activeTab === 'overview',
-        }" @click="selectTab('overview')">
+      <p
+        v-if="workspaceMessage"
+        class="database-workspace-message"
+        :class="`database-workspace-message--${workspaceMessageTone}`"
+      >
+        {{ workspaceMessage }}
+      </p>
+
+      <nav class="database-tabs database-workspace-tabs">
+        <button :class="{ active: activeTab === 'overview' }" @click="selectTab('overview')">
           Overview
-        </button>
-
-        <button :class="{
-          active: activeTab === 'history',
-        }" @click="selectTab('history')">
-          History
-        </button>
-
-        <button :class="{
-          active: activeTab === 'backups',
-        }" @click="selectTab('backups')">
-          Backups
         </button>
 
         <button
@@ -262,29 +423,37 @@ onMounted(async () => {
           Health
         </button>
 
-        <button :disabled="!supportsDbaUtilities" :class="{
-          active: activeTab === 'sessions',
-        }" @click="selectTab('sessions')">
+        <button
+          :disabled="!supportsDbaUtilities"
+          :class="{ active: activeTab === 'sessions' }"
+          @click="selectTab('sessions')"
+        >
           Sessions
         </button>
 
-        <button :disabled="!supportsDbaUtilities" :class="{
-          active: activeTab === 'storage',
-        }" @click="selectTab('storage')">
+        <button
+          :disabled="!supportsDbaUtilities"
+          :class="{ active: activeTab === 'storage' }"
+          @click="selectTab('storage')"
+        >
           Storage
         </button>
 
-        <button :disabled="!supportsDbaUtilities" :class="{
-          active: activeTab === 'activity',
-        }" @click="selectTab('activity')">
+        <button
+          :disabled="!supportsDbaUtilities"
+          :class="{ active: activeTab === 'activity' }"
+          @click="selectTab('activity')"
+        >
           Activity
+        </button>
+
+        <button :class="{ active: activeTab === 'backups' }" @click="selectTab('backups')">
+          Backups
         </button>
 
         <button
           v-if="supportsUsersAndSchemas"
-          :class="{
-            active: activeTab === 'users',
-          }"
+          :class="{ active: activeTab === 'users' }"
           @click="selectTab('users')"
         >
           {{ connection.engine === 'sqlserver' ? 'Users & Principals' : connection.engine === 'mysql' ? 'Users & Hosts' : 'Users & Schemas' }}
@@ -292,12 +461,14 @@ onMounted(async () => {
 
         <button
           v-if="supportsAccessAndPrivileges"
-          :class="{
-            active: activeTab === 'access',
-          }"
+          :class="{ active: activeTab === 'access' }"
           @click="selectTab('access')"
         >
           {{ connection.engine === 'mysql' ? 'Access & Grants' : 'Access & Privileges' }}
+        </button>
+
+        <button :class="{ active: activeTab === 'history' }" @click="selectTab('history')">
+          History
         </button>
       </nav>
 
@@ -331,6 +502,13 @@ onMounted(async () => {
 
           <strong>
             {{ formatUptime(overview?.uptime_seconds) }}
+          </strong>
+        </div>
+
+        <div>
+          <span>Response time</span>
+          <strong>
+            {{ overview?.response_time_ms != null ? `${overview.response_time_ms} ms` : '—' }}
           </strong>
         </div>
       </section>
@@ -416,24 +594,92 @@ onMounted(async () => {
         :engine="connection.engine"
       />
 
+      <section
+        v-if="activeTab === 'overview'"
+        class="database-context-grid"
+      >
+        <article class="panel database-context-card">
+          <div class="panel-header">
+            <div>
+              <h2>Operational context</h2>
+              <p>Human-facing ownership and application information from Records.</p>
+            </div>
+          </div>
+
+          <dl class="database-context-list">
+            <div>
+              <dt>Environment</dt>
+              <dd>{{ primaryRecord?.environment ?? 'Not recorded' }}</dd>
+            </div>
+            <div>
+              <dt>Application</dt>
+              <dd>{{ primaryRecord?.application ?? 'Not recorded' }}</dd>
+            </div>
+            <div>
+              <dt>Owner / team</dt>
+              <dd>{{ primaryRecord?.owner ?? 'Not recorded' }}</dd>
+            </div>
+            <div>
+              <dt>Linked Records</dt>
+              <dd>{{ linkedRecords.length }}</dd>
+            </div>
+          </dl>
+
+          <div v-if="linkedRecords.length" class="database-context-links">
+            <RouterLink
+              v-for="record in linkedRecords.slice(0, 4)"
+              :key="record.id"
+              :to="{ name: 'record-detail', params: { id: record.id } }"
+            >
+              {{ record.name }}
+            </RouterLink>
+          </div>
+          <RouterLink v-else class="text-link" :to="{ name: 'records' }">
+            Open Records workspace
+          </RouterLink>
+        </article>
+
+        <article class="panel database-context-card">
+          <div class="panel-header">
+            <div>
+              <h2>Linked infrastructure</h2>
+              <p>Server / SSH relationships used for host-level DBA work.</p>
+            </div>
+          </div>
+
+          <div v-if="relatedServers.length" class="database-linked-server-list">
+            <div v-for="server in relatedServers" :key="server.id" class="database-linked-server">
+              <div>
+                <RouterLink :to="{ name: 'server-detail', params: { id: server.id } }">
+                  {{ server.name }}
+                </RouterLink>
+                <span>{{ server.ip_address || server.hostname }}</span>
+              </div>
+              <span
+                class="workspace-status-pill"
+                :class="server.ssh_profile_id && server.ssh_host_key_fingerprint
+                  ? 'workspace-status-pill--success'
+                  : 'workspace-status-pill--warning'"
+              >
+                {{ server.ssh_profile_id && server.ssh_host_key_fingerprint ? 'SSH ready' : 'SSH setup needed' }}
+              </span>
+            </div>
+          </div>
+
+          <div v-else class="database-workspace-empty database-workspace-empty--compact">
+            <strong>No linked server</strong>
+            <span>Link a Server / SSH entry to use host-level tools from this database.</span>
+          </div>
+
+        </article>
+      </section>
+
       <section v-if="activeTab === 'overview'" class="panel database-overview-panel">
         <div class="panel-header">
           <div>
             <h2>Database information</h2>
-            <div v-if="relatedServers.length">
-              <dt>Servers</dt>
-
-              <dd>
-                {{
-                  relatedServers
-                    .map((server) => server.name)
-                    .join(', ')
-                }}
-              </dd>
-            </div>
-
             <p>
-              Connection identity and monitoring context.
+              Engine-aware connection identity, runtime state and compatibility context.
             </p>
           </div>
         </div>
@@ -457,6 +703,51 @@ onMounted(async () => {
           <div>
             <dt>Username</dt>
             <dd>{{ connection.username }}</dd>
+          </div>
+
+          <div v-if="overview?.database_state">
+            <dt>Database state</dt>
+            <dd>{{ overview.database_state }}</dd>
+          </div>
+
+          <div v-if="overview?.instance_status">
+            <dt>Instance status</dt>
+            <dd>{{ overview.instance_status }}</dd>
+          </div>
+
+          <div v-if="overview?.database_role">
+            <dt>Database role</dt>
+            <dd>{{ overview.database_role }}</dd>
+          </div>
+
+          <div v-if="overview?.log_mode">
+            <dt>Log mode</dt>
+            <dd>{{ overview.log_mode }}</dd>
+          </div>
+
+          <div v-if="overview?.recovery_model">
+            <dt>Recovery model</dt>
+            <dd>{{ overview.recovery_model }}</dd>
+          </div>
+
+          <div v-if="overview?.compatibility_level != null">
+            <dt>Compatibility level</dt>
+            <dd>{{ overview.compatibility_level }}</dd>
+          </div>
+
+          <div v-if="overview?.character_set">
+            <dt>Character set</dt>
+            <dd>{{ overview.character_set }}</dd>
+          </div>
+
+          <div v-if="overview?.collation">
+            <dt>Collation</dt>
+            <dd>{{ overview.collation }}</dd>
+          </div>
+
+          <div v-if="overview?.read_only != null">
+            <dt>Read-only</dt>
+            <dd>{{ overview.read_only ? 'Yes' : 'No' }}</dd>
           </div>
 
           <div v-if="connection.engine === 'oracle'">

@@ -39,6 +39,21 @@ class DatabaseOverviewResponse(BaseModel):
     connection_driver: str | None = None
     connection_encrypt: str | None = None
 
+    # Cross-engine workspace identity/state fields. Connectors populate only
+    # values that are stable and safe for the engine/version they support.
+    database_role: str | None = None
+    database_state: str | None = None
+    instance_status: str | None = None
+    character_set: str | None = None
+    collation: str | None = None
+    recovery_model: str | None = None
+    log_mode: str | None = None
+    compatibility_level: int | None = None
+    read_only: bool | None = None
+
+    # MySQL-family identity/capability details. These stay optional on the
+    # common response so Oracle and SQL Server are not forced into MySQL
+    # semantics.
     database_product: str | None = None
     version_comment: str | None = None
     server_hostname: str | None = None

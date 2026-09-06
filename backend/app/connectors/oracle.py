@@ -57,7 +57,14 @@ def oracle_error_message(exc: oracledb.Error) -> str:
 
 
 class OracleConnectionAdapter:
+    """Async facade around one synchronous python-oracledb Thick connection.
 
+    python-oracledb 2.5.x supports the old OCI client needed by Oracle 10g,
+    but AsyncConnection is Thin-mode only in that driver generation.  Each
+    adapter therefore owns a single-worker executor so the synchronous OCI
+    connection is created, queried, and closed on the same worker thread while
+    FastAPI's event loop remains non-blocking.
+    """
 
     def __init__(self, connect_kwargs: dict):
         self._connect_kwargs = connect_kwargs
@@ -165,7 +172,7 @@ class OracleConnectionAdapter:
 
 @asynccontextmanager
 async def open_oracle_connection(connection: dict):
-
+    """Open Oracle through the common async facade over sync OCI calls."""
     encrypted_password = connection.get("password_encrypted")
 
     if not encrypted_password:
@@ -175,7 +182,7 @@ async def open_oracle_connection(connection: dict):
             status_code=400,
         )
 
-
+    # Idempotent. In Thick mode this loads OCI before ConnectParams/connect.
     initialize_oracle_client()
 
     password = decrypt_secret(encrypted_password)
@@ -281,6 +288,9 @@ async def get_oracle_overview(connection: dict) -> dict:
                 1,
             )
 
+            # CON_NAME is a multitenant-era USERENV attribute and is not
+            # available on Oracle 10g/11g.  Keep the common identity query
+            # legacy-safe, then read CON_NAME only on 12c+.
             identity = await db.fetchone(
                 """
                 SELECT
@@ -362,6 +372,46 @@ async def get_oracle_overview(connection: dict) -> dict:
                 warnings,
             )
 
+            # These surfaces exist on legacy Oracle releases supported by
+            # DBAChum, including 10g. Optional workspace identity probes do not
+            # downgrade monitoring health if a restricted account cannot read
+            # one of them.
+            detail_warnings: list[str] = []
+            database_role = await _oracle_scalar(
+                db,
+                "SELECT database_role FROM v$database",
+                "Database role",
+                detail_warnings,
+            )
+            database_state = await _oracle_scalar(
+                db,
+                "SELECT open_mode FROM v$database",
+                "Open mode",
+                detail_warnings,
+            )
+            log_mode = await _oracle_scalar(
+                db,
+                "SELECT log_mode FROM v$database",
+                "Log mode",
+                detail_warnings,
+            )
+            instance_status = await _oracle_scalar(
+                db,
+                "SELECT status FROM v$instance",
+                "Instance status",
+                detail_warnings,
+            )
+            character_set = await _oracle_scalar(
+                db,
+                """
+                SELECT value
+                FROM nls_database_parameters
+                WHERE parameter = 'NLS_CHARACTERSET'
+                """,
+                "Character set",
+                detail_warnings,
+            )
+
             return {
                 "response_time_ms": response_time_ms,
                 "active": int(active) if active is not None else None,
@@ -381,6 +431,11 @@ async def get_oracle_overview(connection: dict) -> dict:
                 "service_name": identity[1] if identity else None,
                 "instance_name": identity[2] if identity else None,
                 "version": db.version,
+                "database_role": database_role,
+                "database_state": database_state,
+                "instance_status": instance_status,
+                "character_set": character_set,
+                "log_mode": log_mode,
                 "warnings": warnings,
             }
 
