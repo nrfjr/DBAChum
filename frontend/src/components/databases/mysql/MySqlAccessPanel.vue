@@ -2,6 +2,9 @@
 import { computed, onMounted, ref, watch } from 'vue'
 
 import ScrollableDataTable from '@/components/common/ScrollableDataTable.vue'
+import { hasPermission } from '@/core/permissions'
+import { useAuthStore } from '@/stores/auth'
+import { useDatabaseOperationsStore } from '@/stores/databaseOperations'
 import {
   useMySqlDbaStore,
   type MySqlSecurityAccount,
@@ -12,11 +15,14 @@ const props = defineProps<{
 }>()
 
 const store = useMySqlDbaStore()
+const operations = useDatabaseOperationsStore()
+const authStore = useAuthStore()
 const selectedAccount = ref('')
 const search = ref('')
 const elevatedOpen = ref(false)
 
 const security = computed(() => store.security[props.connectionId])
+const canOperate = computed(() => hasPermission(authStore.user, 'database:operate'))
 const selected = computed<MySqlSecurityAccount | undefined>(() =>
   security.value?.accounts.find((item) => item.account === selectedAccount.value),
 )
@@ -43,6 +49,34 @@ function chooseDefaultAccount() {
 
 watch(security, chooseDefaultAccount, { immediate: true })
 
+async function roleOperation(action: 'grant_role' | 'revoke_role') {
+  if (!selected.value) return
+  const roleName = window.prompt('Role account name (without @host):')?.trim()
+  if (!roleName) return
+  if (!window.confirm(`${action === 'grant_role' ? 'Grant' : 'Revoke'} role ${roleName} ${action === 'grant_role' ? 'to' : 'from'} ${selected.value.account}?`)) return
+  try {
+    await operations.runAccess(props.connectionId, {
+      action, principal: selected.value.user, host: selected.value.host, role_name: roleName,
+    })
+    await store.loadSecurity(props.connectionId, true)
+  } catch {}
+}
+
+async function privilegeOperation(action: 'grant_privilege' | 'revoke_privilege') {
+  if (!selected.value) return
+  const privilege = window.prompt('Privilege (example: SELECT, INSERT, UPDATE):')?.trim()
+  if (!privilege) return
+  const objectName = window.prompt('Scope (example: mydb.* or mydb.table):')?.trim()
+  if (!objectName) return
+  if (!window.confirm(`${action === 'grant_privilege' ? 'Grant' : 'Revoke'} ${privilege} on ${objectName} ${action === 'grant_privilege' ? 'to' : 'from'} ${selected.value.account}?`)) return
+  try {
+    await operations.runAccess(props.connectionId, {
+      action, principal: selected.value.user, host: selected.value.host, privilege, object_name: objectName,
+    })
+    await store.loadSecurity(props.connectionId, true)
+  } catch {}
+}
+
 onMounted(() => {
   void store.loadSecurity(props.connectionId)
 })
@@ -56,16 +90,16 @@ onMounted(() => {
         <p>Native role and privilege visibility with credential material redacted before it reaches the browser.</p>
       </div>
 
-      <button
-        type="button"
-        class="secondary-button"
-        :disabled="store.loadingSecurity[connectionId]"
-        @click="store.loadSecurity(connectionId, true)"
-      >
-        {{ store.loadingSecurity[connectionId] ? 'Refreshing...' : 'Refresh' }}
-      </button>
+      <div class="database-inline-actions">
+        <button v-if="canOperate && selected" type="button" class="secondary-button" :disabled="operations.busy" @click="roleOperation('grant_role')">Grant role</button>
+        <button v-if="canOperate && selected" type="button" class="secondary-button" :disabled="operations.busy" @click="roleOperation('revoke_role')">Revoke role</button>
+        <button v-if="canOperate && selected" type="button" class="secondary-button" :disabled="operations.busy" @click="privilegeOperation('grant_privilege')">Grant privilege</button>
+        <button v-if="canOperate && selected" type="button" class="secondary-button" :disabled="operations.busy" @click="privilegeOperation('revoke_privilege')">Revoke privilege</button>
+        <button type="button" class="secondary-button" :disabled="store.loadingSecurity[connectionId]" @click="store.loadSecurity(connectionId, true)">{{ store.loadingSecurity[connectionId] ? 'Refreshing...' : 'Refresh' }}</button>
+      </div>
     </div>
 
+    <p v-if="operations.error" class="login-error">{{ operations.error }}</p>
     <p v-if="store.securityError[connectionId]" class="login-error">
       {{ store.securityError[connectionId] }}
     </p>

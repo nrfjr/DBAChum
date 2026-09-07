@@ -2,6 +2,9 @@
 import { computed, onMounted, ref } from 'vue'
 
 import ScrollableDataTable from '@/components/common/ScrollableDataTable.vue'
+import { hasPermission } from '@/core/permissions'
+import { useAuthStore } from '@/stores/auth'
+import { useDatabaseOperationsStore } from '@/stores/databaseOperations'
 import {
   useSqlServerDbaStore,
   type SqlServerPermission,
@@ -13,10 +16,13 @@ const props = defineProps<{
 }>()
 
 const store = useSqlServerDbaStore()
+const operations = useDatabaseOperationsStore()
+const authStore = useAuthStore()
 const search = ref('')
 const elevatedOpen = ref(false)
 const section = ref<'roles' | 'server' | 'database'>('roles')
 const security = computed(() => store.security[props.connectionId])
+const canOperate = computed(() => hasPermission(authStore.user, 'database:operate'))
 
 function matches(values: Array<string | null | undefined>) {
   const term = search.value.trim().toLowerCase()
@@ -42,6 +48,34 @@ function permissionKey(item: SqlServerPermission, index: number) {
   return `${item.scope}:${item.principal}:${item.permission}:${item.securable ?? ''}:${index}`
 }
 
+async function roleOperation(action: 'grant_role' | 'revoke_role') {
+  const principal = window.prompt('Principal/login name:')?.trim()
+  if (!principal) return
+  const roleName = window.prompt('Role name:')?.trim()
+  if (!roleName) return
+  const scopeValue = window.prompt('Role scope: database or server', 'database')?.trim().toLowerCase()
+  if (scopeValue !== 'database' && scopeValue !== 'server') return window.alert('Scope must be database or server.')
+  if (!window.confirm(`${action === 'grant_role' ? 'Grant' : 'Revoke'} ${roleName} ${action === 'grant_role' ? 'to' : 'from'} ${principal}?`)) return
+  try {
+    await operations.runAccess(props.connectionId, { action, principal, role_name: roleName, scope: scopeValue })
+    await store.loadSecurity(props.connectionId, true)
+  } catch {}
+}
+
+async function privilegeOperation(action: 'grant_privilege' | 'revoke_privilege') {
+  const principal = window.prompt('Database principal/user:')?.trim()
+  if (!principal) return
+  const privilege = window.prompt('Privilege (example: SELECT, UPDATE, EXECUTE):')?.trim()
+  if (!privilege) return
+  const objectName = window.prompt('Object (example: dbo.TableName):')?.trim()
+  if (!objectName) return
+  if (!window.confirm(`${action === 'grant_privilege' ? 'Grant' : 'Revoke'} ${privilege} on ${objectName} ${action === 'grant_privilege' ? 'to' : 'from'} ${principal}?`)) return
+  try {
+    await operations.runAccess(props.connectionId, { action, principal, privilege, object_name: objectName, scope: 'database' })
+    await store.loadSecurity(props.connectionId, true)
+  } catch {}
+}
+
 onMounted(() => {
   void store.loadSecurity(props.connectionId)
 })
@@ -55,16 +89,16 @@ onMounted(() => {
         <p>Role membership and direct permissions reported by SQL Server for this database and instance.</p>
       </div>
 
-      <button
-        type="button"
-        class="secondary-button"
-        :disabled="store.loadingSecurity[connectionId]"
-        @click="store.loadSecurity(connectionId, true)"
-      >
-        {{ store.loadingSecurity[connectionId] ? 'Refreshing...' : 'Refresh' }}
-      </button>
+      <div class="database-inline-actions">
+        <button v-if="canOperate" type="button" class="secondary-button" :disabled="operations.busy" @click="roleOperation('grant_role')">Grant role</button>
+        <button v-if="canOperate" type="button" class="secondary-button" :disabled="operations.busy" @click="roleOperation('revoke_role')">Revoke role</button>
+        <button v-if="canOperate" type="button" class="secondary-button" :disabled="operations.busy" @click="privilegeOperation('grant_privilege')">Grant privilege</button>
+        <button v-if="canOperate" type="button" class="secondary-button" :disabled="operations.busy" @click="privilegeOperation('revoke_privilege')">Revoke privilege</button>
+        <button type="button" class="secondary-button" :disabled="store.loadingSecurity[connectionId]" @click="store.loadSecurity(connectionId, true)">{{ store.loadingSecurity[connectionId] ? 'Refreshing...' : 'Refresh' }}</button>
+      </div>
     </div>
 
+    <p v-if="operations.error" class="login-error">{{ operations.error }}</p>
     <p v-if="store.securityError[connectionId]" class="login-error">
       {{ store.securityError[connectionId] }}
     </p>

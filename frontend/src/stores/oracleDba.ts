@@ -52,6 +52,17 @@ export interface OracleTablespace {
   used_percent: number
 }
 
+export interface OracleDatafile {
+  file_id: number
+  tablespace_name: string
+  file_name: string
+  size_bytes: number
+  autoextensible: boolean
+  max_bytes: number | null
+  increment_bytes: number | null
+  status: string | null
+}
+
 export interface OracleFra {
   destination: string | null
 
@@ -66,9 +77,11 @@ export interface OracleFra {
 
 export interface OracleStorageResponse {
   tablespaces_available: boolean
+  datafiles_available: boolean
   fra_available: boolean
 
   tablespaces: OracleTablespace[]
+  datafiles: OracleDatafile[]
   fra: OracleFra | null
 
   warnings: string[]

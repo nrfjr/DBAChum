@@ -58,6 +58,17 @@ class OracleTablespaceItem(BaseModel):
     used_percent: float
 
 
+class OracleDatafileItem(BaseModel):
+    file_id: int
+    tablespace_name: str
+    file_name: str
+    size_bytes: int
+    autoextensible: bool = False
+    max_bytes: int | None = None
+    increment_bytes: int | None = None
+    status: str | None = None
+
+
 class OracleFraSummary(BaseModel):
     destination: str | None = None
 
@@ -72,11 +83,13 @@ class OracleFraSummary(BaseModel):
 
 class OracleStorageResponse(BaseModel):
     tablespaces_available: bool = True
+    datafiles_available: bool = True
     fra_available: bool = True
 
     tablespaces: list[OracleTablespaceItem] = Field(
         default_factory=list
     )
+    datafiles: list[OracleDatafileItem] = Field(default_factory=list)
 
     fra: OracleFraSummary | None = None
 

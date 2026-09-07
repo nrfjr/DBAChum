@@ -6137,3 +6137,15 @@ button {
     grid-template-columns: 1fr;
   }
 }
+
+.database-inline-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+
+.database-inline-actions .secondary-button,
+.database-inline-actions .danger-button {
+  white-space: nowrap;
+}
