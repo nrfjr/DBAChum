@@ -129,6 +129,43 @@ async def oracle_storage_operation(connection: dict, data) -> dict:
                     "statement": statement,
                 }
 
+            if data.action.value == "create_tablespace":
+                if not data.tablespace_name:
+                    raise AppError(
+                        "Oracle create-tablespace requires tablespace_name.",
+                        code="ORACLE_TABLESPACE_REQUIRED",
+                        status_code=400,
+                    )
+                tablespace = _oracle_identifier(data.tablespace_name, "tablespace name")
+                pieces = [f"CREATE TABLESPACE {tablespace} DATAFILE"]
+                if data.physical_name:
+                    pieces.append(_oracle_literal(data.physical_name))
+                pieces.append(f"SIZE {data.size_mb}M")
+                if data.autoextend:
+                    growth = data.growth_mb or max(1, min(data.size_mb, 1024))
+                    pieces.append(f"AUTOEXTEND ON NEXT {growth}M")
+                    if data.max_size_mb:
+                        pieces.append(f"MAXSIZE {data.max_size_mb}M")
+                    else:
+                        pieces.append("MAXSIZE UNLIMITED")
+                statement = " ".join(pieces)
+                await db.execute(statement)
+                row = await db.fetchone(
+                    "SELECT tablespace_name, status, contents FROM dba_tablespaces WHERE tablespace_name = :name",
+                    {"name": data.tablespace_name.upper()},
+                )
+                return {
+                    "target": data.tablespace_name.upper(),
+                    "before": None,
+                    "after": {
+                        "tablespace_name": row[0] if row else data.tablespace_name.upper(),
+                        "status": row[1] if row else None,
+                        "contents": row[2] if row else None,
+                        "size_mb": data.size_mb,
+                    },
+                    "statement": statement,
+                }
+
             if data.action.value == "add_file":
                 if not data.tablespace_name:
                     raise AppError(

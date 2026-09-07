@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 
 export type SessionOperation = 'terminate' | 'disconnect' | 'cancel_query'
-export type StorageOperation = 'resize_file' | 'add_file'
+export type StorageOperation = 'resize_file' | 'add_file' | 'create_tablespace'
 export type AccountOperation = 'enable' | 'disable' | 'reset_password'
 export type AccessOperation = 'grant_role' | 'revoke_role' | 'grant_privilege' | 'revoke_privilege'
 
@@ -43,6 +43,35 @@ export interface StorageOperationInput {
   autoextend?: boolean
   growth_mb?: number | null
   max_size_mb?: number | null
+  request_reference?: string | null
+}
+
+
+export interface ParameterOperationInput {
+  action: 'set'
+  name: string
+  value: string
+  apply_mode?: 'runtime' | 'persistent' | 'both'
+  request_reference?: string | null
+}
+
+export interface MaintenanceOperationInput {
+  action: 'delete_archivelogs' | 'delete_obsolete'
+  server_id?: string | null
+  oracle_sid?: string | null
+  older_than_days?: number | null
+  backed_up_times?: number
+  request_reference?: string | null
+}
+
+export interface BackupOperationInput {
+  action: 'full' | 'differential' | 'log' | 'archivelog' | 'database_plus_archivelog'
+  server_id?: string | null
+  destination?: string | null
+  oracle_sid?: string | null
+  copy_only?: boolean
+  cleanup_archivelogs_after?: boolean
+  archivelog_retention_days?: number
   request_reference?: string | null
 }
 
@@ -126,6 +155,40 @@ export const useDatabaseOperationsStore = defineStore('databaseOperations', {
 
     runAccess(id: string, body: AccessOperationInput) {
       return this.run<DatabaseActionAudit>(`/databases/${id}/operations/access`, body)
+    },
+
+    runParameter(id: string, body: ParameterOperationInput) {
+      return this.run<DatabaseActionAudit>(`/databases/${id}/operations/parameter`, body)
+    },
+
+    runMaintenance(id: string, body: MaintenanceOperationInput) {
+      return this.run<DatabaseActionAudit>(`/databases/${id}/operations/maintenance`, body)
+    },
+
+    runBackup(id: string, body: BackupOperationInput) {
+      return this.run<DatabaseActionAudit>(`/databases/${id}/operations/backup`, body)
+    },
+
+    async loadAction(id: string, auditId: string) {
+      const response = await fetch(`${API_BASE_URL}/databases/${id}/actions/${auditId}`, {
+        credentials: 'include',
+      })
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null)
+        throw new Error(payload?.error?.message ?? `Request failed with status ${response.status}`)
+      }
+      return response.json() as Promise<DatabaseActionAudit>
+    },
+
+    async waitForAction(id: string, auditId: string, timeoutMs = 4 * 60 * 60 * 1000) {
+      const started = Date.now()
+      while (Date.now() - started < timeoutMs) {
+        const action = await this.loadAction(id, auditId)
+        this.lastAction = action
+        if (action.status !== 'running') return action
+        await new Promise((resolve) => window.setTimeout(resolve, 2000))
+      }
+      throw new Error('Database operation is still running. Check History for its final status.')
     },
   },
 })

@@ -1,5 +1,10 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
+import { hasPermission } from '@/core/permissions'
+import { useAuthStore } from '@/stores/auth'
+import { useConnectionsStore } from '@/stores/connections'
+import { useDatabaseOperationsStore } from '@/stores/databaseOperations'
+import { useServersStore } from '@/stores/servers'
 import {
   useDatabaseBackupsStore,
   type BackupWindow,
@@ -11,7 +16,16 @@ const props = defineProps<{
 }>()
 
 const store = useDatabaseBackupsStore()
+const operations = useDatabaseOperationsStore()
+const authStore = useAuthStore()
+const connectionsStore = useConnectionsStore()
+const serversStore = useServersStore()
 const result = computed(() => store.results[props.connectionId])
+const connection = computed(() => connectionsStore.connections.find((item) => item.id === props.connectionId))
+const engine = computed(() => connection.value?.engine ?? result.value?.engine ?? null)
+const canOperate = computed(() => hasPermission(authStore.user, 'database:operate'))
+const operationRunning = ref(false)
+const operationMessage = ref<string | null>(null)
 const loading = computed(() => Boolean(store.loadingIds[props.connectionId]))
 const error = computed(() => store.errors[props.connectionId])
 const selectedWindow = ref<BackupWindow>('today')
@@ -159,6 +173,126 @@ function refresh() {
   void load(selectedWindow.value)
 }
 
+function chooseLinkedServer(): string | null {
+  const ids = connection.value?.server_ids ?? []
+  if (ids.length === 0) {
+    window.alert('This operation requires a linked Server / SSH entry.')
+    return null
+  }
+  if (ids.length === 1) return ids[0] ?? null
+  const choices = ids.map((id) => {
+    const server = serversStore.servers.find((item) => item.id === id)
+    return `${server?.name ?? 'Server'} = ${id}`
+  }).join('\n')
+  const raw = window.prompt(`Multiple servers are linked. Enter the server name or ID to use:\n${choices}`)?.trim()
+  if (!raw) return null
+  const byId = ids.find((id) => id === raw)
+  if (byId) return byId
+  const byName = serversStore.servers.find((server) => ids.includes(server.id) && server.name.toLowerCase() === raw.toLowerCase())
+  if (byName) return byName.id
+  window.alert('Server was not recognized.')
+  return null
+}
+
+async function waitForBackgroundAction(actionId: string, successMessage: string) {
+  operationRunning.value = true
+  operationMessage.value = 'Operation started. DBAChum is running it in the background…'
+  try {
+    const final = await operations.waitForAction(props.connectionId, actionId)
+    if (final.status === 'succeeded') {
+      operationMessage.value = successMessage
+      await load(selectedWindow.value)
+    } else {
+      operationMessage.value = final.error ?? `Operation finished with status ${final.status}.`
+    }
+  } catch (error) {
+    operationMessage.value = error instanceof Error ? error.message : 'Unable to follow operation status. Check History.'
+  } finally {
+    operationRunning.value = false
+  }
+}
+
+async function runBackup() {
+  if (!canOperate.value || !engine.value) return
+  operationMessage.value = null
+  try {
+    if (engine.value === 'oracle') {
+      const serverId = chooseLinkedServer()
+      if (!serverId) return
+      const rawType = window.prompt('RMAN backup type: full, archivelog, or database_plus_archivelog', 'database_plus_archivelog')
+      if (!rawType) return
+      const action = rawType.trim().toLowerCase()
+      if (!['full', 'archivelog', 'database_plus_archivelog'].includes(action)) return window.alert('Unsupported Oracle backup type.')
+      const destination = window.prompt('RMAN backup destination directory (leave blank to use RMAN configured destination):', '')?.trim() || null
+      const oracleSid = connection.value?.oracle_identifier_type === 'sid'
+        ? null
+        : window.prompt('ORACLE_SID for the linked server (leave blank if its SSH environment already sets it):', '')?.trim() || null
+      if (!window.confirm(`Start Oracle RMAN ${action.replaceAll('_', ' ')} backup?`)) return
+      const started = await operations.runBackup(props.connectionId, {
+        action: action as 'full' | 'archivelog' | 'database_plus_archivelog',
+        server_id: serverId,
+        destination,
+        oracle_sid: oracleSid,
+      })
+      void waitForBackgroundAction(started.id, 'RMAN backup completed successfully.')
+      return
+    }
+
+    if (engine.value === 'sqlserver') {
+      const rawType = window.prompt('SQL Server backup type: full, differential, or log', 'full')
+      if (!rawType) return
+      const action = rawType.trim().toLowerCase()
+      if (!['full', 'differential', 'log'].includes(action)) return window.alert('Unsupported SQL Server backup type.')
+      const destination = window.prompt('Backup path visible to the SQL Server service account (directory ending in \\ or /, or full .bak/.trn path):')?.trim()
+      if (!destination) return
+      if (!window.confirm(`Start SQL Server ${action} backup to ${destination}?`)) return
+      const started = await operations.runBackup(props.connectionId, {
+        action: action as 'full' | 'differential' | 'log',
+        destination,
+      })
+      void waitForBackgroundAction(started.id, 'SQL Server backup completed successfully.')
+      return
+    }
+
+    if (engine.value === 'mysql') {
+      const serverId = chooseLinkedServer()
+      if (!serverId) return
+      const destination = window.prompt('Remote backup directory for mysqldump:', '~/dbachum-backups')?.trim() || '~/dbachum-backups'
+      if (!window.confirm(`Start full logical mysqldump backup to ${destination}?`)) return
+      const started = await operations.runBackup(props.connectionId, { action: 'full', server_id: serverId, destination })
+      void waitForBackgroundAction(started.id, 'MySQL/MariaDB dump completed successfully.')
+    }
+  } catch {}
+}
+
+async function cleanupOracleArchiveLogs() {
+  if (engine.value !== 'oracle' || !canOperate.value) return
+  const serverId = chooseLinkedServer()
+  if (!serverId) return
+  const rawDays = window.prompt('Delete archive logs completed before how many days ago?', '2')
+  if (!rawDays) return
+  const days = Number.parseInt(rawDays, 10)
+  if (!Number.isFinite(days) || days < 1) return window.alert('Enter a retention age of at least 1 day.')
+  const rawBackups = window.prompt('Require each archive log to be backed up how many times to DISK before deletion? Enter 0 to skip this condition.', '1')
+  if (rawBackups == null) return
+  const backedUpTimes = Number.parseInt(rawBackups, 10)
+  if (!Number.isFinite(backedUpTimes) || backedUpTimes < 0) return window.alert('Enter 0 or a positive backup count.')
+  const oracleSid = connection.value?.oracle_identifier_type === 'sid'
+    ? null
+    : window.prompt('ORACLE_SID for the linked server (leave blank if already configured):', '')?.trim() || null
+  if (!window.confirm(`RMAN will crosscheck archive logs and delete logs older than ${days} day(s)${backedUpTimes ? ` after ${backedUpTimes} disk backup(s)` : ''}. Continue?`)) return
+  try {
+    const started = await operations.runMaintenance(props.connectionId, {
+      action: 'delete_archivelogs',
+      server_id: serverId,
+      oracle_sid: oracleSid,
+      older_than_days: days,
+      backed_up_times: backedUpTimes,
+    })
+    void waitForBackgroundAction(started.id, 'RMAN archive log cleanup completed successfully.')
+  } catch {}
+}
+
 onMounted(() => load('today'))
 </script>
 
@@ -176,14 +310,34 @@ onMounted(() => load('today'))
         </p>
       </div>
 
-      <button
-        type="button"
-        class="secondary-button"
-        :disabled="loading"
-        @click="refresh"
-      >
-        {{ loading ? 'Refreshing...' : 'Refresh' }}
-      </button>
+      <div class="database-inline-actions">
+        <button
+          v-if="canOperate"
+          type="button"
+          class="primary-button"
+          :disabled="operations.busy || operationRunning"
+          @click="runBackup"
+        >
+          {{ operationRunning ? 'Operation running…' : 'Run backup' }}
+        </button>
+        <button
+          v-if="canOperate && engine === 'oracle'"
+          type="button"
+          class="secondary-button"
+          :disabled="operations.busy || operationRunning"
+          @click="cleanupOracleArchiveLogs"
+        >
+          Clear archivelogs
+        </button>
+        <button
+          type="button"
+          class="secondary-button"
+          :disabled="loading"
+          @click="refresh"
+        >
+          {{ loading ? 'Refreshing...' : 'Refresh' }}
+        </button>
+      </div>
     </div>
 
     <div v-if="!result || result.available" class="backup-range-bar">
@@ -238,6 +392,8 @@ onMounted(() => load('today'))
       </div>
     </div>
 
+    <p v-if="operationMessage" class="database-monitoring-note">{{ operationMessage }}</p>
+    <p v-if="operations.error" class="login-error">{{ operations.error }}</p>
     <p v-if="error" class="login-error">
       {{ error }}
     </p>

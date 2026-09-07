@@ -6149,3 +6149,81 @@ button {
 .database-inline-actions .danger-button {
   white-space: nowrap;
 }
+
+/* Phase 8.6 functional controls. Kept intentionally small pending UI consolidation. */
+.utility-search-input {
+  min-width: 14rem;
+  padding: 0.62rem 0.75rem;
+  border: 1px solid color-mix(in srgb, currentColor 18%, transparent);
+  border-radius: 0.65rem;
+  background: transparent;
+  color: inherit;
+}
+
+.utility-code-block {
+  max-height: 34rem;
+  overflow: auto;
+  padding: 1rem;
+  border: 1px solid color-mix(in srgb, currentColor 14%, transparent);
+  border-radius: 0.75rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
+/* Phase 8.6 monitoring-first database overview */
+.database-overview-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.database-overview-summary-card {
+  display: grid;
+  gap: 0.3rem;
+  min-width: 0;
+  padding: 0.9rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: 0.9rem;
+  background: var(--surface);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.database-overview-summary-card:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+  background: var(--surface-muted);
+}
+
+.database-overview-summary-card:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.database-overview-summary-card span,
+.database-overview-summary-card small {
+  color: var(--text-muted);
+}
+
+.database-overview-summary-card span {
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.database-overview-summary-card strong {
+  overflow: hidden;
+  font-size: 1rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.database-overview-summary-card small {
+  overflow: hidden;
+  font-size: 0.75rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

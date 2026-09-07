@@ -19,6 +19,7 @@ import {
 import { useUiStore } from '@/stores/ui'
 import { useAuthStore } from '@/stores/auth'
 import { overviewMetricLabel } from '@/core/databasePresentation'
+import { useDatabasePerformanceStore, type SqlPlanResponse } from '@/stores/databasePerformance'
 
 
 const props = defineProps<{
@@ -28,6 +29,7 @@ const props = defineProps<{
 const metricsStore = useDatabaseMetricsStore()
 const uiStore = useUiStore()
 const authStore = useAuthStore()
+const performanceStore = useDatabasePerformanceStore()
 
 
 type HistoryRange = 1 | 6 | 12 | 24
@@ -126,6 +128,8 @@ const historyChart = ref<any>(null)
 const showAllSql = ref(false)
 const showAllSessions = ref(false)
 const showAllWaits = ref(false)
+const selectedTuningSql = ref<AggregatedSqlRow | null>(null)
+const selectedPlan = ref<SqlPlanResponse | null>(null)
 
 let refreshTimer: ReturnType<typeof setInterval> | undefined
 
@@ -405,6 +409,7 @@ function cssVariable(name: string) {
 }
 
 const chartOption = computed(() => {
+  // Recompute ECharts options whenever the persisted appearance changes.
   void uiStore.resolvedTheme
   void uiStore.accent
 
@@ -636,6 +641,20 @@ const fullestTablespaces = computed(() =>
     .slice(0, 8),
 )
 
+async function tuneOracleSql(row: AggregatedSqlRow) {
+  selectedTuningSql.value = row
+  selectedPlan.value = null
+  try {
+    selectedPlan.value = await performanceStore.loadPlan(
+      props.connectionId,
+      { sql_id: row.sql_id, child_number: row.child_number },
+      row.key,
+    )
+  } catch {
+    // Store error is rendered by the tuning modal / panel.
+  }
+}
+
 function handleMetricChange(event: Event) {
   const value = (event.target as HTMLSelectElement).value as HistoryMetric
   if (!availableMetrics.value.some((item) => item.key === value)) return
@@ -660,12 +679,14 @@ async function loadHistory(selectedHours: HistoryRange, resetView = true) {
   try {
     await metricsStore.loadHistory(props.connectionId, selectedHours)
   } catch {
+    // The store exposes the request error for the panel to render.
   }
 }
 
 onMounted(async () => {
   await loadHistory(hours.value)
   refreshTimer = setInterval(() => {
+    // Do not disturb a DBA who is zoomed into an incident window.
     if (!selectedWindow.value) void loadHistory(hours.value, false)
   }, 60_000)
 })
@@ -679,7 +700,7 @@ onUnmounted(() => {
   <section class="database-history-panel">
     <div class="utility-toolbar">
       <div>
-        <h2>24-hour history</h2>
+        <h2>Metrics</h2>
         <p>
           Collector-backed telemetry only. Drag the chart range to inspect the
           exact incident window; Oracle detail tables follow that selection when available.
@@ -701,15 +722,15 @@ onUnmounted(() => {
     </p>
 
     <div v-else-if="metricsStore.loading && !history" class="empty-state">
-      Loading historical metrics...
+      Loading metrics...
     </div>
 
     <div
       v-else-if="!history || history.items.length === 0"
       class="database-empty-state"
     >
-      <h2>No historical samples yet</h2>
-      <p>DBAChum has not collected metrics for this time range.</p>
+      <h2>No metric samples yet</h2>
+      <p>DBAChum has not collected metrics for this time range yet.</p>
     </div>
 
     <template v-else>
@@ -860,6 +881,7 @@ onUnmounted(() => {
                 <th>Logical reads</th>
                 <th>Physical reads</th>
                 <th>SQL text</th>
+                <th>Tuning</th>
               </tr>
             </template>
             <tr v-for="row in visibleTopSqlRows" :key="row.key">
@@ -876,6 +898,16 @@ onUnmounted(() => {
               <td>{{ formatNumber(row.physical_reads, 0) }}</td>
               <td class="history-sql-text" :title="row.sql_text || ''">
                 {{ row.sql_text || 'SQL text no longer present in the 24h cache.' }}
+              </td>
+              <td>
+                <button
+                  type="button"
+                  class="secondary-button"
+                  :disabled="Boolean(performanceStore.loadingPlan[connectionId])"
+                  @click="tuneOracleSql(row)"
+                >
+                  Tune
+                </button>
               </td>
             </tr>
           </ScrollableDataTable>
@@ -1019,6 +1051,51 @@ onUnmounted(() => {
         </section>
       </template>
     </template>
+
+    <div v-if="selectedPlan" class="modal-backdrop" @click.self="selectedPlan = null">
+      <section class="modal-panel backup-detail-modal">
+        <header class="modal-header">
+          <div>
+            <h2>SQL tuning diagnostics</h2>
+            <p>{{ selectedTuningSql?.sql_id }} · {{ selectedPlan.source }}</p>
+          </div>
+          <button type="button" class="modal-close" aria-label="Close tuning diagnostics" @click="selectedPlan = null">×</button>
+        </header>
+
+        <div v-for="warning in selectedPlan.warnings" :key="warning" class="utility-warning">{{ warning }}</div>
+
+        <section class="utility-section">
+          <h3>Diagnostics</h3>
+          <ul v-if="selectedPlan.diagnostics.length">
+            <li v-for="note in selectedPlan.diagnostics" :key="note">{{ note }}</li>
+          </ul>
+          <p v-else>No obvious plan-level warning was detected. Review the plan and SQL shape before changing anything.</p>
+        </section>
+
+        <pre v-if="selectedPlan.plan_text" class="utility-code-block">{{ selectedPlan.plan_text }}</pre>
+
+        <ScrollableDataTable
+          v-else
+          :empty="selectedPlan.steps.length === 0"
+          empty-message="No execution plan steps returned."
+          max-height="32rem"
+        >
+          <template #header>
+            <tr><th>ID</th><th>Operation</th><th>Object</th><th>Cost</th><th>Rows</th><th>Predicates / Extra</th></tr>
+          </template>
+          <tr v-for="(step, index) in selectedPlan.steps" :key="`${step.id}-${index}`">
+            <td>{{ step.id ?? '—' }}</td>
+            <td>{{ [step.operation, step.options].filter(Boolean).join(' ') || '—' }}</td>
+            <td>{{ [step.object_owner, step.object_name].filter(Boolean).join('.') || '—' }}</td>
+            <td>{{ step.cost ?? '—' }}</td>
+            <td>{{ step.cardinality ?? '—' }}</td>
+            <td class="history-sql-text" :title="step.access_predicates ?? step.filter_predicates ?? JSON.stringify(step.extra)">
+              {{ step.access_predicates ?? step.filter_predicates ?? JSON.stringify(step.extra) }}
+            </td>
+          </tr>
+        </ScrollableDataTable>
+      </section>
+    </div>
   </section>
 </template>
 

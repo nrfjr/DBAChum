@@ -5,8 +5,9 @@ import { useRoute, useRouter } from 'vue-router'
 import DatabaseAccessPanel from '@/components/databases/DatabaseAccessPanel.vue'
 import DatabaseActivityPanel from '@/components/databases/DatabaseActivityPanel.vue'
 import DatabaseBackupsPanel from '@/components/databases/DatabaseBackupsPanel.vue'
-import DatabaseHistoryPanel from '@/components/databases/DatabaseHistoryPanel.vue'
+import DatabaseMetricsPanel from '@/components/databases/DatabaseMetricsPanel.vue'
 import DatabaseMonitoringNotice from '@/components/databases/DatabaseMonitoringNotice.vue'
+import DatabaseParametersPanel from '@/components/databases/DatabaseParametersPanel.vue'
 import DatabaseSessionsPanel from '@/components/databases/DatabaseSessionsPanel.vue'
 import DatabaseStoragePanel from '@/components/databases/DatabaseStoragePanel.vue'
 import DatabaseUsersPanel from '@/components/databases/DatabaseUsersPanel.vue'
@@ -24,6 +25,8 @@ import {
 import { useAuthStore } from '@/stores/auth'
 import { useConnectionsStore } from '@/stores/connections'
 import { useDatabasesStore } from '@/stores/databases'
+import { useDatabaseBackupsStore, type DatabaseBackupResponse } from '@/stores/databaseBackups'
+import { useDatabaseMetricsStore, type DatabaseMetricHistory } from '@/stores/databaseMetrics'
 import { useRecordsStore } from '@/stores/records'
 import { useServersStore } from '@/stores/servers'
 import type { Server } from '@/stores/servers'
@@ -33,6 +36,8 @@ const route = useRoute()
 const router = useRouter()
 const connectionsStore = useConnectionsStore()
 const databasesStore = useDatabasesStore()
+const backupsStore = useDatabaseBackupsStore()
+const metricsStore = useDatabaseMetricsStore()
 const serversStore = useServersStore()
 const recordsStore = useRecordsStore()
 const authStore = useAuthStore()
@@ -57,39 +62,42 @@ const overview = computed(() =>
 
 type DatabaseTab =
   | 'overview'
+  | 'metrics'
   | 'health'
   | 'sessions'
   | 'storage'
   | 'activity'
+  | 'parameters'
   | 'users'
   | 'access'
   | 'backups'
-  | 'history'
 
 const validTabs = new Set<DatabaseTab>([
   'overview',
+  'metrics',
   'health',
   'sessions',
   'storage',
   'activity',
+  'parameters',
   'users',
   'access',
   'backups',
-  'history',
 ])
 
 const activeTab = ref<DatabaseTab>('overview')
 
 const visitedTabs = reactive<Record<DatabaseTab, boolean>>({
   overview: true,
+  metrics: false,
   health: false,
   sessions: false,
   storage: false,
   activity: false,
+  parameters: false,
   users: false,
   access: false,
   backups: false,
-  history: false,
 })
 
 function selectTab(tab: DatabaseTab) {
@@ -99,7 +107,10 @@ function selectTab(tab: DatabaseTab) {
 }
 
 function applyTabFromRoute() {
-  const requested = String(route.query.tab ?? '') as DatabaseTab
+  const raw = String(route.query.tab ?? '')
+  // Phase 8.6 keeps old deep links useful while consolidating History and
+  // Performance into the monitoring-first Metrics workspace.
+  const requested = (raw === 'history' || raw === 'performance' ? 'metrics' : raw) as DatabaseTab
   if (!validTabs.has(requested) || !tabIsAvailable(requested)) return
   visitedTabs[requested] = true
   activeTab.value = requested
@@ -156,7 +167,7 @@ const canUseTerminal = computed(() =>
 
 function tabIsAvailable(tab: DatabaseTab) {
   if (tab === 'health') return supportsOperationalHealth.value
-  if (['sessions', 'storage', 'activity'].includes(tab)) return supportsDbaUtilities.value
+  if (['sessions', 'storage', 'activity', 'parameters'].includes(tab)) return supportsDbaUtilities.value
   if (tab === 'users') return supportsUsersAndSchemas.value
   if (tab === 'access') return supportsAccessAndPrivileges.value
   return true
@@ -209,6 +220,91 @@ const workspaceEnvironment = computed(() =>
   primaryRecord.value?.environment ?? 'Environment not recorded',
 )
 
+const overviewMetrics = ref<DatabaseMetricHistory | null>(null)
+const overviewBackups = ref<DatabaseBackupResponse | null>(null)
+
+const latestMetric = computed(() => {
+  const items = overviewMetrics.value?.items ?? []
+  return items[items.length - 1] ?? null
+})
+
+function formatAge(value: string | null | undefined) {
+  if (!value) return 'No recent data'
+  const timestamp = new Date(value).getTime()
+  if (!Number.isFinite(timestamp)) return 'Unknown age'
+  const minutes = Math.max(Math.floor((Date.now() - timestamp) / 60_000), 0)
+  if (minutes < 60) return `${minutes}m ago`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 48) return `${hours}h ago`
+  return `${Math.floor(hours / 24)}d ago`
+}
+
+function formatBytes(bytes: number | null | undefined) {
+  if (bytes == null) return '—'
+  const units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB']
+  let value = Math.max(bytes, 0)
+  let unit = 0
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024
+    unit += 1
+  }
+  return `${value.toFixed(unit === 0 ? 0 : value >= 100 ? 0 : 1)} ${units[unit]}`
+}
+
+const storageSummary = computed(() => {
+  const sample = latestMetric.value
+  if (!sample) return { primary: 'No storage sample', secondary: 'Open Storage for live detail' }
+
+  if (connection.value?.engine === 'oracle') {
+    const tablespaces = sample.oracle?.storage?.tablespaces ?? []
+    const fullest = [...tablespaces].sort((left, right) => (right.used_percent ?? 0) - (left.used_percent ?? 0))[0]
+    if (fullest) {
+      return {
+        primary: `${fullest.used_percent ?? 0}% used`,
+        secondary: `${fullest.name} · highest tablespace`,
+      }
+    }
+    const fra = sample.oracle?.storage?.fra
+    if (fra?.used_percent != null) return { primary: `${fra.used_percent}% FRA`, secondary: 'Fast Recovery Area usage' }
+  }
+
+  if (connection.value?.engine === 'sqlserver') {
+    const log = sample.sqlserver?.log_used_percent
+    const tempdb = sample.sqlserver?.tempdb_used_percent
+    if (log != null) return { primary: `${log}% log used`, secondary: tempdb != null ? `TempDB ${tempdb}% used` : 'Transaction log usage' }
+  }
+
+  if (connection.value?.engine === 'mysql') {
+    const total = sample.mysql?.storage?.total_bytes
+    if (total != null) return { primary: formatBytes(total), secondary: 'Tracked database storage' }
+  }
+
+  return { primary: 'Storage available', secondary: 'Open Storage for details' }
+})
+
+const latestBackup = computed(() => overviewBackups.value?.latest_backup ?? null)
+const backupSummary = computed(() => {
+  const backup = latestBackup.value
+  if (!backup) return { primary: 'No recent backup', secondary: overviewBackups.value?.available === false ? 'Backup provider unavailable' : 'No backup found in the last 7 days' }
+  const time = backup.finished_at ?? backup.started_at
+  const kind = backup.kind.replace('_', ' ')
+  return { primary: formatAge(time), secondary: `${kind} · ${backup.status}` }
+})
+
+const metricsSummary = computed(() => ({
+  primary: formatAge(latestMetric.value?.collected_at),
+  secondary: latestMetric.value ? `Collector ${latestMetric.value.status}` : 'No collector sample in the last hour',
+}))
+
+async function loadOverviewSummaries() {
+  const [metricsResult, backupsResult] = await Promise.allSettled([
+    metricsStore.loadHistory(connectionId.value, 1),
+    backupsStore.load(connectionId.value, { window: '7d' }),
+  ])
+  if (metricsResult.status === 'fulfilled') overviewMetrics.value = metricsResult.value
+  if (backupsResult.status === 'fulfilled') overviewBackups.value = backupsResult.value
+}
+
 const readyTerminalServers = computed(() =>
   relatedServers.value.filter(
     (server) => Boolean(server.ssh_profile_id && server.ssh_host_key_fingerprint),
@@ -232,6 +328,7 @@ async function refreshWorkspace() {
       databasesStore.loadOne(connectionId.value),
       serversStore.load(),
       recordsStore.load(),
+      loadOverviewSummaries(),
     ])
     showWorkspaceMessage('Database workspace refreshed.', 'success')
   } finally {
@@ -295,6 +392,7 @@ onMounted(async () => {
     serversStore.servers.length === 0 ? serversStore.load() : Promise.resolve(),
     recordsStore.records.length === 0 ? recordsStore.load() : Promise.resolve(),
     databasesStore.loadOne(connectionId.value),
+    loadOverviewSummaries(),
   ])
 
   applyTabFromRoute()
@@ -415,6 +513,10 @@ onMounted(async () => {
           Overview
         </button>
 
+        <button :class="{ active: activeTab === 'metrics' }" @click="selectTab('metrics')">
+          Metrics
+        </button>
+
         <button
           v-if="supportsOperationalHealth"
           :class="{ active: activeTab === 'health' }"
@@ -447,6 +549,14 @@ onMounted(async () => {
           Activity
         </button>
 
+        <button
+          :disabled="!supportsDbaUtilities"
+          :class="{ active: activeTab === 'parameters' }"
+          @click="selectTab('parameters')"
+        >
+          Parameters
+        </button>
+
         <button :class="{ active: activeTab === 'backups' }" @click="selectTab('backups')">
           Backups
         </button>
@@ -467,50 +577,43 @@ onMounted(async () => {
           {{ connection.engine === 'mysql' ? 'Access & Grants' : 'Access & Privileges' }}
         </button>
 
-        <button :class="{ active: activeTab === 'history' }" @click="selectTab('history')">
-          History
-        </button>
       </nav>
 
-      <section v-if="activeTab === 'overview'" class="database-preview-grid database-detail-metrics">
-        <div>
-          <span>{{ overviewMetricLabel(connection.engine, 'active') }}</span>
+      <section v-if="activeTab === 'overview'" class="database-overview-summary-grid">
+        <button type="button" class="database-overview-summary-card" @click="selectTab('metrics')">
+          <span>Metrics</span>
+          <strong>{{ metricsSummary.primary }}</strong>
+          <small>{{ metricsSummary.secondary }}</small>
+        </button>
 
-          <strong>
-            {{ formatMetric(overview?.active) }}
-          </strong>
-        </div>
+        <button type="button" class="database-overview-summary-card" :disabled="!supportsDbaUtilities" @click="selectTab('sessions')">
+          <span>Sessions</span>
+          <strong>{{ formatMetric(overview?.active) }} active</strong>
+          <small>{{ formatMetric(overview?.blocked) }} blocked · {{ formatMetric(overview?.connections) }} connections</small>
+        </button>
 
-        <div>
-          <span>{{ overviewMetricLabel(connection.engine, 'connections') }}</span>
+        <button type="button" class="database-overview-summary-card" :disabled="!supportsDbaUtilities" @click="selectTab('storage')">
+          <span>Storage</span>
+          <strong>{{ storageSummary.primary }}</strong>
+          <small>{{ storageSummary.secondary }}</small>
+        </button>
 
-          <strong>
-            {{ formatMetric(overview?.connections) }}
-          </strong>
-        </div>
+        <button type="button" class="database-overview-summary-card" @click="selectTab('backups')">
+          <span>Backups</span>
+          <strong>{{ backupSummary.primary }}</strong>
+          <small>{{ backupSummary.secondary }}</small>
+        </button>
 
-        <div>
-          <span>{{ overviewMetricLabel(connection.engine, 'blocked') }}</span>
-
-          <strong>
-            {{ formatMetric(overview?.blocked) }}
-          </strong>
-        </div>
-
-        <div>
-          <span>Uptime</span>
-
-          <strong>
-            {{ formatUptime(overview?.uptime_seconds) }}
-          </strong>
-        </div>
-
-        <div>
-          <span>Response time</span>
-          <strong>
-            {{ overview?.response_time_ms != null ? `${overview.response_time_ms} ms` : '—' }}
-          </strong>
-        </div>
+        <button
+          v-if="supportsOperationalHealth"
+          type="button"
+          class="database-overview-summary-card"
+          @click="selectTab('health')"
+        >
+          <span>Health</span>
+          <strong>{{ statusLabel(overview?.status) }}</strong>
+          <small>{{ formatUptime(overview?.uptime_seconds) }} uptime · {{ overview?.response_time_ms != null ? `${overview.response_time_ms} ms` : '—' }}</small>
+        </button>
       </section>
 
       <DatabaseMonitoringNotice
@@ -525,154 +628,91 @@ onMounted(async () => {
         alive with v-show. This preserves filters, form inputs and search
         results while avoiding repeat API loads on every tab switch.
       -->
-      <DatabaseHistoryPanel
-        v-if="visitedTabs.history"
-        v-show="activeTab === 'history'"
-        :key="`history-${connection.id}`"
-        :connection-id="connection.id"
-      />
+      <div v-if="visitedTabs.metrics" v-show="activeTab === 'metrics'" class="database-tab-panel">
+        <DatabaseMetricsPanel
+          :key="`metrics-${connection.id}`"
+          :connection-id="connection.id"
+          :engine="connection.engine"
+        />
+      </div>
 
-      <DatabaseBackupsPanel
-        v-if="visitedTabs.backups"
-        v-show="activeTab === 'backups'"
-        :key="`backups-${connection.id}`"
-        :connection-id="connection.id"
-      />
+      <div v-if="visitedTabs.backups" v-show="activeTab === 'backups'" class="database-tab-panel">
+        <DatabaseBackupsPanel
+          :key="`backups-${connection.id}`"
+          :connection-id="connection.id"
+        />
+      </div>
 
-      <SqlServerHealthPanel
+      <div
         v-if="visitedTabs.health && connection.engine === 'sqlserver'"
         v-show="activeTab === 'health'"
-        :key="`health-sqlserver-${connection.id}`"
-        :connection-id="connection.id"
-      />
+        class="database-tab-panel"
+      >
+        <SqlServerHealthPanel
+          :key="`health-sqlserver-${connection.id}`"
+          :connection-id="connection.id"
+        />
+      </div>
 
-      <MySqlHealthPanel
+      <div
         v-if="visitedTabs.health && connection.engine === 'mysql'"
         v-show="activeTab === 'health'"
-        :key="`health-mysql-${connection.id}`"
-        :connection-id="connection.id"
-      />
-
-      <DatabaseSessionsPanel
-        v-if="visitedTabs.sessions"
-        v-show="activeTab === 'sessions'"
-        :key="`sessions-${connection.id}`"
-        :connection-id="connection.id"
-        :engine="connection.engine"
-      />
-
-      <DatabaseStoragePanel
-        v-if="visitedTabs.storage"
-        v-show="activeTab === 'storage'"
-        :key="`storage-${connection.id}`"
-        :connection-id="connection.id"
-        :engine="connection.engine"
-      />
-
-      <DatabaseActivityPanel
-        v-if="visitedTabs.activity"
-        v-show="activeTab === 'activity'"
-        :key="`activity-${connection.id}`"
-        :connection-id="connection.id"
-        :engine="connection.engine"
-      />
-
-      <DatabaseUsersPanel
-        v-if="visitedTabs.users"
-        v-show="activeTab === 'users'"
-        :key="`users-${connection.id}`"
-        :connection-id="connection.id"
-        :engine="connection.engine"
-        :active="activeTab === 'users'"
-      />
-
-      <DatabaseAccessPanel
-        v-if="visitedTabs.access"
-        v-show="activeTab === 'access'"
-        :key="`access-${connection.id}`"
-        :connection-id="connection.id"
-        :engine="connection.engine"
-      />
-
-      <section
-        v-if="activeTab === 'overview'"
-        class="database-context-grid"
+        class="database-tab-panel"
       >
-        <article class="panel database-context-card">
-          <div class="panel-header">
-            <div>
-              <h2>Operational context</h2>
-              <p>Human-facing ownership and application information from Records.</p>
-            </div>
-          </div>
+        <MySqlHealthPanel
+          :key="`health-mysql-${connection.id}`"
+          :connection-id="connection.id"
+        />
+      </div>
 
-          <dl class="database-context-list">
-            <div>
-              <dt>Environment</dt>
-              <dd>{{ primaryRecord?.environment ?? 'Not recorded' }}</dd>
-            </div>
-            <div>
-              <dt>Application</dt>
-              <dd>{{ primaryRecord?.application ?? 'Not recorded' }}</dd>
-            </div>
-            <div>
-              <dt>Owner / team</dt>
-              <dd>{{ primaryRecord?.owner ?? 'Not recorded' }}</dd>
-            </div>
-            <div>
-              <dt>Linked Records</dt>
-              <dd>{{ linkedRecords.length }}</dd>
-            </div>
-          </dl>
+      <div v-if="visitedTabs.sessions" v-show="activeTab === 'sessions'" class="database-tab-panel">
+        <DatabaseSessionsPanel
+          :key="`sessions-${connection.id}`"
+          :connection-id="connection.id"
+          :engine="connection.engine"
+        />
+      </div>
 
-          <div v-if="linkedRecords.length" class="database-context-links">
-            <RouterLink
-              v-for="record in linkedRecords.slice(0, 4)"
-              :key="record.id"
-              :to="{ name: 'record-detail', params: { id: record.id } }"
-            >
-              {{ record.name }}
-            </RouterLink>
-          </div>
-          <RouterLink v-else class="text-link" :to="{ name: 'records' }">
-            Open Records workspace
-          </RouterLink>
-        </article>
+      <div v-if="visitedTabs.storage" v-show="activeTab === 'storage'" class="database-tab-panel">
+        <DatabaseStoragePanel
+          :key="`storage-${connection.id}`"
+          :connection-id="connection.id"
+          :engine="connection.engine"
+        />
+      </div>
 
-        <article class="panel database-context-card">
-          <div class="panel-header">
-            <div>
-              <h2>Linked infrastructure</h2>
-              <p>Server / SSH relationships used for host-level DBA work.</p>
-            </div>
-          </div>
+      <div v-if="visitedTabs.activity" v-show="activeTab === 'activity'" class="database-tab-panel">
+        <DatabaseActivityPanel
+          :key="`activity-${connection.id}`"
+          :connection-id="connection.id"
+          :engine="connection.engine"
+        />
+      </div>
 
-          <div v-if="relatedServers.length" class="database-linked-server-list">
-            <div v-for="server in relatedServers" :key="server.id" class="database-linked-server">
-              <div>
-                <RouterLink :to="{ name: 'server-detail', params: { id: server.id } }">
-                  {{ server.name }}
-                </RouterLink>
-                <span>{{ server.ip_address || server.hostname }}</span>
-              </div>
-              <span
-                class="workspace-status-pill"
-                :class="server.ssh_profile_id && server.ssh_host_key_fingerprint
-                  ? 'workspace-status-pill--success'
-                  : 'workspace-status-pill--warning'"
-              >
-                {{ server.ssh_profile_id && server.ssh_host_key_fingerprint ? 'SSH ready' : 'SSH setup needed' }}
-              </span>
-            </div>
-          </div>
+      <div v-if="visitedTabs.parameters" v-show="activeTab === 'parameters'" class="database-tab-panel">
+        <DatabaseParametersPanel
+          :key="`parameters-${connection.id}`"
+          :connection-id="connection.id"
+          :engine="connection.engine"
+        />
+      </div>
 
-          <div v-else class="database-workspace-empty database-workspace-empty--compact">
-            <strong>No linked server</strong>
-            <span>Link a Server / SSH entry to use host-level tools from this database.</span>
-          </div>
+      <div v-if="visitedTabs.users" v-show="activeTab === 'users'" class="database-tab-panel">
+        <DatabaseUsersPanel
+          :key="`users-${connection.id}`"
+          :connection-id="connection.id"
+          :engine="connection.engine"
+          :active="activeTab === 'users'"
+        />
+      </div>
 
-        </article>
-      </section>
+      <div v-if="visitedTabs.access" v-show="activeTab === 'access'" class="database-tab-panel">
+        <DatabaseAccessPanel
+          :key="`access-${connection.id}`"
+          :connection-id="connection.id"
+          :engine="connection.engine"
+        />
+      </div>
 
       <section v-if="activeTab === 'overview'" class="panel database-overview-panel">
         <div class="panel-header">

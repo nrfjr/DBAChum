@@ -163,3 +163,17 @@ async def list_database_actions(
         database_action_to_response(document)
         for document in documents
     ]
+
+
+async def get_database_action(database, connection_id: str, audit_id: str) -> DatabaseActionAuditResponse:
+    object_id = _parse_audit_id(audit_id)
+    document = await database.database_action_audit.find_one(
+        {"_id": object_id, "connection_id": connection_id}
+    )
+    if document is None:
+        raise AppError(
+            "Database action audit record not found.",
+            code="DATABASE_ACTION_AUDIT_NOT_FOUND",
+            status_code=404,
+        )
+    return database_action_to_response(document)

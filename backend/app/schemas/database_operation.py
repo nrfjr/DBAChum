@@ -12,7 +12,26 @@ class SessionOperation(str, Enum):
 class StorageOperation(str, Enum):
     RESIZE_FILE = "resize_file"
     ADD_FILE = "add_file"
+    CREATE_TABLESPACE = "create_tablespace"
 
+
+
+
+class ParameterOperation(str, Enum):
+    SET = "set"
+
+
+class MaintenanceOperation(str, Enum):
+    DELETE_ARCHIVELOGS = "delete_archivelogs"
+    DELETE_OBSOLETE = "delete_obsolete"
+
+
+class BackupOperation(str, Enum):
+    FULL = "full"
+    DIFFERENTIAL = "differential"
+    LOG = "log"
+    ARCHIVELOG = "archivelog"
+    DATABASE_PLUS_ARCHIVELOG = "database_plus_archivelog"
 
 class AccountOperation(str, Enum):
     ENABLE = "enable"
@@ -66,10 +85,46 @@ class StorageOperationRequest(BaseModel):
                 raise ValueError(
                     "Resize requires file_id, file_name, or logical_name."
                 )
-        elif self.action == StorageOperation.ADD_FILE:
+        elif self.action in {StorageOperation.ADD_FILE, StorageOperation.CREATE_TABLESPACE}:
+            if self.action == StorageOperation.CREATE_TABLESPACE and not self.tablespace_name:
+                raise ValueError("create_tablespace requires tablespace_name.")
             if self.max_size_mb is not None and self.max_size_mb < self.size_mb:
                 raise ValueError("max_size_mb cannot be smaller than size_mb.")
         return self
+
+
+class ParameterOperationRequest(BaseModel):
+    action: ParameterOperation = ParameterOperation.SET
+    name: str = Field(min_length=1, max_length=128)
+    value: str = Field(min_length=1, max_length=4000)
+    apply_mode: str = Field(default="both", pattern="^(runtime|persistent|both)$")
+    request_reference: str | None = Field(default=None, max_length=100)
+
+
+class MaintenanceOperationRequest(BaseModel):
+    action: MaintenanceOperation
+    server_id: str | None = Field(default=None, max_length=64)
+    oracle_sid: str | None = Field(default=None, max_length=128)
+    older_than_days: int | None = Field(default=None, ge=1, le=3650)
+    backed_up_times: int = Field(default=1, ge=0, le=99)
+    request_reference: str | None = Field(default=None, max_length=100)
+
+    @model_validator(mode="after")
+    def validate_maintenance(self):
+        if self.action == MaintenanceOperation.DELETE_ARCHIVELOGS and self.older_than_days is None:
+            raise ValueError("older_than_days is required for archive log cleanup.")
+        return self
+
+
+class BackupOperationRequest(BaseModel):
+    action: BackupOperation
+    server_id: str | None = Field(default=None, max_length=64)
+    destination: str | None = Field(default=None, max_length=2048)
+    oracle_sid: str | None = Field(default=None, max_length=128)
+    copy_only: bool = False
+    cleanup_archivelogs_after: bool = False
+    archivelog_retention_days: int = Field(default=2, ge=1, le=3650)
+    request_reference: str | None = Field(default=None, max_length=100)
 
 
 class AccountOperationRequest(BaseModel):

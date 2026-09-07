@@ -7,6 +7,7 @@ from app.schemas.database_action import (
 )
 from app.schemas.user import UserResponse
 from app.services.database_actions import (
+    get_database_action,
     list_database_actions,
 )
 from app.services.database_connections import (
@@ -48,3 +49,20 @@ async def get_database_actions(
         connection_id,
         limit=limit,
     )
+
+
+@router.get(
+    "/{connection_id}/actions/{audit_id}",
+    response_model=DatabaseActionAuditResponse,
+)
+async def get_database_action_status(
+    connection_id: str,
+    audit_id: str,
+    request: Request,
+    current_user: UserResponse = Depends(
+        require_permission(Permission.DATABASE_INSPECT)
+    ),
+):
+    database = request.app.state.database
+    await get_database_connection(database, connection_id)
+    return await get_database_action(database, connection_id, audit_id)

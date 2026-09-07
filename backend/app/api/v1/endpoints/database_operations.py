@@ -6,6 +6,9 @@ from app.schemas.database_action import DatabaseActionAuditResponse
 from app.schemas.database_operation import (
     AccessOperationRequest,
     AccountOperationRequest,
+    BackupOperationRequest,
+    MaintenanceOperationRequest,
+    ParameterOperationRequest,
     SessionOperationRequest,
     StorageOperationRequest,
 )
@@ -13,6 +16,9 @@ from app.schemas.user import UserResponse
 from app.services.database_operations import (
     operate_access,
     operate_account,
+    operate_backup,
+    operate_maintenance,
+    operate_parameter,
     operate_session,
     operate_storage,
 )
@@ -71,3 +77,42 @@ async def access_operation(
     current_user: UserResponse = Depends(require_permission(Permission.DBA_OPERATE)),
 ):
     return await operate_access(request.app.state.database, connection_id, data, current_user)
+
+
+@router.post(
+    "/{connection_id}/operations/parameter",
+    response_model=DatabaseActionAuditResponse,
+)
+async def parameter_operation(
+    connection_id: str,
+    data: ParameterOperationRequest,
+    request: Request,
+    current_user: UserResponse = Depends(require_permission(Permission.DBA_OPERATE)),
+):
+    return await operate_parameter(request.app.state.database, connection_id, data, current_user)
+
+
+@router.post(
+    "/{connection_id}/operations/maintenance",
+    response_model=DatabaseActionAuditResponse,
+)
+async def maintenance_operation(
+    connection_id: str,
+    data: MaintenanceOperationRequest,
+    request: Request,
+    current_user: UserResponse = Depends(require_permission(Permission.DBA_OPERATE)),
+):
+    return await operate_maintenance(request.app.state.database, connection_id, data, current_user)
+
+
+@router.post(
+    "/{connection_id}/operations/backup",
+    response_model=DatabaseActionAuditResponse,
+)
+async def backup_operation(
+    connection_id: str,
+    data: BackupOperationRequest,
+    request: Request,
+    current_user: UserResponse = Depends(require_permission(Permission.DBA_OPERATE)),
+):
+    return await operate_backup(request.app.state.database, connection_id, data, current_user)

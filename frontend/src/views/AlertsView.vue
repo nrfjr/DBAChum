@@ -62,7 +62,7 @@ function openSource(sourceType: string, sourceId: string, history = false) {
     router.push({
       name: 'database-detail',
       params: { id: sourceId },
-      query: history ? { tab: 'history' } : undefined,
+      query: history ? { tab: 'metrics' } : undefined,
     })
   } else if (sourceType === 'server') {
     router.push({ name: 'server-detail', params: { id: sourceId } })

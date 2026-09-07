@@ -7,6 +7,8 @@ from app.api.v1.endpoints import (
     database_connections,
     database_actions,
     database_operations,
+    database_parameters,
+    database_performance,
     database_backups,
     databases,
     health,
@@ -35,6 +37,8 @@ api_router.include_router(collector.router)
 api_router.include_router(database_connections.router)
 api_router.include_router(database_actions.router)
 api_router.include_router(database_operations.router)
+api_router.include_router(database_parameters.router)
+api_router.include_router(database_performance.router)
 api_router.include_router(database_backups.router)
 api_router.include_router(databases.router)
 api_router.include_router(oracle_dba.router)
