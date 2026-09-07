@@ -22,8 +22,22 @@ class ParameterOperation(str, Enum):
 
 
 class MaintenanceOperation(str, Enum):
+    # Backup/recovery lifecycle actions kept here for backward compatibility.
     DELETE_ARCHIVELOGS = "delete_archivelogs"
     DELETE_OBSOLETE = "delete_obsolete"
+
+    # General database housekeeping.
+    GATHER_SCHEMA_STATS = "gather_schema_stats"
+    GATHER_TABLE_STATS = "gather_table_stats"
+    RECOMPILE_INVALID = "recompile_invalid"
+    REBUILD_UNUSABLE_INDEXES = "rebuild_unusable_indexes"
+    PURGE_RECYCLEBIN = "purge_recyclebin"
+    CHECK_INTEGRITY = "check_integrity"
+    UPDATE_STATISTICS = "update_statistics"
+    SHRINK_DATABASE = "shrink_database"
+    ANALYZE_TABLE = "analyze_table"
+    OPTIMIZE_TABLE = "optimize_table"
+    CHECK_TABLE = "check_table"
 
 
 class BackupOperation(str, Enum):
@@ -107,12 +121,17 @@ class MaintenanceOperationRequest(BaseModel):
     oracle_sid: str | None = Field(default=None, max_length=128)
     older_than_days: int | None = Field(default=None, ge=1, le=3650)
     backed_up_times: int = Field(default=1, ge=0, le=99)
+    schema_name: str | None = Field(default=None, max_length=128)
+    table_name: str | None = Field(default=None, max_length=256)
+    target_percent: int | None = Field(default=None, ge=0, le=99)
     request_reference: str | None = Field(default=None, max_length=100)
 
     @model_validator(mode="after")
     def validate_maintenance(self):
         if self.action == MaintenanceOperation.DELETE_ARCHIVELOGS and self.older_than_days is None:
             raise ValueError("older_than_days is required for archive log cleanup.")
+        if self.action in {MaintenanceOperation.GATHER_TABLE_STATS, MaintenanceOperation.ANALYZE_TABLE, MaintenanceOperation.OPTIMIZE_TABLE, MaintenanceOperation.CHECK_TABLE} and not self.table_name:
+            raise ValueError("table_name is required for this maintenance operation.")
         return self
 
 

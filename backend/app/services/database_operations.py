@@ -5,6 +5,11 @@ from bson import ObjectId
 from typing import Awaitable, Callable
 
 from app.connectors.mysql_backup_operations import mysql_backup_operation
+from app.connectors.database_maintenance import (
+    mysql_database_maintenance,
+    oracle_database_maintenance,
+    sqlserver_database_maintenance,
+)
 from app.connectors.mysql_parameters import mysql_parameter_operation
 from app.connectors.mysql_operations import (
     mysql_access_operation,
@@ -331,28 +336,43 @@ async def _start_background_operation(
 
 async def operate_maintenance(database, connection_id: str, data, operator: UserResponse):
     connection = await get_database_connection(database, connection_id)
-    if connection["engine"] != "oracle":
-        raise AppError(
-            "Archive/FRA cleanup is currently an Oracle RMAN operation.",
-            code="MAINTENANCE_OPERATION_UNSUPPORTED",
-            status_code=400,
-        )
+    engine = connection["engine"]
+    action = data.action.value
 
-    target = (
-        f"archivelogs older than {data.older_than_days} day(s)"
-        if data.action.value == "delete_archivelogs"
-        else "RMAN obsolete backups"
-    )
+    if action in {"delete_archivelogs", "delete_obsolete"}:
+        if engine != "oracle":
+            raise AppError(
+                "Archive/FRA cleanup is an Oracle RMAN operation.",
+                code="MAINTENANCE_OPERATION_UNSUPPORTED",
+                status_code=400,
+            )
+        target = (
+            f"archivelogs older than {data.older_than_days} day(s)"
+            if action == "delete_archivelogs"
+            else "RMAN obsolete backups"
+        )
+        runner = lambda: oracle_rman_maintenance(database, connection, data)
+    else:
+        target = data.table_name or data.schema_name or connection.get("database") or connection.get("oracle_identifier") or connection.get("name")
+        if engine == "oracle":
+            runner = lambda: oracle_database_maintenance(connection, data)
+        elif engine == "sqlserver":
+            runner = lambda: sqlserver_database_maintenance(connection, data)
+        elif engine == "mysql":
+            runner = lambda: mysql_database_maintenance(connection, data)
+        else:
+            raise AppError("Database maintenance is unavailable for this engine.", status_code=400)
+
     return await _start_background_operation(
         database,
         connection=connection,
         connection_id=connection_id,
         operator=operator,
-        action=f"maintenance.{data.action.value}",
+        action=f"maintenance.{action}",
         target=target,
         risk=DatabaseActionRisk.DANGEROUS,
         request_reference=data.request_reference,
-        runner=lambda: oracle_rman_maintenance(database, connection, data),
+        runner=runner,
     )
 
 

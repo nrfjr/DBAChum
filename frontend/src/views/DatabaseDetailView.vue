@@ -4,6 +4,8 @@ import { useRoute, useRouter } from 'vue-router'
 
 import DatabaseAccessPanel from '@/components/databases/DatabaseAccessPanel.vue'
 import DatabaseActivityPanel from '@/components/databases/DatabaseActivityPanel.vue'
+import DatabaseJobsPanel from '@/components/databases/DatabaseJobsPanel.vue'
+import DatabaseMaintenancePanel from '@/components/databases/DatabaseMaintenancePanel.vue'
 import DatabaseBackupsPanel from '@/components/databases/DatabaseBackupsPanel.vue'
 import DatabaseMetricsPanel from '@/components/databases/DatabaseMetricsPanel.vue'
 import DatabaseMonitoringNotice from '@/components/databases/DatabaseMonitoringNotice.vue'
@@ -11,8 +13,6 @@ import DatabaseParametersPanel from '@/components/databases/DatabaseParametersPa
 import DatabaseSessionsPanel from '@/components/databases/DatabaseSessionsPanel.vue'
 import DatabaseStoragePanel from '@/components/databases/DatabaseStoragePanel.vue'
 import DatabaseUsersPanel from '@/components/databases/DatabaseUsersPanel.vue'
-import MySqlHealthPanel from '@/components/databases/mysql/MySqlHealthPanel.vue'
-import SqlServerHealthPanel from '@/components/databases/sqlserver/SqlServerHealthPanel.vue'
 import { hasPermission } from '@/core/permissions'
 import {
   engineLabel,
@@ -63,26 +63,24 @@ const overview = computed(() =>
 type DatabaseTab =
   | 'overview'
   | 'metrics'
-  | 'health'
   | 'sessions'
   | 'storage'
-  | 'activity'
-  | 'parameters'
-  | 'users'
-  | 'access'
   | 'backups'
+  | 'users_access'
+  | 'parameters'
+  | 'jobs'
+  | 'maintenance'
 
 const validTabs = new Set<DatabaseTab>([
   'overview',
   'metrics',
-  'health',
   'sessions',
   'storage',
-  'activity',
-  'parameters',
-  'users',
-  'access',
   'backups',
+  'users_access',
+  'parameters',
+  'jobs',
+  'maintenance',
 ])
 
 const activeTab = ref<DatabaseTab>('overview')
@@ -90,27 +88,36 @@ const activeTab = ref<DatabaseTab>('overview')
 const visitedTabs = reactive<Record<DatabaseTab, boolean>>({
   overview: true,
   metrics: false,
-  health: false,
   sessions: false,
   storage: false,
-  activity: false,
-  parameters: false,
-  users: false,
-  access: false,
   backups: false,
+  users_access: false,
+  parameters: false,
+  jobs: false,
+  maintenance: false,
 })
+
+const moreOpen = ref(false)
 
 function selectTab(tab: DatabaseTab) {
   if (!tabIsAvailable(tab)) return
   visitedTabs[tab] = true
   activeTab.value = tab
+  moreOpen.value = false
 }
 
 function applyTabFromRoute() {
   const raw = String(route.query.tab ?? '')
-  // Phase 8.6 keeps old deep links useful while consolidating History and
-  // Performance into the monitoring-first Metrics workspace.
-  const requested = (raw === 'history' || raw === 'performance' ? 'metrics' : raw) as DatabaseTab
+  // Keep old deep links useful while the workspace stays intentionally lean.
+  const aliases: Record<string, DatabaseTab> = {
+    history: 'metrics',
+    performance: 'metrics',
+    health: 'overview',
+    activity: 'sessions',
+    users: 'users_access',
+    access: 'users_access',
+  }
+  const requested = (aliases[raw] ?? raw) as DatabaseTab
   if (!validTabs.has(requested) || !tabIsAvailable(requested)) return
   visitedTabs[requested] = true
   activeTab.value = requested
@@ -139,9 +146,6 @@ const supportsDbaUtilities = computed(() =>
   ),
 )
 
-const supportsOperationalHealth = computed(() =>
-  ['sqlserver', 'mysql'].includes(connection.value?.engine ?? ''),
-)
 
 const supportsUsersAndSchemas = computed(() =>
   supportsDbaUtilities.value
@@ -166,10 +170,8 @@ const canUseTerminal = computed(() =>
 )
 
 function tabIsAvailable(tab: DatabaseTab) {
-  if (tab === 'health') return supportsOperationalHealth.value
-  if (['sessions', 'storage', 'activity', 'parameters'].includes(tab)) return supportsDbaUtilities.value
-  if (tab === 'users') return supportsUsersAndSchemas.value
-  if (tab === 'access') return supportsAccessAndPrivileges.value
+  if (['sessions', 'storage', 'parameters', 'jobs', 'maintenance'].includes(tab)) return supportsDbaUtilities.value
+  if (tab === 'users_access') return supportsUsersAndSchemas.value || supportsAccessAndPrivileges.value
   return true
 }
 
@@ -509,74 +511,29 @@ onMounted(async () => {
       </p>
 
       <nav class="database-tabs database-workspace-tabs">
-        <button :class="{ active: activeTab === 'overview' }" @click="selectTab('overview')">
-          Overview
-        </button>
+        <button :class="{ active: activeTab === 'overview' }" @click="selectTab('overview')">Overview</button>
+        <button :class="{ active: activeTab === 'metrics' }" @click="selectTab('metrics')">Metrics</button>
+        <button :disabled="!supportsDbaUtilities" :class="{ active: activeTab === 'sessions' }" @click="selectTab('sessions')">Sessions</button>
+        <button :disabled="!supportsDbaUtilities" :class="{ active: activeTab === 'storage' }" @click="selectTab('storage')">Storage</button>
+        <button :class="{ active: activeTab === 'backups' }" @click="selectTab('backups')">Backups</button>
+        <button v-if="supportsUsersAndSchemas || supportsAccessAndPrivileges" :class="{ active: activeTab === 'users_access' }" @click="selectTab('users_access')">Users / Access</button>
+        <button :disabled="!supportsDbaUtilities" :class="{ active: activeTab === 'parameters' }" @click="selectTab('parameters')">Parameters</button>
 
-        <button :class="{ active: activeTab === 'metrics' }" @click="selectTab('metrics')">
-          Metrics
-        </button>
-
-        <button
-          v-if="supportsOperationalHealth"
-          :class="{ active: activeTab === 'health' }"
-          @click="selectTab('health')"
-        >
-          Health
-        </button>
-
-        <button
-          :disabled="!supportsDbaUtilities"
-          :class="{ active: activeTab === 'sessions' }"
-          @click="selectTab('sessions')"
-        >
-          Sessions
-        </button>
-
-        <button
-          :disabled="!supportsDbaUtilities"
-          :class="{ active: activeTab === 'storage' }"
-          @click="selectTab('storage')"
-        >
-          Storage
-        </button>
-
-        <button
-          :disabled="!supportsDbaUtilities"
-          :class="{ active: activeTab === 'activity' }"
-          @click="selectTab('activity')"
-        >
-          Activity
-        </button>
-
-        <button
-          :disabled="!supportsDbaUtilities"
-          :class="{ active: activeTab === 'parameters' }"
-          @click="selectTab('parameters')"
-        >
-          Parameters
-        </button>
-
-        <button :class="{ active: activeTab === 'backups' }" @click="selectTab('backups')">
-          Backups
-        </button>
-
-        <button
-          v-if="supportsUsersAndSchemas"
-          :class="{ active: activeTab === 'users' }"
-          @click="selectTab('users')"
-        >
-          {{ connection.engine === 'sqlserver' ? 'Users & Principals' : connection.engine === 'mysql' ? 'Users & Hosts' : 'Users & Schemas' }}
-        </button>
-
-        <button
-          v-if="supportsAccessAndPrivileges"
-          :class="{ active: activeTab === 'access' }"
-          @click="selectTab('access')"
-        >
-          {{ connection.engine === 'mysql' ? 'Access & Grants' : 'Access & Privileges' }}
-        </button>
-
+        <div v-if="supportsDbaUtilities" class="database-more-menu">
+          <button
+            type="button"
+            class="database-more-menu__trigger"
+            :class="{ active: activeTab === 'jobs' || activeTab === 'maintenance' }"
+            :aria-expanded="moreOpen"
+            @click="moreOpen = !moreOpen"
+          >
+            More <span aria-hidden="true">▾</span>
+          </button>
+          <div v-if="moreOpen" class="database-more-menu__popover">
+            <button type="button" :class="{ active: activeTab === 'jobs' }" @click="selectTab('jobs')">Jobs</button>
+            <button type="button" :class="{ active: activeTab === 'maintenance' }" @click="selectTab('maintenance')">Maintenance</button>
+          </div>
+        </div>
       </nav>
 
       <section v-if="activeTab === 'overview'" class="database-overview-summary-grid">
@@ -604,16 +561,6 @@ onMounted(async () => {
           <small>{{ backupSummary.secondary }}</small>
         </button>
 
-        <button
-          v-if="supportsOperationalHealth"
-          type="button"
-          class="database-overview-summary-card"
-          @click="selectTab('health')"
-        >
-          <span>Health</span>
-          <strong>{{ statusLabel(overview?.status) }}</strong>
-          <small>{{ formatUptime(overview?.uptime_seconds) }} uptime · {{ overview?.response_time_ms != null ? `${overview.response_time_ms} ms` : '—' }}</small>
-        </button>
       </section>
 
       <DatabaseMonitoringNotice
@@ -643,31 +590,15 @@ onMounted(async () => {
         />
       </div>
 
-      <div
-        v-if="visitedTabs.health && connection.engine === 'sqlserver'"
-        v-show="activeTab === 'health'"
-        class="database-tab-panel"
-      >
-        <SqlServerHealthPanel
-          :key="`health-sqlserver-${connection.id}`"
-          :connection-id="connection.id"
-        />
-      </div>
-
-      <div
-        v-if="visitedTabs.health && connection.engine === 'mysql'"
-        v-show="activeTab === 'health'"
-        class="database-tab-panel"
-      >
-        <MySqlHealthPanel
-          :key="`health-mysql-${connection.id}`"
-          :connection-id="connection.id"
-        />
-      </div>
 
       <div v-if="visitedTabs.sessions" v-show="activeTab === 'sessions'" class="database-tab-panel">
         <DatabaseSessionsPanel
           :key="`sessions-${connection.id}`"
+          :connection-id="connection.id"
+          :engine="connection.engine"
+        />
+        <DatabaseActivityPanel
+          :key="`activity-${connection.id}`"
           :connection-id="connection.id"
           :engine="connection.engine"
         />
@@ -681,13 +612,6 @@ onMounted(async () => {
         />
       </div>
 
-      <div v-if="visitedTabs.activity" v-show="activeTab === 'activity'" class="database-tab-panel">
-        <DatabaseActivityPanel
-          :key="`activity-${connection.id}`"
-          :connection-id="connection.id"
-          :engine="connection.engine"
-        />
-      </div>
 
       <div v-if="visitedTabs.parameters" v-show="activeTab === 'parameters'" class="database-tab-panel">
         <DatabaseParametersPanel
@@ -697,17 +621,32 @@ onMounted(async () => {
         />
       </div>
 
-      <div v-if="visitedTabs.users" v-show="activeTab === 'users'" class="database-tab-panel">
-        <DatabaseUsersPanel
-          :key="`users-${connection.id}`"
+      <div v-if="visitedTabs.jobs" v-show="activeTab === 'jobs'" class="database-tab-panel">
+        <DatabaseJobsPanel
+          :key="`jobs-${connection.id}`"
           :connection-id="connection.id"
           :engine="connection.engine"
-          :active="activeTab === 'users'"
         />
       </div>
 
-      <div v-if="visitedTabs.access" v-show="activeTab === 'access'" class="database-tab-panel">
+      <div v-if="visitedTabs.maintenance" v-show="activeTab === 'maintenance'" class="database-tab-panel">
+        <DatabaseMaintenancePanel
+          :key="`maintenance-${connection.id}`"
+          :connection-id="connection.id"
+          :engine="connection.engine"
+        />
+      </div>
+
+      <div v-if="visitedTabs.users_access" v-show="activeTab === 'users_access'" class="database-tab-panel">
+        <DatabaseUsersPanel
+          v-if="supportsUsersAndSchemas"
+          :key="`users-${connection.id}`"
+          :connection-id="connection.id"
+          :engine="connection.engine"
+          :active="activeTab === 'users_access'"
+        />
         <DatabaseAccessPanel
+          v-if="supportsAccessAndPrivileges"
           :key="`access-${connection.id}`"
           :connection-id="connection.id"
           :engine="connection.engine"

@@ -56,11 +56,27 @@ export interface ParameterOperationInput {
 }
 
 export interface MaintenanceOperationInput {
-  action: 'delete_archivelogs' | 'delete_obsolete'
+  action:
+    | 'delete_archivelogs'
+    | 'delete_obsolete'
+    | 'gather_schema_stats'
+    | 'gather_table_stats'
+    | 'recompile_invalid'
+    | 'rebuild_unusable_indexes'
+    | 'purge_recyclebin'
+    | 'check_integrity'
+    | 'update_statistics'
+    | 'shrink_database'
+    | 'analyze_table'
+    | 'optimize_table'
+    | 'check_table'
   server_id?: string | null
   oracle_sid?: string | null
   older_than_days?: number | null
   backed_up_times?: number
+  schema_name?: string | null
+  table_name?: string | null
+  target_percent?: number | null
   request_reference?: string | null
 }
 
@@ -188,7 +204,7 @@ export const useDatabaseOperationsStore = defineStore('databaseOperations', {
         if (action.status !== 'running') return action
         await new Promise((resolve) => window.setTimeout(resolve, 2000))
       }
-      throw new Error('Database operation is still running. Check History for its final status.')
+      throw new Error('Database operation is still running. Check the database action history for its final status.')
     },
   },
 })

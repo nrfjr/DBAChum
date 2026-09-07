@@ -6227,3 +6227,118 @@ button {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* Phase 8.6 R3 workspace refinement */
+.database-more-menu {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.database-more-menu__trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.database-more-menu__popover {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 0.35rem);
+  right: 0;
+  display: grid;
+  min-width: 11rem;
+  padding: 0.35rem;
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+  background: var(--surface);
+  box-shadow: 0 12px 32px rgb(0 0 0 / 18%);
+}
+
+.database-more-menu__popover button {
+  width: 100%;
+  border-radius: 0.55rem;
+  text-align: left;
+}
+
+.parameter-compare-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+
+.utility-select-input {
+  min-width: 12rem;
+  padding: 0.62rem 0.75rem;
+  border: 1px solid color-mix(in srgb, currentColor 18%, transparent);
+  border-radius: 0.65rem;
+  background: var(--surface);
+  color: var(--text);
+}
+
+.parameter-comparison-row--different > td {
+  background: color-mix(in srgb, var(--warning) 7%, transparent);
+}
+
+.utility-table-secondary {
+  margin-top: 0.2rem;
+  max-width: 34rem;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.maintenance-action-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+  gap: 0.9rem;
+}
+
+.maintenance-action-card {
+  margin: 0;
+}
+
+.maintenance-action-card h3 {
+  margin: 0 0 0.35rem;
+}
+
+.maintenance-action-card p {
+  margin: 0 0 0.8rem;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+@media (max-width: 760px) {
+  .parameter-compare-control {
+    width: 100%;
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .utility-select-input,
+  .utility-search-input {
+    width: 100%;
+    min-width: 0;
+  }
+}
+
+.database-workspace-tabs {
+  overflow: visible;
+  flex-wrap: wrap;
+}
+
+.database-more-menu__popover button {
+  padding: 0.6rem 0.7rem;
+  border-bottom: 0;
+  cursor: pointer;
+}
+
+.database-more-menu__popover button.active {
+  border-bottom: 0;
+  background: var(--surface-muted);
+}

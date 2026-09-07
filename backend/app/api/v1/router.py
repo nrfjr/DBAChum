@@ -10,6 +10,7 @@ from app.api.v1.endpoints import (
     database_parameters,
     database_performance,
     database_backups,
+    database_jobs,
     databases,
     health,
     oracle_dba,
@@ -40,6 +41,7 @@ api_router.include_router(database_operations.router)
 api_router.include_router(database_parameters.router)
 api_router.include_router(database_performance.router)
 api_router.include_router(database_backups.router)
+api_router.include_router(database_jobs.router)
 api_router.include_router(databases.router)
 api_router.include_router(oracle_dba.router)
 api_router.include_router(profile.router)
