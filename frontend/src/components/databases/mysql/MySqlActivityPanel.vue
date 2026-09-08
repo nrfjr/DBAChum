@@ -6,6 +6,7 @@ import { hasPermission } from '@/core/permissions'
 import { useAuthStore } from '@/stores/auth'
 import { useDatabaseOperationsStore } from '@/stores/databaseOperations'
 import { useMySqlDbaStore, type MySqlActivityItem } from '@/stores/mysqlDba'
+import { confirmDialog, showToast } from '@/ui/feedback'
 
 const props = defineProps<{ connectionId: string }>()
 const mysqlStore = useMySqlDbaStore()
@@ -28,10 +29,12 @@ function waitLabel(event: string | null, object: string | null) { return [event,
 
 async function runAction(item: MySqlActivityItem, action: 'cancel_query' | 'terminate') {
   const message = action === 'cancel_query' ? `Cancel query on connection ${item.connection_id}?` : `Kill connection ${item.connection_id}?`
-  if (!window.confirm(message)) return
+  const confirmed = await confirmDialog({ title: action === 'cancel_query' ? 'Cancel query' : 'Kill connection', message, confirmLabel: action === 'cancel_query' ? 'Cancel query' : 'Kill connection', destructive: action === 'terminate', tone: action === 'terminate' ? 'danger' : 'warning' })
+  if (!confirmed) return
   try {
     await operations.runSession(props.connectionId, { action, session_id: item.connection_id })
     await mysqlStore.loadActivity(props.connectionId)
+    showToast({ title: action === 'cancel_query' ? 'Query cancelled' : 'Connection killed', tone: 'success' })
   } catch {}
 }
 

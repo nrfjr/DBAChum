@@ -13,6 +13,7 @@ import {
   type ProvisioningProfileInput,
   type ProvisioningValueKind,
 } from '@/stores/provisioning'
+import { confirmDialog, showToast } from '@/ui/feedback'
 
 interface StepMetadata {
   key: number
@@ -440,9 +441,11 @@ async function save() {
 }
 
 async function remove(profile: ProvisioningProfile) {
-  if (!window.confirm(`Delete provisioning profile "${profile.name}"?`)) return
+  const confirmed = await confirmDialog({ title: 'Delete provisioning profile', message: profile.name, confirmLabel: 'Delete profile', destructive: true, tone: 'danger' })
+  if (!confirmed) return
   try {
     await provisioningStore.removeProfile(profile.id)
+    showToast({ title: 'Provisioning profile deleted', message: profile.name, tone: 'success' })
   } catch (error) {
     formError.value = error instanceof Error
       ? error.message

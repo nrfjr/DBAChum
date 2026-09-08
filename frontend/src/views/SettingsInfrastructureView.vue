@@ -22,6 +22,7 @@ import {
   type TerminalShortcutInput,
   type TerminalShortcutMode,
 } from '@/stores/terminalShortcuts'
+import { confirmDialog, showToast } from '@/ui/feedback'
 
 const serversStore = useServersStore()
 const sshStore = useSshAccessStore()
@@ -285,10 +286,12 @@ async function saveServer() {
 }
 
 async function removeServer(server: Server) {
-  if (!window.confirm(`Delete server asset "${server.name}"? Database connections will remain and only the relationship is removed.`)) return
+  const confirmed = await confirmDialog({ title: 'Delete server asset', message: `${server.name}. Database connections remain; only the server asset and relationships are removed.`, confirmLabel: 'Delete server', destructive: true, tone: 'danger' })
+  if (!confirmed) return
   try {
     await serversStore.remove(server.id)
     await connectionsStore.load()
+    showToast({ title: 'Server deleted', message: server.name, tone: 'success' })
   } catch (error) {
     serverFormError.value = error instanceof Error ? error.message : 'Unable to delete server.'
   }
@@ -359,9 +362,11 @@ async function saveSshProfile() {
 }
 
 async function removeSshProfile(profile: SshAccessProfile) {
-  if (!window.confirm(`Delete SSH access profile "${profile.name}"?`)) return
+  const confirmed = await confirmDialog({ title: 'Delete SSH access profile', message: profile.name, confirmLabel: 'Delete profile', destructive: true, tone: 'danger' })
+  if (!confirmed) return
   try {
     await sshStore.remove(profile.id)
+    showToast({ title: 'SSH profile deleted', message: profile.name, tone: 'success' })
   } catch (error) {
     sshFormError.value = error instanceof Error ? error.message : 'Unable to delete SSH access profile.'
   }
@@ -432,9 +437,11 @@ async function saveShortcut() {
 }
 
 async function removeShortcut(shortcut: TerminalShortcut) {
-  if (!window.confirm(`Delete terminal shortcut "${shortcut.name}"?`)) return
+  const confirmed = await confirmDialog({ title: 'Delete terminal shortcut', message: shortcut.name, confirmLabel: 'Delete shortcut', destructive: true, tone: 'danger' })
+  if (!confirmed) return
   try {
     await terminalShortcutsStore.remove(shortcut.id)
+    showToast({ title: 'Terminal shortcut deleted', message: shortcut.name, tone: 'success' })
   } catch (error) {
     shortcutFormError.value = error instanceof Error ? error.message : 'Unable to delete terminal shortcut.'
   }
@@ -491,38 +498,26 @@ onMounted(async () => {
 
       <p v-if="serversStore.error" class="login-error">{{ serversStore.error }}</p>
 
-      <ScrollableDataTable
-        :loading="serversStore.loading"
-        :empty="!serversStore.loading && filteredServers.length === 0"
-        empty-message="No server assets match this view."
-        max-height="36rem"
-      >
-        <template #header>
-          <tr>
-            <th>Name</th>
-            <th>Type</th>
-            <th>Host</th>
-            <th>Environment</th>
-            <th>SSH access</th>
-            <th>Databases</th>
-            <th>Status</th>
-            <th>Actions</th>
-          </tr>
-        </template>
-        <tr v-for="server in filteredServers" :key="server.id">
-          <td><strong>{{ server.name }}</strong><br /><small>{{ osLabel(server.os_family) }}{{ server.os_version ? ` · ${server.os_version}` : '' }}</small></td>
-          <td>{{ serverTypeLabel(server.server_type) }}</td>
-          <td>{{ server.hostname }}<br /><small>{{ server.ip_address ?? '—' }}</small></td>
-          <td>{{ server.environment ?? '—' }}</td>
-          <td>{{ server.ssh_profile_name ?? 'Not configured' }}</td>
-          <td>{{ server.database_count }}</td>
-          <td>{{ server.enabled ? 'Enabled' : 'Disabled' }}</td>
-          <td class="table-actions-cell">
+      <p v-if="serversStore.loading" class="empty-state">Loading server assets...</p>
+      <div v-else-if="filteredServers.length === 0" class="empty-state">No server assets match this view.</div>
+      <div v-else class="connection-list">
+        <article v-for="server in filteredServers" :key="server.id" class="connection-item">
+          <div>
+            <div class="connection-title">
+              <strong>{{ server.name }}</strong>
+              <span class="status-pill" :class="{ disabled: !server.enabled }">{{ server.enabled ? 'Enabled' : 'Disabled' }}</span>
+              <span v-if="server.ssh_profile_name" class="status-pill">SSH configured</span>
+            </div>
+            <p>{{ server.hostname }}<template v-if="server.ip_address"> · {{ server.ip_address }}</template></p>
+            <small>{{ osLabel(server.os_family) }}{{ server.os_version ? ` · ${server.os_version}` : '' }} · {{ serverTypeLabel(server.server_type) }}<template v-if="server.environment"> · {{ server.environment }}</template></small>
+            <small v-if="server.ssh_profile_name">SSH profile: {{ server.ssh_profile_name }} · {{ server.database_count }} linked database{{ server.database_count === 1 ? '' : 's' }}</small>
+          </div>
+          <div class="connection-actions">
             <button type="button" class="secondary-button" @click="editServer(server)">Edit</button>
             <button type="button" class="secondary-button" @click="removeServer(server)">Delete</button>
-          </td>
-        </tr>
-      </ScrollableDataTable>
+          </div>
+        </article>
+      </div>
     </template>
 
     <template v-else-if="activeTab === 'ssh'">
@@ -542,40 +537,27 @@ onMounted(async () => {
 
       <p v-if="sshStore.error" class="login-error">{{ sshStore.error }}</p>
 
-      <ScrollableDataTable
-        :loading="sshStore.loading"
-        :empty="!sshStore.loading && filteredSshProfiles.length === 0"
-        empty-message="No SSH access profiles configured."
-        max-height="32rem"
-      >
-        <template #header>
-          <tr>
-            <th>Profile</th>
-            <th>Username</th>
-            <th>Port</th>
-            <th>Authentication</th>
-            <th>Used by</th>
-            <th>Status</th>
-            <th>Actions</th>
-          </tr>
-        </template>
-        <tr v-for="profile in filteredSshProfiles" :key="profile.id">
-          <td><strong>{{ profile.name }}</strong></td>
-          <td>{{ profile.username }}</td>
-          <td>{{ profile.port }}</td>
-          <td>
-            {{ profile.auth_type === 'password' ? 'Password' : 'Private key' }}
-            <small v-if="profile.auth_type === 'password'"> · {{ profile.has_password ? 'secret stored' : 'missing secret' }}</small>
-            <small v-else> · {{ profile.has_private_key ? 'key stored' : 'missing key' }}</small>
-          </td>
-          <td>{{ profile.server_count }} server{{ profile.server_count === 1 ? '' : 's' }}</td>
-          <td>{{ profile.enabled ? 'Enabled' : 'Disabled' }}</td>
-          <td class="table-actions-cell">
+      <p v-if="sshStore.loading" class="empty-state">Loading SSH access profiles...</p>
+      <div v-else-if="filteredSshProfiles.length === 0" class="empty-state">No SSH access profiles configured.</div>
+      <div v-else class="connection-list">
+        <article v-for="profile in filteredSshProfiles" :key="profile.id" class="connection-item">
+          <div>
+            <div class="connection-title">
+              <strong>{{ profile.name }}</strong>
+              <span class="status-pill" :class="{ disabled: !profile.enabled }">{{ profile.enabled ? 'Enabled' : 'Disabled' }}</span>
+              <span class="status-pill" :class="{ disabled: profile.auth_type === 'password' ? !profile.has_password : !profile.has_private_key }">
+                {{ profile.auth_type === 'password' ? (profile.has_password ? 'Secret stored' : 'Secret missing') : (profile.has_private_key ? 'Key stored' : 'Key missing') }}
+              </span>
+            </div>
+            <p>{{ profile.username }}@SSH:{{ profile.port }}</p>
+            <small>{{ profile.auth_type === 'password' ? 'Password authentication' : 'Private-key authentication' }} · Used by {{ profile.server_count }} server{{ profile.server_count === 1 ? '' : 's' }}</small>
+          </div>
+          <div class="connection-actions">
             <button type="button" class="secondary-button" @click="editSshProfile(profile)">Edit</button>
             <button type="button" class="secondary-button" @click="removeSshProfile(profile)">Delete</button>
-          </td>
-        </tr>
-      </ScrollableDataTable>
+          </div>
+        </article>
+      </div>
     </template>
 
     <template v-else>

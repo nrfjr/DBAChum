@@ -6,6 +6,7 @@ import { hasPermission } from '@/core/permissions'
 import { useAuthStore } from '@/stores/auth'
 import { useDatabaseOperationsStore } from '@/stores/databaseOperations'
 import { useOracleDbaStore, type OracleActiveSql } from '@/stores/oracleDba'
+import { confirmDialog, showToast } from '@/ui/feedback'
 
 const props = defineProps<{ connectionId: string }>()
 const oracleStore = useOracleDbaStore()
@@ -21,7 +22,8 @@ function formatDuration(seconds: number) {
 }
 
 async function terminate(item: OracleActiveSql) {
-  if (!window.confirm(`Kill Oracle session ${item.sid},${item.serial_number} running SQL ${item.sql_id}?`)) return
+  const confirmed = await confirmDialog({ title: 'Kill Oracle session', message: `SID ${item.sid}, serial ${item.serial_number} · SQL ${item.sql_id}`, confirmLabel: 'Kill session', destructive: true, tone: 'danger' })
+  if (!confirmed) return
   try {
     await operations.runSession(props.connectionId, {
       action: 'terminate',
@@ -29,6 +31,7 @@ async function terminate(item: OracleActiveSql) {
       serial_number: item.serial_number,
     })
     await oracleStore.loadActivity(props.connectionId)
+    showToast({ title: 'Session killed', tone: 'success' })
   } catch {}
 }
 

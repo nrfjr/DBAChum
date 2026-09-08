@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { hasPermission } from '@/core/permissions'
+import ScrollableDataTable from '@/components/common/ScrollableDataTable.vue'
 import { useAuthStore } from '@/stores/auth'
 import { useConnectionsStore } from '@/stores/connections'
 import { useDatabaseOperationsStore } from '@/stores/databaseOperations'
 import { useServersStore } from '@/stores/servers'
+import { formDialog, showToast, type DialogField } from '@/ui/feedback'
 import {
   useDatabaseBackupsStore,
   type BackupWindow,
@@ -173,25 +175,25 @@ function refresh() {
   void load(selectedWindow.value)
 }
 
-function chooseLinkedServer(): string | null {
+async function chooseLinkedServer(): Promise<string | null> {
   const ids = connection.value?.server_ids ?? []
   if (ids.length === 0) {
-    window.alert('This operation requires a linked Server / SSH entry.')
+    showToast({ title: 'Linked SSH server required', message: 'Link a Server / SSH entry before running this operation.', tone: 'warning' })
     return null
   }
   if (ids.length === 1) return ids[0] ?? null
-  const choices = ids.map((id) => {
+
+  const options = ids.map((id) => {
     const server = serversStore.servers.find((item) => item.id === id)
-    return `${server?.name ?? 'Server'} = ${id}`
-  }).join('\n')
-  const raw = window.prompt(`Multiple servers are linked. Enter the server name or ID to use:\n${choices}`)?.trim()
-  if (!raw) return null
-  const byId = ids.find((id) => id === raw)
-  if (byId) return byId
-  const byName = serversStore.servers.find((server) => ids.includes(server.id) && server.name.toLowerCase() === raw.toLowerCase())
-  if (byName) return byName.id
-  window.alert('Server was not recognized.')
-  return null
+    return { label: server?.name ?? id, value: id }
+  })
+  const result = await formDialog({
+    title: 'Choose linked server',
+    message: 'This operation runs through one linked SSH server.',
+    confirmLabel: 'Use server',
+    fields: [{ name: 'server_id', label: 'Server', type: 'select', value: options[0]?.value ?? '', options, required: true }],
+  })
+  return result ? String(result.server_id) : null
 }
 
 async function waitForBackgroundAction(actionId: string, successMessage: string) {
@@ -201,12 +203,15 @@ async function waitForBackgroundAction(actionId: string, successMessage: string)
     const final = await operations.waitForAction(props.connectionId, actionId)
     if (final.status === 'succeeded') {
       operationMessage.value = successMessage
+      showToast({ title: successMessage, tone: 'success', durationMs: 5500 })
       await load(selectedWindow.value)
     } else {
       operationMessage.value = final.error ?? `Operation finished with status ${final.status}.`
+      showToast({ title: 'Database operation failed', message: operationMessage.value, tone: 'danger', durationMs: 7000 })
     }
   } catch (error) {
-    operationMessage.value = error instanceof Error ? error.message : 'Unable to follow operation status. Check History.'
+    operationMessage.value = error instanceof Error ? error.message : 'Unable to follow operation status. Check Metrics.'
+    showToast({ title: 'Unable to follow operation', message: operationMessage.value, tone: 'danger' })
   } finally {
     operationRunning.value = false
   }
@@ -215,51 +220,85 @@ async function waitForBackgroundAction(actionId: string, successMessage: string)
 async function runBackup() {
   if (!canOperate.value || !engine.value) return
   operationMessage.value = null
+
   try {
     if (engine.value === 'oracle') {
-      const serverId = chooseLinkedServer()
+      const serverId = await chooseLinkedServer()
       if (!serverId) return
-      const rawType = window.prompt('RMAN backup type: full, archivelog, or database_plus_archivelog', 'database_plus_archivelog')
-      if (!rawType) return
-      const action = rawType.trim().toLowerCase()
-      if (!['full', 'archivelog', 'database_plus_archivelog'].includes(action)) return window.alert('Unsupported Oracle backup type.')
-      const destination = window.prompt('RMAN backup destination directory (leave blank to use RMAN configured destination):', '')?.trim() || null
-      const oracleSid = connection.value?.oracle_identifier_type === 'sid'
-        ? null
-        : window.prompt('ORACLE_SID for the linked server (leave blank if its SSH environment already sets it):', '')?.trim() || null
-      if (!window.confirm(`Start Oracle RMAN ${action.replaceAll('_', ' ')} backup?`)) return
+      const fields: DialogField[] = [
+        {
+          name: 'action', label: 'Backup type', type: 'select' as const, value: 'database_plus_archivelog',
+          options: [
+            { label: 'Database + archivelog', value: 'database_plus_archivelog' },
+            { label: 'Full database', value: 'full' },
+            { label: 'Archivelog only', value: 'archivelog' },
+          ],
+        },
+        { name: 'destination', label: 'RMAN destination', type: 'text' as const, placeholder: 'Leave blank to use RMAN configured destination' },
+      ]
+      if (connection.value?.oracle_identifier_type !== 'sid') {
+        fields.push({ name: 'oracle_sid', label: 'ORACLE_SID', type: 'text' as const, placeholder: 'Leave blank if the SSH environment already sets it' })
+      }
+      const result = await formDialog({
+        title: 'Run Oracle RMAN backup',
+        message: 'The backup runs in the background through the linked SSH server and is audited by DBAChum.',
+        confirmLabel: 'Start backup',
+        fields,
+      })
+      if (!result) return
       const started = await operations.runBackup(props.connectionId, {
-        action: action as 'full' | 'archivelog' | 'database_plus_archivelog',
+        action: String(result.action) as 'full' | 'archivelog' | 'database_plus_archivelog',
         server_id: serverId,
-        destination,
-        oracle_sid: oracleSid,
+        destination: String(result.destination ?? '').trim() || null,
+        oracle_sid: String(result.oracle_sid ?? '').trim() || null,
       })
       void waitForBackgroundAction(started.id, 'RMAN backup completed successfully.')
       return
     }
 
     if (engine.value === 'sqlserver') {
-      const rawType = window.prompt('SQL Server backup type: full, differential, or log', 'full')
-      if (!rawType) return
-      const action = rawType.trim().toLowerCase()
-      if (!['full', 'differential', 'log'].includes(action)) return window.alert('Unsupported SQL Server backup type.')
-      const destination = window.prompt('Backup path visible to the SQL Server service account (directory ending in \\ or /, or full .bak/.trn path):')?.trim()
-      if (!destination) return
-      if (!window.confirm(`Start SQL Server ${action} backup to ${destination}?`)) return
+      const result = await formDialog({
+        title: 'Run SQL Server backup',
+        message: 'The destination must be visible to the SQL Server service account.',
+        confirmLabel: 'Start backup',
+        fields: [
+          {
+            name: 'action', label: 'Backup type', type: 'select', value: 'full',
+            options: [
+              { label: 'Full', value: 'full' },
+              { label: 'Differential', value: 'differential' },
+              { label: 'Transaction log', value: 'log' },
+            ],
+          },
+          { name: 'destination', label: 'Backup destination', type: 'text', required: true, placeholder: '\\backup\sql\ or D:\Backup\database.bak' },
+        ],
+      })
+      if (!result) return
       const started = await operations.runBackup(props.connectionId, {
-        action: action as 'full' | 'differential' | 'log',
-        destination,
+        action: String(result.action) as 'full' | 'differential' | 'log',
+        destination: String(result.destination).trim(),
       })
       void waitForBackgroundAction(started.id, 'SQL Server backup completed successfully.')
       return
     }
 
     if (engine.value === 'mysql') {
-      const serverId = chooseLinkedServer()
+      const serverId = await chooseLinkedServer()
       if (!serverId) return
-      const destination = window.prompt('Remote backup directory for mysqldump:', '~/dbachum-backups')?.trim() || '~/dbachum-backups'
-      if (!window.confirm(`Start full logical mysqldump backup to ${destination}?`)) return
-      const started = await operations.runBackup(props.connectionId, { action: 'full', server_id: serverId, destination })
+      const result = await formDialog({
+        title: 'Run MySQL / MariaDB logical backup',
+        message: 'DBAChum will run the dump through the linked SSH server.',
+        confirmLabel: 'Start backup',
+        fields: [
+          { name: 'destination', label: 'Remote backup directory', type: 'text', value: '~/dbachum-backups', required: true },
+        ],
+      })
+      if (!result) return
+      const started = await operations.runBackup(props.connectionId, {
+        action: 'full',
+        server_id: serverId,
+        destination: String(result.destination).trim(),
+      })
       void waitForBackgroundAction(started.id, 'MySQL/MariaDB dump completed successfully.')
     }
   } catch {}
@@ -267,27 +306,33 @@ async function runBackup() {
 
 async function cleanupOracleArchiveLogs() {
   if (engine.value !== 'oracle' || !canOperate.value) return
-  const serverId = chooseLinkedServer()
+  const serverId = await chooseLinkedServer()
   if (!serverId) return
-  const rawDays = window.prompt('Delete archive logs completed before how many days ago?', '2')
-  if (!rawDays) return
-  const days = Number.parseInt(rawDays, 10)
-  if (!Number.isFinite(days) || days < 1) return window.alert('Enter a retention age of at least 1 day.')
-  const rawBackups = window.prompt('Require each archive log to be backed up how many times to DISK before deletion? Enter 0 to skip this condition.', '1')
-  if (rawBackups == null) return
-  const backedUpTimes = Number.parseInt(rawBackups, 10)
-  if (!Number.isFinite(backedUpTimes) || backedUpTimes < 0) return window.alert('Enter 0 or a positive backup count.')
-  const oracleSid = connection.value?.oracle_identifier_type === 'sid'
-    ? null
-    : window.prompt('ORACLE_SID for the linked server (leave blank if already configured):', '')?.trim() || null
-  if (!window.confirm(`RMAN will crosscheck archive logs and delete logs older than ${days} day(s)${backedUpTimes ? ` after ${backedUpTimes} disk backup(s)` : ''}. Continue?`)) return
+
+  const fields: DialogField[] = [
+    { name: 'days', label: 'Delete logs older than (days)', type: 'number' as const, value: 2, min: 1, step: 1, required: true },
+    { name: 'backed_up_times', label: 'Require DISK backups before deletion', type: 'number' as const, value: 1, min: 0, step: 1, required: true, hint: 'Use 0 to skip the backup-count condition.' },
+  ]
+  if (connection.value?.oracle_identifier_type !== 'sid') {
+    fields.push({ name: 'oracle_sid', label: 'ORACLE_SID', type: 'text' as const, placeholder: 'Leave blank if already configured in the SSH environment' })
+  }
+
+  const result = await formDialog({
+    title: 'Clear Oracle archivelogs',
+    message: 'RMAN will crosscheck archivelogs before applying the retention rule.',
+    confirmLabel: 'Run cleanup',
+    tone: 'warning',
+    fields,
+  })
+  if (!result) return
+
   try {
     const started = await operations.runMaintenance(props.connectionId, {
       action: 'delete_archivelogs',
       server_id: serverId,
-      oracle_sid: oracleSid,
-      older_than_days: days,
-      backed_up_times: backedUpTimes,
+      oracle_sid: String(result.oracle_sid ?? '').trim() || null,
+      older_than_days: Number(result.days),
+      backed_up_times: Number(result.backed_up_times),
     })
     void waitForBackgroundAction(started.id, 'RMAN archive log cleanup completed successfully.')
   } catch {}
@@ -479,55 +524,22 @@ onMounted(() => load('today'))
           No backups were recorded in this range.
         </div>
 
-        <div v-else class="utility-table-wrap">
-          <table class="utility-table backup-history-table">
-            <thead>
-              <tr>
-                <th>Type</th>
-                <th>Status</th>
-                <th>Completed</th>
-                <th>Duration</th>
-                <th>Input</th>
-                <th>Output</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr
-                v-for="item in result.items"
-                :key="`${item.backup_id}-${item.native_type}`"
-              >
-                <td>
-                  <strong>{{ kindLabel(item) }}</strong>
-                  <small v-if="item.native_type" class="backup-native-type">
-                    {{ item.native_type }}
-                  </small>
-                </td>
-                <td>
-                  <span class="backup-status" :class="item.status">
-                    {{ statusLabel(item) }}
-                  </span>
-                </td>
-                <td>
-                  <div>{{ formatDate(backupTime(item)) }}</div>
-                  <small>{{ formatAge(backupTime(item)) }}</small>
-                </td>
-                <td>{{ formatDuration(item.duration_seconds) }}</td>
-                <td>{{ formatBytes(item.input_bytes) }}</td>
-                <td>{{ formatBytes(item.output_bytes) }}</td>
-                <td class="backup-details-action">
-                  <button
-                    type="button"
-                    class="secondary-button"
-                    @click="selectedItem = item"
-                  >
-                    View details
-                  </button>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
+        <ScrollableDataTable v-else max-height="34rem">
+          <template #header>
+            <tr>
+              <th>Type</th><th>Status</th><th>Completed</th><th>Duration</th><th>Input</th><th>Output</th><th></th>
+            </tr>
+          </template>
+          <tr v-for="item in result.items" :key="`${item.backup_id}-${item.native_type}`">
+            <td><strong>{{ kindLabel(item) }}</strong><small v-if="item.native_type" class="backup-native-type">{{ item.native_type }}</small></td>
+            <td><span class="backup-status" :class="item.status">{{ statusLabel(item) }}</span></td>
+            <td><div>{{ formatDate(backupTime(item)) }}</div><small>{{ formatAge(backupTime(item)) }}</small></td>
+            <td>{{ formatDuration(item.duration_seconds) }}</td>
+            <td>{{ formatBytes(item.input_bytes) }}</td>
+            <td>{{ formatBytes(item.output_bytes) }}</td>
+            <td class="backup-details-action"><button type="button" class="secondary-button" @click="selectedItem = item">View details</button></td>
+          </tr>
+        </ScrollableDataTable>
       </template>
     </template>
 

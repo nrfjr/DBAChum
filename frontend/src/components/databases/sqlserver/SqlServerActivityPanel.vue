@@ -6,6 +6,7 @@ import { hasPermission } from '@/core/permissions'
 import { useAuthStore } from '@/stores/auth'
 import { useDatabaseOperationsStore } from '@/stores/databaseOperations'
 import { useSqlServerDbaStore, type SqlServerActivityItem } from '@/stores/sqlServerDba'
+import { confirmDialog, showToast } from '@/ui/feedback'
 
 const props = defineProps<{ connectionId: string }>()
 const sqlServerStore = useSqlServerDbaStore()
@@ -26,10 +27,12 @@ function formatDurationMs(milliseconds: number | null) {
 }
 
 async function terminate(item: SqlServerActivityItem) {
-  if (!window.confirm(`KILL SQL Server SPID ${item.session_id}?`)) return
+  const confirmed = await confirmDialog({ title: 'Kill SQL Server session', message: `SPID ${item.session_id}`, confirmLabel: 'Kill SPID', destructive: true, tone: 'danger' })
+  if (!confirmed) return
   try {
     await operations.runSession(props.connectionId, { action: 'terminate', session_id: item.session_id })
     await sqlServerStore.loadActivity(props.connectionId)
+    showToast({ title: `SPID ${item.session_id} killed`, tone: 'success' })
   } catch {}
 }
 

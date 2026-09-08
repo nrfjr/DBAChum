@@ -559,6 +559,7 @@ async function runCompare() {
 .access-privileges-panel {
   display: grid;
   gap: 1rem;
+  margin-top: 2rem;
 }
 
 .access-page-header {

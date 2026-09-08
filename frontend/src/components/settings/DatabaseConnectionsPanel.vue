@@ -19,6 +19,7 @@ import {
   type SqlServerEncrypt,
   type SqlServerProvider,
 } from '@/stores/connections'
+import { confirmDialog, showToast } from '@/ui/feedback'
 
 const connectionsStore = useConnectionsStore()
 
@@ -262,9 +263,13 @@ async function saveConnection() {
 async function removeConnection(
   connection: DatabaseConnection,
 ) {
-  const confirmed = window.confirm(
-    `Delete "${connection.name}"?`,
-  )
+  const confirmed = await confirmDialog({
+    title: 'Delete database connection',
+    message: connection.name,
+    confirmLabel: 'Delete connection',
+    destructive: true,
+    tone: 'danger',
+  })
 
   if (!confirmed) {
     return
@@ -272,6 +277,7 @@ async function removeConnection(
 
   try {
     await connectionsStore.remove(connection.id)
+    showToast({ title: 'Database connection deleted', message: connection.name, tone: 'success' })
 
     if (editingId.value === connection.id) {
       resetForm()

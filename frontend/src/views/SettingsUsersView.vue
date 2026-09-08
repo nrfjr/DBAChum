@@ -9,6 +9,8 @@ import {
     useUsersStore,
     type UserRole,
 } from '@/stores/users'
+import { confirmDialog, showToast } from '@/ui/feedback'
+import ScrollableDataTable from '@/components/common/ScrollableDataTable.vue'
 
 
 const usersStore = useUsersStore()
@@ -141,11 +143,7 @@ async function changeEnabled(
       },
     )
   } catch (cause) {
-    window.alert(
-      cause instanceof Error
-        ? cause.message
-        : 'Unable to update user.',
-    )
+    showToast({ title: 'Unable to update user', message: cause instanceof Error ? cause.message : undefined, tone: 'danger' })
 
     await usersStore.load()
   }
@@ -166,11 +164,7 @@ async function changeRole(
       },
     )
   } catch (cause) {
-    window.alert(
-      cause instanceof Error
-        ? cause.message
-        : 'Unable to update user.',
-    )
+    showToast({ title: 'Unable to update user', message: cause instanceof Error ? cause.message : undefined, tone: 'danger' })
 
     await usersStore.load()
   }
@@ -182,22 +176,17 @@ async function removeUser(
     username: string,
 ) {
     if (
-        !window.confirm(
-            `Delete "${username}"?`,
-        )
+        !(await confirmDialog({ title: 'Delete DBAChum user', message: username, confirmLabel: 'Delete user', destructive: true, tone: 'danger' }))
     ) {
         return
     }
 
     try {
         await usersStore.remove(id)
+        showToast({ title: 'User deleted', message: username, tone: 'success' })
 
     } catch (cause) {
-        window.alert(
-            cause instanceof Error
-                ? cause.message
-                : 'Unable to delete user.',
-        )
+        showToast({ title: 'Unable to delete user', message: cause instanceof Error ? cause.message : undefined, tone: 'danger' })
     }
 }
 
@@ -230,9 +219,8 @@ onMounted(() => {
         {{ usersStore.error }}
     </p>
 
-    <div v-else class="utility-table-wrap">
-        <table class="utility-table">
-            <thead>
+    <ScrollableDataTable v-else max-height="34rem">
+        <template #header>
                 <tr>
                     <th>Display name</th>
                     <th>Username</th>
@@ -241,9 +229,7 @@ onMounted(() => {
                     <th>Status</th>
                     <th>Actions</th>
                 </tr>
-            </thead>
-
-            <tbody>
+        </template>
                 <tr v-for="user in usersStore.users" :key="user.id">
                     <td>
                         <strong>{{ user.display_name }}</strong>
@@ -318,9 +304,7 @@ onMounted(() => {
                         </button>
                     </td>
                 </tr>
-            </tbody>
-        </table>
-    </div>
+    </ScrollableDataTable>
 
     <div v-if="createOpen" class="modal-backdrop" @click.self="
         createOpen = false

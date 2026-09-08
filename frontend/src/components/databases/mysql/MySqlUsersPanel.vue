@@ -6,6 +6,7 @@ import { hasPermission } from '@/core/permissions'
 import { useAuthStore } from '@/stores/auth'
 import { useDatabaseOperationsStore } from '@/stores/databaseOperations'
 import { useMySqlDbaStore, type MySqlSecurityAccount } from '@/stores/mysqlDba'
+import { confirmDialog, formDialog, showToast } from '@/ui/feedback'
 
 const props = defineProps<{ connectionId: string }>()
 const store = useMySqlDbaStore()
@@ -31,21 +32,30 @@ function stateLabel(account: MySqlSecurityAccount) { if (account.account_locked 
 
 async function toggleAccount(account: MySqlSecurityAccount) {
   const action = account.account_locked ? 'enable' : 'disable'
-  if (!window.confirm(`${action === 'enable' ? 'Unlock' : 'Lock'} ${account.account}?`)) return
+  const confirmed = await confirmDialog({ title: `${action === 'enable' ? 'Unlock' : 'Lock'} account`, message: account.account, confirmLabel: action === 'enable' ? 'Unlock account' : 'Lock account', tone: action === 'disable' ? 'warning' : 'default' })
+  if (!confirmed) return
   try {
     await operations.runAccount(props.connectionId, { action, account_name: account.user, host: account.host })
     await store.loadSecurity(props.connectionId, true)
+    showToast({ title: action === 'enable' ? 'Account unlocked' : 'Account locked', message: account.account, tone: 'success' })
   } catch {}
 }
 async function resetPassword(account: MySqlSecurityAccount) {
-  const password = window.prompt(`New password for ${account.account}:`)
-  if (!password) return
-  if (!window.confirm(`Reset password for ${account.account}?`)) return
+  const result = await formDialog({
+    title: 'Reset MySQL / MariaDB password',
+    message: account.account,
+    confirmLabel: 'Reset password',
+    tone: 'warning',
+    fields: [{ name: 'password', label: 'New password', type: 'password', required: true }],
+  })
+  if (!result) return
   try {
-    await operations.runAccount(props.connectionId, { action: 'reset_password', account_name: account.user, host: account.host, password })
+    await operations.runAccount(props.connectionId, { action: 'reset_password', account_name: account.user, host: account.host, password: String(result.password) })
     await store.loadSecurity(props.connectionId, true)
+    showToast({ title: 'Password reset', message: account.account, tone: 'success' })
   } catch {}
 }
+
 
 onMounted(() => void store.loadSecurity(props.connectionId))
 </script>

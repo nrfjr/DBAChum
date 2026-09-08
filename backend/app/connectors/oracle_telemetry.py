@@ -249,18 +249,50 @@ async def _collect_storage(db, warnings: list[str]) -> dict:
     }
 
 
+async def _collect_memory(db, warnings: list[str]) -> dict:
+    sga_row = await _fetchone_optional(
+        db,
+        "SELECT SUM(value) FROM v$sga",
+        warnings,
+        "SGA telemetry",
+    )
+    pga_row = await _fetchone_optional(
+        db,
+        """
+        SELECT
+            MAX(CASE WHEN name = 'total PGA allocated' THEN value END),
+            MAX(CASE WHEN name = 'aggregate PGA target parameter' THEN value END)
+        FROM v$pgastat
+        WHERE name IN ('total PGA allocated', 'aggregate PGA target parameter')
+        """,
+        warnings,
+        "PGA telemetry",
+    )
+    return {
+        "sga_bytes": int(sga_row[0] or 0) if sga_row else None,
+        "pga_allocated_bytes": int(pga_row[0] or 0) if pga_row and pga_row[0] is not None else None,
+        "pga_target_bytes": int(pga_row[1] or 0) if pga_row and pga_row[1] is not None else None,
+    }
+
+
 async def collect_oracle_telemetry(
     connection: dict,
     *,
     include_storage: bool = False,
 ) -> dict:
+    """Collect one lightweight Oracle telemetry snapshot.
 
+    This intentionally uses dynamic performance views and DBA tables only; it
+    does not depend on AWR/ASH so the Phase 6 history remains license-neutral
+    and compatible with the old Oracle estates DBAChum already supports.
+    """
     collected_at = datetime.now(timezone.utc)
     warnings: list[str] = []
 
     try:
         async with open_oracle_connection(connection) as db:
-
+            # Tag the dedicated telemetry session so its own V$ queries do not
+            # become "Top SQL" candidates in the history we are collecting.
             try:
                 await db.execute(
                     "BEGIN DBMS_APPLICATION_INFO.SET_MODULE(:module, :action); END;",
@@ -368,8 +400,10 @@ async def collect_oracle_telemetry(
             sql_candidates = await _collect_sql_candidates(db, warnings)
 
             storage = None
+            memory = None
             if include_storage:
                 storage = await _collect_storage(db, warnings)
+                memory = await _collect_memory(db, warnings)
 
             return {
                 "collected_at": collected_at,
@@ -388,6 +422,7 @@ async def collect_oracle_telemetry(
                 "session_candidates": session_candidates,
                 "sql_candidates": sql_candidates,
                 "storage": storage,
+                "memory": memory,
                 "warnings": warnings,
                 "error": None,
             }
@@ -403,6 +438,7 @@ async def collect_oracle_telemetry(
             "session_candidates": [],
             "sql_candidates": [],
             "storage": None,
+            "memory": None,
         }
     except oracledb.Error as exc:
         return {
@@ -415,4 +451,5 @@ async def collect_oracle_telemetry(
             "session_candidates": [],
             "sql_candidates": [],
             "storage": None,
+            "memory": None,
         }

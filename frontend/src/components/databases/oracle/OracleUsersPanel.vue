@@ -19,6 +19,7 @@ import {
   type OracleAccessGrantSource,
 } from '@/stores/oracleDba'
 import OracleBulkProvisionModal from '@/components/databases/oracle/OracleBulkProvisionModal.vue'
+import ScrollableDataTable from '@/components/common/ScrollableDataTable.vue'
 
 import {
   useProvisioningStore,
@@ -31,6 +32,7 @@ import {
 import { useAuthStore } from '@/stores/auth'
 import { hasPermission } from '@/core/permissions'
 import { formatUserDateTime } from '@/core/dateTime'
+import { confirmDialog, showToast } from '@/ui/feedback'
 
 const props = defineProps<{
   connectionId: string
@@ -312,11 +314,14 @@ async function clearSelectedProvisioningHistory() {
   const ids = [...selectedProvisioningRunIds.value]
   if (!ids.length) return
 
-  if (!window.confirm(
-    `Clear ${ids.length} selected provisioning history record${ids.length === 1 ? '' : 's'}? This does not change current Oracle accounts, application rows or LDAP entries, but the removed runs can no longer provide retry or history-linked deprovision context.`,
-  )) {
-    return
-  }
+  const confirmed = await confirmDialog({
+    title: 'Clear provisioning history',
+    message: `Clear ${ids.length} selected provisioning history record${ids.length === 1 ? '' : 's'}? Current Oracle accounts, application rows and LDAP entries are unchanged.`,
+    confirmLabel: 'Clear history',
+    destructive: true,
+    tone: 'danger',
+  })
+  if (!confirmed) return
 
   historyClearing.value = true
   historyError.value = null
@@ -341,11 +346,14 @@ async function clearSelectedProvisioningHistory() {
 async function clearAllProvisioningHistory() {
   if (!clearableProvisioningRuns.value.length) return
 
-  if (!window.confirm(
-    'Clear all completed provisioning history for this Oracle database? Current Oracle accounts, application rows and LDAP entries are not changed, but removed runs can no longer provide retry or history-linked deprovision context.',
-  )) {
-    return
-  }
+  const confirmed = await confirmDialog({
+    title: 'Clear all provisioning history',
+    message: 'Clear all completed provisioning history for this Oracle database? Current Oracle accounts, application rows and LDAP entries are unchanged.',
+    confirmLabel: 'Clear all history',
+    destructive: true,
+    tone: 'danger',
+  })
+  if (!confirmed) return
 
   historyClearing.value = true
   historyError.value = null
@@ -395,6 +403,8 @@ function retryLabel(run: ProvisioningRunSummary) {
 }
 
 async function retryRun(run: ProvisioningRunSummary) {
+  // No confirmation dialog: retry either starts immediately or asks only for
+  // the non-persisted password when a remaining step actually needs it.
   if (run.password_required) {
     retryPasswordRun.value = run
     retryPassword.value = ''
@@ -413,6 +423,7 @@ async function submitRetryPassword() {
   const run = retryPasswordRun.value
   const password = retryPassword.value
   await performRetry(run, password)
+  // Drop the password from component state immediately after the request.
   retryPassword.value = ''
 }
 
@@ -771,7 +782,8 @@ async function executeUserDeprovision() {
     )
     deprovisionResult.value = result
 
-
+    // Always refresh because a partial run may have removed linked rows even
+    // when the final Oracle DROP USER failed.
     await oracleStore.loadUsers(props.connectionId)
     if (historyOpen.value) {
       await loadProvisioningHistory()
@@ -780,6 +792,7 @@ async function executeUserDeprovision() {
     if (result.status === 'succeeded') {
       closeDeprovisionPreview()
     } else {
+      // Rebuild the preview so a retry reflects rows already cleaned up.
       deprovisionPreview.value = await provisioningStore.previewOracleUserDeprovision(
         props.connectionId,
         result.username,
@@ -1237,6 +1250,7 @@ async function executeProvisioning() {
     resultPassword.value = provisioningResult.value.account.password_applied
       ? submittedPassword
       : ''
+    // Never keep the submitted password in the editable form after execution.
     createForm.password = ''
     createStep.value = 'success'
     await oracleStore.loadUsers(props.connectionId)
@@ -1325,6 +1339,7 @@ async function createUser() {
     )
 
     resultPassword.value = submittedPassword
+    // Do not retain the submitted database password in the editable form.
     createForm.password = ''
     createStep.value = 'success'
 
@@ -1710,9 +1725,8 @@ onBeforeUnmount(() => {
         No provisioning lifecycle runs have been recorded for this database yet.
       </div>
 
-      <div v-else class="utility-table-wrap provisioning-history-table">
-        <table class="utility-table">
-          <thead>
+      <ScrollableDataTable v-else max-height="34rem">
+        <template #header>
             <tr>
               <th v-if="canClearProvisioningHistory" class="table-selection-cell">
                 <input
@@ -1731,8 +1745,7 @@ onBeforeUnmount(() => {
               <th>Started</th>
               <th>Retry</th>
             </tr>
-          </thead>
-          <tbody>
+        </template>
             <tr v-for="run in provisioningRuns" :key="run.run_id">
               <td v-if="canClearProvisioningHistory" class="table-selection-cell">
                 <input
@@ -1770,9 +1783,7 @@ onBeforeUnmount(() => {
                 <span v-else>—</span>
               </td>
             </tr>
-          </tbody>
-        </table>
-      </div>
+      </ScrollableDataTable>
 
       <div v-if="retryPasswordRun" class="provisioning-retry-password">
         <div>

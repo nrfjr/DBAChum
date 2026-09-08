@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 
+import ScrollableDataTable from '@/components/common/ScrollableDataTable.vue'
+
 import {
   useProvisioningStore,
   type BulkProvisionExecutionResult,
@@ -334,10 +336,8 @@ async function downloadResultsXlsx() {
             <div><span>Valid</span><strong>{{ importResult.valid_count }}</strong></div>
             <div><span>Invalid</span><strong>{{ importResult.invalid_count }}</strong></div>
           </div>
-          <div class="utility-table-wrap bulk-preview-table">
-            <table class="utility-table">
-              <thead><tr><th>Row</th><th>Employee ID</th><th>First</th><th>Middle</th><th>Last</th><th>Username</th><th>Reference</th><th>Password</th><th>Status</th></tr></thead>
-              <tbody>
+          <ScrollableDataTable max-height="27rem">
+            <template #header><tr><th>Row</th><th>Employee ID</th><th>First</th><th>Middle</th><th>Last</th><th>Username</th><th>Reference</th><th>Password</th><th>Status</th></tr></template>
                 <tr v-for="row in importResult.rows" :key="row.row_number" :class="{ 'bulk-row-invalid': !row.valid }">
                   <td>{{ row.row_number }}</td>
                   <td :class="{ 'bulk-cell-invalid': row.errors.employee_id }">{{ row.employee_id || '—' }}</td>
@@ -349,9 +349,7 @@ async function downloadResultsXlsx() {
                   <td :class="{ 'bulk-cell-invalid': row.errors.password }">{{ row.password_mode.toUpperCase() }}</td>
                   <td><span class="provisioning-status" :data-status="row.valid ? 'succeeded' : 'failed'">{{ row.valid ? 'VALID' : 'INVALID' }}</span><small v-if="!row.valid" class="field-error bulk-row-error">{{ rowError(row) }}</small></td>
                 </tr>
-              </tbody>
-            </table>
-          </div>
+          </ScrollableDataTable>
         </template>
 
         <p v-if="error" class="login-error">{{ error }}</p>
@@ -400,10 +398,8 @@ async function downloadResultsXlsx() {
           <div><span>Valid</span><strong>{{ preview.valid_count }}</strong></div>
           <div><span>Blocked</span><strong>{{ preview.invalid_count }}</strong></div>
         </div>
-        <div class="utility-table-wrap bulk-preview-table">
-          <table class="utility-table">
-            <thead><tr><th>Row</th><th>Username</th><th>Name</th><th>Reference</th><th>Roles</th><th>App steps</th><th>LDAP</th><th>Status</th></tr></thead>
-            <tbody>
+        <ScrollableDataTable max-height="27rem">
+          <template #header><tr><th>Row</th><th>Username</th><th>Name</th><th>Reference</th><th>Roles</th><th>App steps</th><th>LDAP</th><th>Status</th></tr></template>
               <tr v-for="row in preview.rows" :key="row.row_number" :class="{ 'bulk-row-invalid': !row.valid }">
                 <td>{{ row.row_number }}</td>
                 <td><strong>{{ row.username || '—' }}</strong></td>
@@ -414,9 +410,7 @@ async function downloadResultsXlsx() {
                 <td>{{ row.provisioning?.ldap.enabled ? 'YES' : '—' }}</td>
                 <td><span class="provisioning-status" :data-status="row.valid ? 'succeeded' : 'failed'">{{ row.valid ? 'READY' : 'BLOCKED' }}</span><small v-if="!row.valid" class="field-error bulk-row-error">{{ rowError(row) }}</small></td>
               </tr>
-            </tbody>
-          </table>
-        </div>
+        </ScrollableDataTable>
         <div class="utility-warning oracle-create-warning">Execution performs the normal single-user provisioning lifecycle for each row. One row failing does not hide later row results.</div>
         <p v-if="error" class="login-error">{{ error }}</p>
         <div class="connection-form-actions">
@@ -442,12 +436,8 @@ async function downloadResultsXlsx() {
           </div>
           <small>Passwords exist only in this open bulk session and are not added to DBAChum lifecycle/audit records.</small>
         </div>
-        <div class="utility-table-wrap bulk-preview-table">
-          <table class="utility-table">
-            <thead><tr><th>Row</th><th>Username</th><th>Initial password</th><th>Status</th><th>Run / audit</th><th>Error</th></tr></thead>
-            <tbody><tr v-for="row in execution.rows" :key="row.row_number"><td>{{ row.row_number }}</td><td><strong>{{ row.username || '—' }}</strong></td><td><code>{{ showResultPasswords ? passwordForRow(row.row_number) : '••••••••' }}</code></td><td><span class="provisioning-status" :data-status="row.status">{{ row.status.toUpperCase() }}</span></td><td><small>{{ row.run_id || row.audit_id || '—' }}</small></td><td><small :class="{ 'field-error': row.error }">{{ row.error || '—' }}</small></td></tr></tbody>
-          </table>
-        </div>
+        <ScrollableDataTable max-height="27rem">
+          <template #header><tr><th>Row</th><th>Username</th><th>Initial password</th><th>Status</th><th>Run / audit</th><th>Error</th></tr></template><tr v-for="row in execution.rows" :key="row.row_number"><td>{{ row.row_number }}</td><td><strong>{{ row.username || '—' }}</strong></td><td><code>{{ showResultPasswords ? passwordForRow(row.row_number) : '••••••••' }}</code></td><td><span class="provisioning-status" :data-status="row.status">{{ row.status.toUpperCase() }}</span></td><td><small>{{ row.run_id || row.audit_id || '—' }}</small></td><td><small :class="{ 'field-error': row.error }">{{ row.error || '—' }}</small></td></tr>        </ScrollableDataTable>
         <p v-if="error" class="login-error">{{ error }}</p>
         <div class="connection-form-actions">
           <button v-if="retryableResults.length" type="button" class="primary-button" :disabled="loading" @click="retryFailed">{{ loading ? 'Retrying...' : 'Retry failed / partial' }}</button>

@@ -8,6 +8,7 @@ SERVER_METRICS_COLLECTION_NAME = "server_metric_samples"
 ORACLE_SQL_TEXT_COLLECTION_NAME = "oracle_sql_texts"
 COLLECTOR_STATUS_COLLECTION_NAME = "collector_status"
 ALERTS_COLLECTION_NAME = "alerts"
+ANALYTICS_DAILY_COLLECTION_NAME = "analytics_daily_snapshots"
 
 
 def telemetry_retention_seconds() -> int:
@@ -46,17 +47,11 @@ async def _ensure_timeseries_collection(
 
 
 async def ensure_metrics_collection(database) -> None:
-    await _ensure_timeseries_collection(
-        database,
-        METRICS_COLLECTION_NAME,
-    )
+    await _ensure_timeseries_collection(database, METRICS_COLLECTION_NAME)
 
 
 async def ensure_server_metrics_collection(database) -> None:
-    await _ensure_timeseries_collection(
-        database,
-        SERVER_METRICS_COLLECTION_NAME,
-    )
+    await _ensure_timeseries_collection(database, SERVER_METRICS_COLLECTION_NAME)
 
 
 async def ensure_telemetry_collections(database) -> None:
@@ -64,11 +59,7 @@ async def ensure_telemetry_collections(database) -> None:
     await ensure_server_metrics_collection(database)
 
     await database[ORACLE_SQL_TEXT_COLLECTION_NAME].create_index(
-        [
-            ("connection_id", 1),
-            ("sql_id", 1),
-            ("child_number", 1),
-        ],
+        [("connection_id", 1), ("sql_id", 1), ("child_number", 1)],
         unique=True,
         name="uq_oracle_sql_text_connection_sql_child",
     )

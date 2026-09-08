@@ -8,6 +8,7 @@ from app.connectors.mysql_health import get_mysql_health
 from app.connectors.mysql_storage import get_mysql_storage
 from app.connectors.oracle_telemetry import collect_oracle_telemetry
 from app.connectors.sqlserver_health import get_sqlserver_health
+from app.connectors.sqlserver_storage import get_sqlserver_storage
 from app.core.collections import (
     METRICS_COLLECTION_NAME,
     ORACLE_SQL_TEXT_COLLECTION_NAME,
@@ -20,6 +21,8 @@ from app.services.database_connections import monitored_connections_filter
 from app.services.database_overview import collect_database_overview
 from app.services.server_monitoring import collect_server_telemetry
 from app.services.alerting import evaluate_database_sample, evaluate_server_sample
+from app.services.analytics import persist_database_analytics_snapshot, persist_server_analytics_snapshot
+from app.services.database_backups import load_database_backups
 
 
 logger = logging.getLogger(__name__)
@@ -56,20 +59,31 @@ class CollectorDeltaState:
     session_cpu: dict[str, dict[tuple[int, int], int]] = field(default_factory=dict)
     wait_stats: dict[str, dict[str, tuple[int, int]]] = field(default_factory=dict)
     last_storage_at: dict[str, datetime] = field(default_factory=dict)
+    oracle_storage: dict[str, dict] = field(default_factory=dict)
+    oracle_memory: dict[str, dict] = field(default_factory=dict)
     last_sqlserver_health_at: dict[str, datetime] = field(default_factory=dict)
     sqlserver_health: dict[str, dict] = field(default_factory=dict)
+    last_sqlserver_storage_at: dict[str, datetime] = field(default_factory=dict)
+    sqlserver_storage: dict[str, dict] = field(default_factory=dict)
     mysql_counters: dict[str, dict[str, int]] = field(default_factory=dict)
     last_mysql_storage_at: dict[str, datetime] = field(default_factory=dict)
     mysql_storage: dict[str, dict] = field(default_factory=dict)
     last_server_at: dict[str, datetime] = field(default_factory=dict)
+    last_analytics_at: dict[str, datetime] = field(default_factory=dict)
+    last_analytics_backup_at: dict[str, datetime] = field(default_factory=dict)
+    analytics_backup: dict[str, dict | None] = field(default_factory=dict)
 
     def reset_connection(self, connection_id: str) -> None:
         self.system_stats.pop(connection_id, None)
         self.sql_stats.pop(connection_id, None)
         self.session_cpu.pop(connection_id, None)
         self.wait_stats.pop(connection_id, None)
+        self.oracle_storage.pop(connection_id, None)
+        self.oracle_memory.pop(connection_id, None)
         self.last_sqlserver_health_at.pop(connection_id, None)
         self.sqlserver_health.pop(connection_id, None)
+        self.last_sqlserver_storage_at.pop(connection_id, None)
+        self.sqlserver_storage.pop(connection_id, None)
         self.mysql_counters.pop(connection_id, None)
         self.last_mysql_storage_at.pop(connection_id, None)
         self.mysql_storage.pop(connection_id, None)
@@ -89,6 +103,26 @@ class CollectorDeltaState:
         return (
             now - previous
         ).total_seconds() >= settings.sqlserver_health_interval_seconds
+
+    def sqlserver_storage_due(self, connection_id: str, now: datetime) -> bool:
+        previous = self.last_sqlserver_storage_at.get(connection_id)
+        if previous is None:
+            return True
+        return (
+            now - previous
+        ).total_seconds() >= settings.sqlserver_storage_interval_seconds
+
+    def analytics_due(self, target_key: str, now: datetime) -> bool:
+        previous = self.last_analytics_at.get(target_key)
+        if previous is None:
+            return True
+        return (now - previous).total_seconds() >= settings.analytics_snapshot_interval_seconds
+
+    def analytics_backup_due(self, connection_id: str, now: datetime) -> bool:
+        previous = self.last_analytics_backup_at.get(connection_id)
+        if previous is None:
+            return True
+        return (now - previous).total_seconds() >= settings.analytics_backup_interval_seconds
 
     def mysql_storage_due(self, connection_id: str, now: datetime) -> bool:
         previous = self.last_mysql_storage_at.get(connection_id)
@@ -594,12 +628,36 @@ async def _collect_database_sample(
                     connection_id,
                     exc,
                 )
+                # Availability is already proven by Overview. Do not turn a
+                # permission/secondary telemetry problem into a false outage.
                 sample["warnings"].append(
                     "SQL Server operational health snapshot unavailable."
                 )
 
+        if state.sqlserver_storage_due(connection_id, now):
+            state.last_sqlserver_storage_at[connection_id] = now
+            try:
+                storage = await get_sqlserver_storage(connection)
+                state.sqlserver_storage[connection_id] = {
+                    "available": storage.get("available", True),
+                    "database_name": storage.get("database_name"),
+                    "allocated_bytes": storage.get("allocated_bytes"),
+                    "used_bytes": storage.get("used_bytes"),
+                    "files": storage.get("files") or [],
+                    "checked_at": storage.get("checked_at"),
+                }
+            except Exception as exc:
+                logger.warning(
+                    "SQL Server storage telemetry unavailable connection_id=%s: %s",
+                    connection_id,
+                    exc,
+                )
+                sample["warnings"].append("SQL Server storage snapshot unavailable.")
+
         if connection_id in state.sqlserver_health:
-            sample["sqlserver"] = state.sqlserver_health[connection_id]
+            sample["sqlserver"] = dict(state.sqlserver_health[connection_id])
+            if connection_id in state.sqlserver_storage:
+                sample["sqlserver"]["storage"] = state.sqlserver_storage[connection_id]
         return sample
 
     if engine == "mysql":
@@ -625,7 +683,10 @@ async def _collect_database_sample(
             return sample
 
         if state.mysql_storage_due(connection_id, now):
-
+            # Storage is intentionally sampled less often than lightweight
+            # GLOBAL STATUS/processlist metrics. Record the attempt time even
+            # when permissions are insufficient so the collector does not
+            # retry an expensive INFORMATION_SCHEMA aggregation every cycle.
             state.last_mysql_storage_at[connection_id] = now
             try:
                 storage = await get_mysql_storage(connection)
@@ -647,6 +708,9 @@ async def _collect_database_sample(
         )
         sample["mysql"] = compact
 
+        # Prefer the richer health snapshot for shared history concepts while
+        # preserving Overview's latency/availability. These metrics are native
+        # instance counters, so alert evaluation deduplicates host:port owners.
         if compact.get("threads_running") is not None:
             sample["active"] = compact["threads_running"]
         if compact.get("connections_current") is not None:
@@ -667,6 +731,10 @@ async def _collect_database_sample(
     )
     if include_storage:
         state.last_storage_at[connection_id] = now
+        if telemetry.get("storage") is not None:
+            state.oracle_storage[connection_id] = telemetry["storage"]
+        if telemetry.get("memory") is not None:
+            state.oracle_memory[connection_id] = telemetry["memory"]
 
     sample = build_metric_sample(
         {
@@ -678,7 +746,8 @@ async def _collect_database_sample(
     )
 
     if telemetry.get("status") == "unreachable":
-
+        # Do not calculate a recovery sample against stale counters from before
+        # an outage. The first healthy sample after a gap becomes a baseline.
         state.reset_connection(connection_id)
         return sample
 
@@ -713,8 +782,10 @@ async def _collect_database_sample(
         "top_sessions": top_sessions,
         "top_waits": top_waits,
     }
-    if telemetry.get("storage") is not None:
-        sample["oracle"]["storage"] = telemetry["storage"]
+    if connection_id in state.oracle_storage:
+        sample["oracle"]["storage"] = state.oracle_storage[connection_id]
+    if connection_id in state.oracle_memory:
+        sample["oracle"]["memory"] = state.oracle_memory[connection_id]
 
     await _cache_sql_texts(database, connection_id, sql_texts)
     return sample
@@ -730,7 +801,13 @@ def _sqlserver_instance_alert_owners(
     connections: list[dict],
     samples: list[dict] | None = None,
 ) -> set[str]:
+    """Pick one deterministic healthy DB connection per SQL Server instance.
 
+    tempdb and SQL Agent belong to the SQL Server instance, not an individual
+    database. Prefer the first healthy monitored connection for each host:port;
+    if every connection is unavailable, fall back to the first one so existing
+    instance alerts can still transition predictably.
+    """
     samples = samples or []
     owners: dict[str, tuple[str, bool]] = {}
     for index, connection in enumerate(connections):
@@ -755,7 +832,12 @@ def _mysql_instance_alert_owners(
     connections: list[dict],
     samples: list[dict] | None = None,
 ) -> set[str]:
+    """Pick one deterministic healthy connection per MySQL/MariaDB instance.
 
+    Threads_connected/running, max_connections, and the InnoDB lock snapshot
+    are instance-level signals. A server may be saved once per schema, so one
+    host:port owner prevents the Alert Center from emitting duplicate events.
+    """
     samples = samples or []
     owners: dict[str, tuple[str, bool]] = {}
     for index, connection in enumerate(connections):
@@ -865,6 +947,50 @@ async def collect_database_metrics_once(
                     connection.get("_id"),
                     alert_result,
                 )
+
+    now = _utcnow()
+
+    async def persist_analytics(connection: dict, sample: dict) -> None:
+        connection_id = str(connection["_id"])
+        target_key = f"database:{connection_id}"
+        if not state.analytics_due(target_key, now):
+            return
+        state.last_analytics_at[target_key] = now
+
+        latest_backup = state.analytics_backup.get(connection_id)
+        if sample.get("status") in {"online", "limited"} and state.analytics_backup_due(connection_id, now):
+            state.last_analytics_backup_at[connection_id] = now
+            try:
+                today = now.date()
+                backup_result = await load_database_backups(
+                    database,
+                    connection_id,
+                    window="custom",
+                    start_date=today - timedelta(days=30),
+                    end_date=today,
+                )
+                latest_backup = backup_result.get("latest_backup")
+                state.analytics_backup[connection_id] = latest_backup
+            except Exception as exc:
+                logger.warning(
+                    "Analytics backup summary unavailable connection_id=%s: %s",
+                    connection_id,
+                    exc,
+                )
+
+        try:
+            await persist_database_analytics_snapshot(
+                database,
+                connection,
+                sample,
+                latest_backup=latest_backup,
+            )
+        except Exception:
+            logger.exception("Database analytics snapshot failed connection_id=%s", connection_id)
+
+    await asyncio.gather(
+        *(persist_analytics(connection, sample) for connection, sample in zip(connections, samples))
+    )
 
     result.online_count = sum(
         1 for sample in samples if sample.get("status") in {"online", "limited"}
@@ -982,6 +1108,23 @@ async def collect_server_metrics_once(
                     alert_result,
                 )
 
+    now = _utcnow()
+
+    async def persist_server_analytics(server: dict, sample: dict) -> None:
+        server_id = str(server["_id"])
+        target_key = f"server:{server_id}"
+        if not state.analytics_due(target_key, now):
+            return
+        state.last_analytics_at[target_key] = now
+        try:
+            await persist_server_analytics_snapshot(database, server, sample)
+        except Exception:
+            logger.exception("Server analytics snapshot failed server_id=%s", server_id)
+
+    await asyncio.gather(
+        *(persist_server_analytics(server, sample) for server, sample in zip(due_servers, samples))
+    )
+
     result.online_count = sum(
         1 for sample in samples if sample.get("status") in {"online", "limited"}
     )
@@ -1001,6 +1144,7 @@ async def collect_collector_cycle(
     )
 
 
+# Backward-compatible helper retained for the existing one-shot utility/tests.
 async def collect_metrics_once(database) -> int:
     state = CollectorDeltaState()
     result = await collect_database_metrics_once(database, state)

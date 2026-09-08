@@ -4,6 +4,7 @@ import { computed, onMounted, ref } from 'vue'
 import ScrollableDataTable from '@/components/common/ScrollableDataTable.vue'
 import { useDatabasePerformanceStore, type SqlPlanResponse, type TopSqlItem } from '@/stores/databasePerformance'
 import type { DatabaseEngine } from '@/stores/connections'
+import { formDialog } from '@/ui/feedback'
 
 const props = defineProps<{ connectionId: string; engine: DatabaseEngine }>()
 const store = useDatabasePerformanceStore()
@@ -47,19 +48,19 @@ async function loadPlan(item: TopSqlItem) {
         plan_handle: item.plan_handle,
       }, item.key)
     } else {
-      const sql = window.prompt('Paste a representative real SELECT for this normalized digest. DBAChum will run EXPLAIN only:', '')
-      if (!sql?.trim()) return
-      selectedPlan.value = await store.loadPlan(props.connectionId, { sql_text: sql }, item.key)
+      const result = await formDialog({ title: 'Explain representative SQL', message: 'Paste a representative real SELECT for this normalized digest. DBAChum runs EXPLAIN only.', confirmLabel: 'Explain SQL', fields: [{ name: 'sql', label: 'SELECT statement', type: 'textarea', required: true }] })
+      if (!result) return
+      selectedPlan.value = await store.loadPlan(props.connectionId, { sql_text: String(result.sql).trim() }, item.key)
     }
   } catch {}
 }
 
 async function explainMySqlSql() {
-  const sql = window.prompt('Paste a SELECT to EXPLAIN. The query itself will not be executed:', '')
-  if (!sql?.trim()) return
+  const result = await formDialog({ title: 'Explain SQL', message: 'Paste a SELECT statement. The query itself will not be executed.', confirmLabel: 'Explain SQL', fields: [{ name: 'sql', label: 'SELECT statement', type: 'textarea', required: true }] })
+  if (!result) return
   selected.value = null
   try {
-    selectedPlan.value = await store.loadPlan(props.connectionId, { sql_text: sql }, 'manual')
+    selectedPlan.value = await store.loadPlan(props.connectionId, { sql_text: String(result.sql).trim() }, 'manual')
   } catch {}
 }
 

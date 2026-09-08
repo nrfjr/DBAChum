@@ -234,3 +234,19 @@ async def create_indexes(
         name="ttl_email_deliveries_expires_at",
     )
 
+
+    await database.analytics_daily_snapshots.create_index(
+        [("target_type", 1), ("target_id", 1), ("day", 1)],
+        unique=True,
+        name="uq_analytics_daily_target_day",
+    )
+
+    await database.analytics_daily_snapshots.create_index(
+        [("target_type", 1), ("day", -1)],
+        name="ix_analytics_daily_type_day",
+    )
+
+    await database.analytics_daily_snapshots.create_index(
+        [("target_type", 1), ("target_id", 1), ("collected_at", -1)],
+        name="ix_analytics_daily_target_collected",
+    )

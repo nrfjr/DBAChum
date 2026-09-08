@@ -15,6 +15,8 @@ import {
 
 import { useAuthStore } from '@/stores/auth'
 import { formatUserDateTime } from '@/core/dateTime'
+import { confirmDialog, showToast } from '@/ui/feedback'
+import ScrollableDataTable from '@/components/common/ScrollableDataTable.vue'
 
 const emailStore = useEmailDeliveryStore()
 const authStore = useAuthStore()
@@ -119,6 +121,7 @@ async function saveSettings() {
     applySettings()
     savedMessage.value = 'Email delivery settings saved.'
   } catch {
+    // Store exposes the server-side validation message.
   }
 }
 
@@ -149,11 +152,7 @@ async function retryDelivery(id: string) {
   try {
     await emailStore.retry(id)
   } catch (cause) {
-    window.alert(
-      cause instanceof Error
-        ? cause.message
-        : 'Unable to retry delivery.',
-    )
+    showToast({ title: 'Unable to retry delivery', message: cause instanceof Error ? cause.message : undefined, tone: 'danger' })
   }
 }
 
@@ -171,11 +170,14 @@ async function clearSelectedDeliveries() {
   const ids = [...selectedDeliveryIds.value]
   if (!ids.length) return
 
-  if (!window.confirm(
-    `Clear ${ids.length} selected terminal delivery record${ids.length === 1 ? '' : 's'}? Pending/retrying mail is never removed by this action.`,
-  )) {
-    return
-  }
+  const confirmed = await confirmDialog({
+    title: 'Clear delivery history',
+    message: `Clear ${ids.length} selected terminal delivery record${ids.length === 1 ? '' : 's'}? Pending and retrying mail will remain queued.`,
+    confirmLabel: 'Clear selected',
+    destructive: true,
+    tone: 'danger',
+  })
+  if (!confirmed) return
 
   deliveryClearMessage.value = ''
   deliveryClearError.value = ''
@@ -193,11 +195,14 @@ async function clearSelectedDeliveries() {
 async function clearAllDeliveries() {
   if (!clearableDeliveries.value.length) return
 
-  if (!window.confirm(
-    'Clear all sent/failed email delivery history? Queued, retrying and in-flight mail will remain queued.',
-  )) {
-    return
-  }
+  const confirmed = await confirmDialog({
+    title: 'Clear all delivery history',
+    message: 'Clear all sent/failed email delivery history? Queued, retrying and in-flight mail will remain queued.',
+    confirmLabel: 'Clear history',
+    destructive: true,
+    tone: 'danger',
+  })
+  if (!confirmed) return
 
   deliveryClearMessage.value = ''
   deliveryClearError.value = ''
@@ -222,6 +227,7 @@ onMounted(async () => {
     await emailStore.load()
     applySettings()
   } catch {
+    // Error is shown from store state.
   }
 })
 </script>
@@ -457,9 +463,8 @@ onMounted(async () => {
           No email delivery records yet.
         </div>
 
-        <div v-else class="utility-table-wrap">
-          <table class="utility-table email-delivery-table">
-            <thead>
+        <ScrollableDataTable v-else max-height="34rem">
+          <template #header>
               <tr>
                 <th class="table-selection-cell">
                   <input
@@ -479,8 +484,7 @@ onMounted(async () => {
                 <th>Attempts</th>
                 <th>Details</th>
               </tr>
-            </thead>
-            <tbody>
+          </template>
               <tr v-for="delivery in emailStore.deliveries" :key="delivery.id">
                 <td class="table-selection-cell">
                   <input
@@ -528,9 +532,7 @@ onMounted(async () => {
                   </button>
                 </td>
               </tr>
-            </tbody>
-          </table>
-        </div>
+        </ScrollableDataTable>
       </section>
     </template>
   </div>

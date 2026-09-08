@@ -23,6 +23,7 @@ import {
 import { useConnectionsStore } from '@/stores/connections'
 import { useServersStore } from '@/stores/servers'
 import { useUiStore } from '@/stores/ui'
+import { confirmDialog, showToast } from '@/ui/feedback'
 
 
 const authStore = useAuthStore()
@@ -409,11 +410,13 @@ async function importPreferences(event: Event) {
 }
 
 async function resetPreferences() {
-  if (!window.confirm(
-    'Reset your personal preferences and alert subscriptions to DBAChum defaults? Your profile name and email are not changed.',
-  )) {
-    return
-  }
+  const confirmed = await confirmDialog({
+    title: 'Reset preferences',
+    message: 'Reset personal preferences and alert subscriptions to DBAChum defaults? Your profile name and email are not changed.',
+    confirmLabel: 'Reset preferences',
+    tone: 'warning',
+  })
+  if (!confirmed) return
 
   preferenceDataError.value = null
   preferenceDataMessage.value = null
@@ -676,6 +679,7 @@ function engineLabel(engine: NotificationEngine) {
                 type="radio"
                 name="accent"
                 :value="accent"
+                class="profile-radio-accent"
               />
               <span class="accent-dot" :data-accent-preview="accent" />
               <span>{{ accent }}</span>

@@ -6,6 +6,7 @@ import { engineLabel } from '@/core/databasePresentation'
 import { hasPermission } from '@/core/permissions'
 import { useAuthStore } from '@/stores/auth'
 import { useRecordsStore, type DbaRecord, type RecordStatus, type RecordType } from '@/stores/records'
+import { confirmDialog, showToast } from '@/ui/feedback'
 
 const route = useRoute()
 const router = useRouter()
@@ -95,9 +96,11 @@ function editRecord() {
 
 async function deleteRecord() {
   if (!record.value || !canManage.value) return
-  if (!window.confirm(`Delete record "${record.value.name}"? This will not delete linked Connections or Servers.`)) return
+  const confirmed = await confirmDialog({ title: 'Delete record', message: `Delete ${record.value.name}? Linked Connections and Servers will not be deleted.`, confirmLabel: 'Delete record', destructive: true, tone: 'danger' })
+  if (!confirmed) return
   try {
     await recordsStore.remove(record.value.id)
+    showToast({ title: 'Record deleted', message: record.value.name, tone: 'success' })
     await router.push('/records')
   } catch (err) {
     error.value = err instanceof Error ? err.message : 'Unable to delete record.'

@@ -374,8 +374,7 @@ watch(
             @click="selectRole(role)"
           >
             <td>
-              <strong>{{ role.name }}</strong>
-              <small v-if="role.powerful">⚠ Elevated</small>
+              <strong>{{ role.name }}<small v-if="role.powerful"> ⚠</small></strong>
             </td>
             <td>
               <span :class="role.manageable ? 'role-manageable' : 'role-protected'">

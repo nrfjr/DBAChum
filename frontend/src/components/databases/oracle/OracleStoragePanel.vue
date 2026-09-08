@@ -6,6 +6,7 @@ import { hasPermission } from '@/core/permissions'
 import { useAuthStore } from '@/stores/auth'
 import { useDatabaseOperationsStore } from '@/stores/databaseOperations'
 import { useOracleDbaStore, type OracleDatafile } from '@/stores/oracleDba'
+import { formDialog, showToast } from '@/ui/feedback'
 
 const props = defineProps<{ connectionId: string }>()
 const oracleStore = useOracleDbaStore()
@@ -31,65 +32,120 @@ function formatBytes(bytes: number | null) {
 
 async function resizeDatafile(file: OracleDatafile) {
   const currentMb = Math.round(file.size_bytes / 1024 / 1024)
-  const raw = window.prompt(`Resize datafile ${file.file_id} to how many MB?`, String(currentMb))
-  if (raw == null) return
-  const sizeMb = Number.parseInt(raw, 10)
-  if (!Number.isFinite(sizeMb) || sizeMb < 1) return window.alert('Enter a valid size in MB.')
-  if (!window.confirm(`Resize ${file.file_name} from ${currentMb} MB to ${sizeMb} MB?`)) return
+  const result = await formDialog({
+    title: 'Resize Oracle datafile',
+    message: `${file.file_name} · current size ${formatBytes(file.size_bytes)}`,
+    confirmLabel: 'Resize datafile',
+    fields: [
+      {
+        name: 'size_mb',
+        label: 'New size',
+        type: 'size-gb',
+        value: currentMb,
+        presetsGb: [10, 20, 30],
+        minMb: currentMb,
+        hint: 'Shrinking is intentionally blocked here. Choose a larger preset or Custom.',
+      },
+    ],
+  })
+  if (!result) return
   try {
-    await operations.runStorage(props.connectionId, { action: 'resize_file', size_mb: sizeMb, file_id: file.file_id })
+    await operations.runStorage(props.connectionId, {
+      action: 'resize_file',
+      size_mb: Number(result.size_mb),
+      file_id: file.file_id,
+    })
     await oracleStore.loadStorage(props.connectionId)
+    showToast({ title: 'Datafile resized', message: file.file_name, tone: 'success' })
   } catch {}
 }
 
 async function createTablespace() {
-  const tablespace = window.prompt('New tablespace name:')?.trim()
-  if (!tablespace) return
-  const physicalName = window.prompt('Initial datafile path (leave blank only if Oracle Managed Files is configured):')?.trim() || null
-  const rawSize = window.prompt('Initial size in MB:', '1024')
-  if (!rawSize) return
-  const sizeMb = Number.parseInt(rawSize, 10)
-  if (!Number.isFinite(sizeMb) || sizeMb < 1) return window.alert('Enter a valid size in MB.')
-  const rawGrowth = window.prompt('AUTOEXTEND NEXT MB:', '128')
-  if (rawGrowth == null) return
-  const growthMb = rawGrowth.trim() ? Number.parseInt(rawGrowth, 10) : null
-  if (growthMb != null && (!Number.isFinite(growthMb) || growthMb < 1)) return window.alert('Enter a valid growth size.')
-  const rawMax = window.prompt('MAXSIZE MB (leave blank for UNLIMITED):', '')
-  if (rawMax == null) return
-  const maxSizeMb = rawMax.trim() ? Number.parseInt(rawMax, 10) : null
-  if (maxSizeMb != null && (!Number.isFinite(maxSizeMb) || maxSizeMb < sizeMb)) return window.alert('MAXSIZE must be at least the initial size.')
-  if (!window.confirm(`Create tablespace ${tablespace} with ${sizeMb} MB initial size?`)) return
+  const result = await formDialog({
+    title: 'Create Oracle tablespace',
+    message: 'Create the tablespace and its initial datafile. Leave the path blank only when Oracle Managed Files is configured.',
+    confirmLabel: 'Create tablespace',
+    fields: [
+      { name: 'tablespace', label: 'Tablespace name', type: 'text', required: true, placeholder: 'USERS_DATA' },
+      { name: 'physical_name', label: 'Initial datafile path', type: 'text', placeholder: '/u02/oradata/DB/users_data01.dbf' },
+      { name: 'size_mb', label: 'Initial size', type: 'size-gb', value: 10240, presetsGb: [10, 20, 30] },
+      {
+        name: 'growth_mb', label: 'Autoextend NEXT', type: 'select', value: '128',
+        options: [
+          { label: '128 MB', value: '128' },
+          { label: '256 MB', value: '256' },
+          { label: '512 MB', value: '512' },
+          { label: '1 GB', value: '1024' },
+        ],
+      },
+      {
+        name: 'max_size_mb', label: 'Maximum size', type: 'select', value: '',
+        options: [
+          { label: 'Unlimited', value: '' },
+          { label: '20 GB', value: String(20 * 1024) },
+          { label: '30 GB', value: String(30 * 1024) },
+          { label: '50 GB', value: String(50 * 1024) },
+        ],
+      },
+    ],
+  })
+  if (!result) return
+
+  const sizeMb = Number(result.size_mb)
+  const maxSizeMb = result.max_size_mb ? Number(result.max_size_mb) : null
+  if (maxSizeMb != null && maxSizeMb < sizeMb) {
+    showToast({ title: 'Maximum size is too small', message: 'MAXSIZE must be at least the initial datafile size.', tone: 'danger' })
+    return
+  }
+
   try {
     await operations.runStorage(props.connectionId, {
       action: 'create_tablespace',
       size_mb: sizeMb,
-      tablespace_name: tablespace,
-      physical_name: physicalName,
+      tablespace_name: String(result.tablespace).trim(),
+      physical_name: String(result.physical_name ?? '').trim() || null,
       autoextend: true,
-      growth_mb: growthMb,
+      growth_mb: Number(result.growth_mb),
       max_size_mb: maxSizeMb,
     })
     await oracleStore.loadStorage(props.connectionId)
+    showToast({ title: 'Tablespace created', message: String(result.tablespace), tone: 'success' })
   } catch {}
 }
 
 async function addDatafile(tablespace: string) {
   if (!tablespace) return
-  const physicalName = window.prompt('Datafile path (leave blank only if Oracle Managed Files is configured):')?.trim() || null
-  const rawSize = window.prompt('Initial size in MB:', '1024')
-  if (!rawSize) return
-  const sizeMb = Number.parseInt(rawSize, 10)
-  if (!Number.isFinite(sizeMb) || sizeMb < 1) return window.alert('Enter a valid size in MB.')
-  const rawGrowth = window.prompt('AUTOEXTEND NEXT MB (leave blank for automatic default):', '128')
-  const growthMb = rawGrowth?.trim() ? Number.parseInt(rawGrowth, 10) : null
-  if (growthMb != null && (!Number.isFinite(growthMb) || growthMb < 1)) return window.alert('Enter a valid growth size.')
-  if (!window.confirm(`Add ${sizeMb} MB datafile to tablespace ${tablespace}?`)) return
+  const result = await formDialog({
+    title: `Add datafile to ${tablespace}`,
+    message: 'Choose a controlled initial size. Leave the path blank only when Oracle Managed Files is configured.',
+    confirmLabel: 'Add datafile',
+    fields: [
+      { name: 'physical_name', label: 'Datafile path', type: 'text', placeholder: '/u02/oradata/DB/users_data02.dbf' },
+      { name: 'size_mb', label: 'Initial size', type: 'size-gb', value: 10240, presetsGb: [10, 20, 30] },
+      {
+        name: 'growth_mb', label: 'Autoextend NEXT', type: 'select', value: '128',
+        options: [
+          { label: '128 MB', value: '128' },
+          { label: '256 MB', value: '256' },
+          { label: '512 MB', value: '512' },
+          { label: '1 GB', value: '1024' },
+        ],
+      },
+    ],
+  })
+  if (!result) return
+
   try {
     await operations.runStorage(props.connectionId, {
-      action: 'add_file', size_mb: sizeMb, tablespace_name: tablespace,
-      physical_name: physicalName, autoextend: true, growth_mb: growthMb,
+      action: 'add_file',
+      size_mb: Number(result.size_mb),
+      tablespace_name: tablespace,
+      physical_name: String(result.physical_name ?? '').trim() || null,
+      autoextend: true,
+      growth_mb: Number(result.growth_mb),
     })
     await oracleStore.loadStorage(props.connectionId)
+    showToast({ title: 'Datafile added', message: tablespace, tone: 'success' })
   } catch {}
 }
 

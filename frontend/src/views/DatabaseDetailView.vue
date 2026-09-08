@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import DatabaseAccessPanel from '@/components/databases/DatabaseAccessPanel.vue'
@@ -31,6 +31,7 @@ import { useRecordsStore } from '@/stores/records'
 import { useServersStore } from '@/stores/servers'
 import type { Server } from '@/stores/servers'
 import { useTerminalSessionsStore } from '@/stores/terminalSessions'
+import { showToast } from '@/ui/feedback'
 
 const route = useRoute()
 const router = useRouter()
@@ -45,8 +46,10 @@ const terminalStore = useTerminalSessionsStore()
 
 const refreshing = ref(false)
 const testingConnection = ref(false)
-const workspaceMessage = ref<string | null>(null)
-const workspaceMessageTone = ref<'success' | 'error' | 'info'>('info')
+const actionMenuOpen = ref(false)
+const connectionTestNotice = ref<string | null>(null)
+const connectionTestTone = ref<'success' | 'error'>('success')
+let connectionNoticeTimer: ReturnType<typeof setTimeout> | undefined
 
 const connectionId = computed(() => route.params.id as string)
 
@@ -59,6 +62,17 @@ const connection = computed(() =>
 const overview = computed(() =>
   databasesStore.overviews[connectionId.value],
 )
+
+const reachabilityTone = computed<'reachable' | 'unreachable' | 'unknown'>(() => {
+  if (connectionTestNotice.value) {
+    return connectionTestTone.value === 'success' ? 'reachable' : 'unreachable'
+  }
+
+  const status = overview.value?.status
+  if (status === 'online' || status === 'limited') return 'reachable'
+  if (status === 'unreachable') return 'unreachable'
+  return 'unknown'
+})
 
 type DatabaseTab =
   | 'overview'
@@ -98,12 +112,31 @@ const visitedTabs = reactive<Record<DatabaseTab, boolean>>({
 })
 
 const moreOpen = ref(false)
+const tabLabels: Record<DatabaseTab, string> = {
+  overview: 'Overview',
+  metrics: 'Metrics',
+  sessions: 'Sessions',
+  storage: 'Storage',
+  backups: 'Backups',
+  users_access: 'Users / Access',
+  parameters: 'Parameters',
+  jobs: 'Jobs',
+  maintenance: 'Maintenance',
+}
+
+const activeTabLabel = computed(() => tabLabels[activeTab.value])
 
 function selectTab(tab: DatabaseTab) {
   if (!tabIsAvailable(tab)) return
   visitedTabs[tab] = true
   activeTab.value = tab
   moreOpen.value = false
+  actionMenuOpen.value = false
+
+  const query = { ...route.query }
+  if (tab === 'overview') delete query.tab
+  else query.tab = tab
+  void router.replace({ name: 'database-detail', params: { id: connectionId.value }, query })
 }
 
 function applyTabFromRoute() {
@@ -218,10 +251,6 @@ const primaryRecord = computed(() =>
   ?? null,
 )
 
-const workspaceEnvironment = computed(() =>
-  primaryRecord.value?.environment ?? 'Environment not recorded',
-)
-
 const overviewMetrics = ref<DatabaseMetricHistory | null>(null)
 const overviewBackups = ref<DatabaseBackupResponse | null>(null)
 
@@ -298,6 +327,11 @@ const metricsSummary = computed(() => ({
   secondary: latestMetric.value ? `Collector ${latestMetric.value.status}` : 'No collector sample in the last hour',
 }))
 
+const uptimeSummary = computed(() => ({
+  primary: formatUptime(overview.value?.uptime_seconds),
+  secondary: overview.value?.uptime_seconds != null ? 'Database runtime' : 'Uptime unavailable',
+}))
+
 async function loadOverviewSummaries() {
   const [metricsResult, backupsResult] = await Promise.allSettled([
     metricsStore.loadHistory(connectionId.value, 1),
@@ -313,17 +347,21 @@ const readyTerminalServers = computed(() =>
   ),
 )
 
-function showWorkspaceMessage(
-  message: string,
-  tone: 'success' | 'error' | 'info' = 'info',
-) {
-  workspaceMessage.value = message
-  workspaceMessageTone.value = tone
+function showConnectionNotice(message: string, tone: 'success' | 'error') {
+  connectionTestNotice.value = message
+  connectionTestTone.value = tone
+  if (connectionNoticeTimer) clearTimeout(connectionNoticeTimer)
+  connectionNoticeTimer = setTimeout(() => {
+    connectionTestNotice.value = null
+  }, tone === 'success' ? 4500 : 7000)
+}
+
+function closeActionMenu() {
+  actionMenuOpen.value = false
 }
 
 async function refreshWorkspace() {
   refreshing.value = true
-  workspaceMessage.value = null
 
   try {
     await Promise.allSettled([
@@ -332,7 +370,7 @@ async function refreshWorkspace() {
       recordsStore.load(),
       loadOverviewSummaries(),
     ])
-    showWorkspaceMessage('Database workspace refreshed.', 'success')
+    showToast({ title: 'Database refreshed', tone: 'success' })
   } finally {
     refreshing.value = false
   }
@@ -341,21 +379,22 @@ async function refreshWorkspace() {
 async function testDatabaseConnection() {
   if (!canTestConnection.value) return
   testingConnection.value = true
-  workspaceMessage.value = null
 
   try {
     const result = await connectionsStore.test(connectionId.value)
-    showWorkspaceMessage(
-      result.success
-        ? `Connection test succeeded${result.database_version ? ` · ${result.database_version}` : ''}.`
-        : result.message,
-      result.success ? 'success' : 'error',
-    )
+    if (result.success) {
+      showConnectionNotice('Connection successful', 'success')
+    } else {
+      showConnectionNotice('Connection failed', 'error')
+      showToast({ title: 'Connection test failed', message: result.message, tone: 'danger' })
+    }
   } catch (error) {
-    showWorkspaceMessage(
-      error instanceof Error ? error.message : 'Connection test failed.',
-      'error',
-    )
+    showConnectionNotice('Connection failed', 'error')
+    showToast({
+      title: 'Connection test failed',
+      message: error instanceof Error ? error.message : undefined,
+      tone: 'danger',
+    })
   } finally {
     testingConnection.value = false
   }
@@ -376,14 +415,16 @@ function openSshTerminal(server: Server) {
   try {
     terminalStore.open(server)
   } catch (error) {
-    showWorkspaceMessage(
-      error instanceof Error ? error.message : 'Unable to open SSH terminal.',
-      'error',
-    )
+    showToast({
+      title: 'Unable to open SSH terminal',
+      message: error instanceof Error ? error.message : undefined,
+      tone: 'danger',
+    })
   }
 }
 
 onMounted(async () => {
+  document.addEventListener('click', closeActionMenu)
   applyTabFromRoute()
 
   if (connectionsStore.connections.length === 0) {
@@ -399,6 +440,11 @@ onMounted(async () => {
 
   applyTabFromRoute()
   await syncEngineContext()
+})
+
+onUnmounted(() => {
+  document.removeEventListener('click', closeActionMenu)
+  if (connectionNoticeTimer) clearTimeout(connectionNoticeTimer)
 })
 </script>
 
@@ -417,124 +463,112 @@ onMounted(async () => {
     </div>
 
     <template v-else>
-      <section class="database-workspace-header">
-        <div class="database-workspace-header__identity">
-          <button type="button" class="database-back-button" @click="backToDatabases">
-            ← Databases
-          </button>
-
-          <div class="database-workspace-title-row">
-            <h1>{{ connection.name }}</h1>
-
-            <span class="workspace-status-pill workspace-status-pill--engine">
-              {{ engineLabel(connection.engine) }}
-            </span>
-
-            <span class="workspace-status-pill workspace-status-pill--muted">
-              {{ workspaceEnvironment }}
-            </span>
-
-            <span
-              class="database-state"
-              :class="overview?.status ?? 'unknown'"
-            >
-              {{ statusLabel(overview?.status) }}
-            </span>
-          </div>
-
-          <p>
-            {{ engineProductLabel(connection.engine, overview?.database_product) }}
-            · {{ connection.host }}:{{ connection.port }}
-            <template v-if="overview?.instance_name"> · {{ overview.instance_name }}</template>
-          </p>
-
-          <div v-if="primaryRecord" class="database-workspace-context-line">
-            <span v-if="primaryRecord.application">Application: {{ primaryRecord.application }}</span>
-            <span v-if="primaryRecord.owner">Owner: {{ primaryRecord.owner }}</span>
-            <RouterLink :to="{ name: 'record-detail', params: { id: primaryRecord.id } }">
-              Open Record
-            </RouterLink>
-          </div>
+      <section class="resource-context resource-context--sticky database-resource-context">
+        <div class="resource-breadcrumbs" aria-label="Breadcrumb">
+          <RouterLink :to="{ name: 'databases' }">Databases</RouterLink>
+          <span>/</span>
+          <RouterLink :to="{ name: 'databases', query: { engine: connection.engine } }">{{ engineLabel(connection.engine) }}</RouterLink>
+          <span>/</span>
+          <strong>{{ activeTabLabel }}</strong>
         </div>
 
-        <div class="database-workspace-header__actions">
-          <button
-            type="button"
-            class="secondary-button"
-            :disabled="refreshing"
-            @click="refreshWorkspace"
-          >
-            {{ refreshing ? 'Refreshing…' : 'Refresh' }}
-          </button>
+        <div class="resource-context__main">
+          <div class="resource-context__identity">
+            <div class="resource-context__title-row">
+              <h1>{{ connection.name }}</h1>
+              <span
+                class="database-reachability-dot"
+                :class="`database-reachability-dot--${reachabilityTone}`"
+                :title="statusLabel(overview?.status)"
+                :aria-label="statusLabel(overview?.status)"
+              />
+              <span
+                v-if="connectionTestNotice"
+                class="connection-test-notice"
+                :class="`connection-test-notice--${connectionTestTone}`"
+              >
+                {{ connectionTestNotice }}
+              </span>
+            </div>
+            <p>
+              {{ engineProductLabel(connection.engine, overview?.database_product) }}
+              · {{ connection.host }}:{{ connection.port }}
+              <template v-if="overview?.instance_name"> · {{ overview.instance_name }}</template>
+            </p>
+          </div>
 
-          <button
-            v-if="canTestConnection"
-            type="button"
-            class="secondary-button"
-            :disabled="testingConnection"
-            @click="testDatabaseConnection"
-          >
-            {{ testingConnection ? 'Testing…' : 'Test connection' }}
-          </button>
-
-          <template v-if="canUseTerminal && readyTerminalServers.length">
-            <button
-              v-for="server in readyTerminalServers"
-              :key="`ssh-terminal-${server.id}`"
-              type="button"
-              class="primary-button"
-              @click="openSshTerminal(server)"
-            >
-              SSH terminal
-              <template v-if="readyTerminalServers.length > 1">
-                · {{ server.name }}
-              </template>
+          <div class="resource-context__actions" @click.stop>
+            <button type="button" class="secondary-button" :disabled="refreshing" @click="refreshWorkspace">
+              {{ refreshing ? 'Refreshing…' : 'Refresh' }}
             </button>
-          </template>
 
-          <RouterLink
-            v-if="canManageConnections"
-            class="secondary-button"
-            :to="{ name: 'settings-connections', query: { type: 'databases' } }"
-          >
-            Manage connection
-          </RouterLink>
-        </div>
-      </section>
-
-      <p
-        v-if="workspaceMessage"
-        class="database-workspace-message"
-        :class="`database-workspace-message--${workspaceMessageTone}`"
-      >
-        {{ workspaceMessage }}
-      </p>
-
-      <nav class="database-tabs database-workspace-tabs">
-        <button :class="{ active: activeTab === 'overview' }" @click="selectTab('overview')">Overview</button>
-        <button :class="{ active: activeTab === 'metrics' }" @click="selectTab('metrics')">Metrics</button>
-        <button :disabled="!supportsDbaUtilities" :class="{ active: activeTab === 'sessions' }" @click="selectTab('sessions')">Sessions</button>
-        <button :disabled="!supportsDbaUtilities" :class="{ active: activeTab === 'storage' }" @click="selectTab('storage')">Storage</button>
-        <button :class="{ active: activeTab === 'backups' }" @click="selectTab('backups')">Backups</button>
-        <button v-if="supportsUsersAndSchemas || supportsAccessAndPrivileges" :class="{ active: activeTab === 'users_access' }" @click="selectTab('users_access')">Users / Access</button>
-        <button :disabled="!supportsDbaUtilities" :class="{ active: activeTab === 'parameters' }" @click="selectTab('parameters')">Parameters</button>
-
-        <div v-if="supportsDbaUtilities" class="database-more-menu">
-          <button
-            type="button"
-            class="database-more-menu__trigger"
-            :class="{ active: activeTab === 'jobs' || activeTab === 'maintenance' }"
-            :aria-expanded="moreOpen"
-            @click="moreOpen = !moreOpen"
-          >
-            More <span aria-hidden="true">▾</span>
-          </button>
-          <div v-if="moreOpen" class="database-more-menu__popover">
-            <button type="button" :class="{ active: activeTab === 'jobs' }" @click="selectTab('jobs')">Jobs</button>
-            <button type="button" :class="{ active: activeTab === 'maintenance' }" @click="selectTab('maintenance')">Maintenance</button>
+            <div class="context-action-menu">
+              <button
+                type="button"
+                class="icon-button context-action-menu__trigger"
+                aria-label="Database actions"
+                :aria-expanded="actionMenuOpen"
+                @click="actionMenuOpen = !actionMenuOpen"
+              >
+                <FontAwesomeIcon icon="ellipsis-vertical" />
+              </button>
+              <div v-if="actionMenuOpen" class="context-action-menu__popover">
+                <button v-if="canTestConnection" type="button" :disabled="testingConnection" @click="testDatabaseConnection">
+                  {{ testingConnection ? 'Testing connection…' : 'Test connection' }}
+                </button>
+                <button
+                  v-for="server in (canUseTerminal ? readyTerminalServers : [])"
+                  :key="`ssh-terminal-${server.id}`"
+                  type="button"
+                  @click="openSshTerminal(server); actionMenuOpen = false"
+                >
+                  SSH terminal<template v-if="readyTerminalServers.length > 1"> · {{ server.name }}</template>
+                </button>
+                <RouterLink
+                  v-if="canManageConnections"
+                  :to="{ name: 'settings-connections', query: { type: 'databases' } }"
+                  @click="actionMenuOpen = false"
+                >
+                  Manage connection
+                </RouterLink>
+                <RouterLink
+                  v-if="primaryRecord"
+                  :to="{ name: 'record-detail', params: { id: primaryRecord.id } }"
+                  @click="actionMenuOpen = false"
+                >
+                  Open record
+                </RouterLink>
+              </div>
+            </div>
           </div>
         </div>
-      </nav>
+
+        <nav class="database-tabs database-workspace-tabs resource-context__tabs">
+          <button :class="{ active: activeTab === 'overview' }" @click="selectTab('overview')">Overview</button>
+          <button :class="{ active: activeTab === 'metrics' }" @click="selectTab('metrics')">Metrics</button>
+          <button :disabled="!supportsDbaUtilities" :class="{ active: activeTab === 'sessions' }" @click="selectTab('sessions')">Sessions</button>
+          <button :disabled="!supportsDbaUtilities" :class="{ active: activeTab === 'storage' }" @click="selectTab('storage')">Storage</button>
+          <button :class="{ active: activeTab === 'backups' }" @click="selectTab('backups')">Backups</button>
+          <button v-if="supportsUsersAndSchemas || supportsAccessAndPrivileges" :class="{ active: activeTab === 'users_access' }" @click="selectTab('users_access')">Users / Access</button>
+          <button :disabled="!supportsDbaUtilities" :class="{ active: activeTab === 'parameters' }" @click="selectTab('parameters')">Parameters</button>
+
+          <div v-if="supportsDbaUtilities" class="database-more-menu" @click.stop>
+            <button
+              type="button"
+              class="database-more-menu__trigger"
+              :class="{ active: activeTab === 'jobs' || activeTab === 'maintenance' }"
+              :aria-expanded="moreOpen"
+              @click="moreOpen = !moreOpen"
+            >
+              More <span aria-hidden="true">▾</span>
+            </button>
+            <div v-if="moreOpen" class="database-more-menu__popover">
+              <button type="button" :class="{ active: activeTab === 'jobs' }" @click="selectTab('jobs')">Jobs</button>
+              <button type="button" :class="{ active: activeTab === 'maintenance' }" @click="selectTab('maintenance')">Maintenance</button>
+            </div>
+          </div>
+        </nav>
+      </section>
 
       <section v-if="activeTab === 'overview'" class="database-overview-summary-grid">
         <button type="button" class="database-overview-summary-card" @click="selectTab('metrics')">
@@ -560,6 +594,12 @@ onMounted(async () => {
           <strong>{{ backupSummary.primary }}</strong>
           <small>{{ backupSummary.secondary }}</small>
         </button>
+
+        <article class="database-overview-summary-card database-overview-summary-card--static">
+          <span>Uptime</span>
+          <strong>{{ uptimeSummary.primary }}</strong>
+          <small>{{ uptimeSummary.secondary }}</small>
+        </article>
 
       </section>
 
@@ -692,6 +732,10 @@ onMounted(async () => {
           <div v-if="overview?.instance_status">
             <dt>Instance status</dt>
             <dd>{{ overview.instance_status }}</dd>
+          </div>
+          <div v-if="overview?.uptime_seconds != null">
+            <dt>Uptime</dt>
+            <dd>{{ formatUptime(overview.uptime_seconds) }}</dd>
           </div>
 
           <div v-if="overview?.database_role">
@@ -882,3 +926,23 @@ onMounted(async () => {
     </template>
   </div>
 </template>
+<style scoped>
+.database-reachability-dot {
+  width: 0.62rem;
+  height: 0.62rem;
+  flex: 0 0 0.62rem;
+  border-radius: 50%;
+  background: var(--text-muted);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--text-muted) 12%, transparent);
+}
+
+.database-reachability-dot--reachable {
+  background: var(--success);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--success) 13%, transparent);
+}
+
+.database-reachability-dot--unreachable {
+  background: var(--danger);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger) 13%, transparent);
+}
+</style>

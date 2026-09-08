@@ -10,6 +10,7 @@ import {
   type SqlServerPermission,
   type SqlServerRoleMembership,
 } from '@/stores/sqlServerDba'
+import { formDialog, showToast } from '@/ui/feedback'
 
 const props = defineProps<{
   connectionId: string
@@ -49,32 +50,60 @@ function permissionKey(item: SqlServerPermission, index: number) {
 }
 
 async function roleOperation(action: 'grant_role' | 'revoke_role') {
-  const principal = window.prompt('Principal/login name:')?.trim()
-  if (!principal) return
-  const roleName = window.prompt('Role name:')?.trim()
-  if (!roleName) return
-  const scopeValue = window.prompt('Role scope: database or server', 'database')?.trim().toLowerCase()
-  if (scopeValue !== 'database' && scopeValue !== 'server') return window.alert('Scope must be database or server.')
-  if (!window.confirm(`${action === 'grant_role' ? 'Grant' : 'Revoke'} ${roleName} ${action === 'grant_role' ? 'to' : 'from'} ${principal}?`)) return
+  const result = await formDialog({
+    title: action === 'grant_role' ? 'Grant SQL Server role' : 'Revoke SQL Server role',
+    confirmLabel: action === 'grant_role' ? 'Grant role' : 'Revoke role',
+    tone: action === 'revoke_role' ? 'warning' : 'default',
+    fields: [
+      { name: 'principal', label: 'Principal / login', type: 'text', required: true },
+      { name: 'role_name', label: 'Role name', type: 'text', required: true },
+      {
+        name: 'scope', label: 'Role scope', type: 'select', value: 'database',
+        options: [
+          { label: 'Database role', value: 'database' },
+          { label: 'Server role', value: 'server' },
+        ],
+      },
+    ],
+  })
+  if (!result) return
   try {
-    await operations.runAccess(props.connectionId, { action, principal, role_name: roleName, scope: scopeValue })
+    await operations.runAccess(props.connectionId, {
+      action,
+      principal: String(result.principal).trim(),
+      role_name: String(result.role_name).trim(),
+      scope: String(result.scope) as 'database' | 'server',
+    })
     await store.loadSecurity(props.connectionId, true)
+    showToast({ title: action === 'grant_role' ? 'Role granted' : 'Role revoked', tone: 'success' })
   } catch {}
 }
 
 async function privilegeOperation(action: 'grant_privilege' | 'revoke_privilege') {
-  const principal = window.prompt('Database principal/user:')?.trim()
-  if (!principal) return
-  const privilege = window.prompt('Privilege (example: SELECT, UPDATE, EXECUTE):')?.trim()
-  if (!privilege) return
-  const objectName = window.prompt('Object (example: dbo.TableName):')?.trim()
-  if (!objectName) return
-  if (!window.confirm(`${action === 'grant_privilege' ? 'Grant' : 'Revoke'} ${privilege} on ${objectName} ${action === 'grant_privilege' ? 'to' : 'from'} ${principal}?`)) return
+  const result = await formDialog({
+    title: action === 'grant_privilege' ? 'Grant SQL Server privilege' : 'Revoke SQL Server privilege',
+    confirmLabel: action === 'grant_privilege' ? 'Grant privilege' : 'Revoke privilege',
+    tone: action === 'revoke_privilege' ? 'warning' : 'default',
+    fields: [
+      { name: 'principal', label: 'Database principal / user', type: 'text', required: true },
+      { name: 'privilege', label: 'Privilege', type: 'text', required: true, placeholder: 'SELECT, UPDATE, EXECUTE' },
+      { name: 'object_name', label: 'Object', type: 'text', required: true, placeholder: 'dbo.TableName' },
+    ],
+  })
+  if (!result) return
   try {
-    await operations.runAccess(props.connectionId, { action, principal, privilege, object_name: objectName, scope: 'database' })
+    await operations.runAccess(props.connectionId, {
+      action,
+      principal: String(result.principal).trim(),
+      privilege: String(result.privilege).trim(),
+      object_name: String(result.object_name).trim(),
+      scope: 'database',
+    })
     await store.loadSecurity(props.connectionId, true)
+    showToast({ title: action === 'grant_privilege' ? 'Privilege granted' : 'Privilege revoked', tone: 'success' })
   } catch {}
 }
+
 
 onMounted(() => {
   void store.loadSecurity(props.connectionId)

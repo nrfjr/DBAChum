@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 
 import ScrollableDataTable from '@/components/common/ScrollableDataTable.vue'
 import { hasPermission } from '@/core/permissions'
 import { useAuthStore } from '@/stores/auth'
 import { useDatabaseOperationsStore } from '@/stores/databaseOperations'
 import { useMySqlDbaStore, type MySqlSession } from '@/stores/mysqlDba'
+import { confirmDialog, showToast } from '@/ui/feedback'
 
 const props = defineProps<{ connectionId: string }>()
 const mysqlStore = useMySqlDbaStore()
@@ -16,6 +17,7 @@ type SessionFilter = 'all' | 'active' | 'blocked' | 'long'
 const filter = ref<SessionFilter>('all')
 const sessions = computed(() => mysqlStore.sessions[props.connectionId])
 const canOperate = computed(() => hasPermission(authStore.user, 'database:operate'))
+const actionMenuConnectionId = ref<number | null>(null)
 
 function isActive(session: MySqlSession) { return (session.command ?? '').toLowerCase() !== 'sleep' }
 const filteredSessions = computed(() => {
@@ -45,16 +47,34 @@ function scopeLabel() {
   return sessions.value.scope === 'database' ? `Database scope · ${sessions.value.database_name ?? 'selected database'}` : 'Instance scope · all visible databases'
 }
 
+function toggleActionMenu(session: MySqlSession, event: Event) {
+  event.stopPropagation()
+  actionMenuConnectionId.value = actionMenuConnectionId.value === session.connection_id ? null : session.connection_id
+}
+
+function closeActionMenu() {
+  actionMenuConnectionId.value = null
+}
+
 async function runAction(session: MySqlSession, action: 'terminate' | 'cancel_query') {
   const label = action === 'cancel_query' ? 'cancel the current query for' : 'terminate'
-  if (!window.confirm(`Really ${label} MySQL/MariaDB connection ${session.connection_id}?`)) return
+  const confirmed = await confirmDialog({ title: action === 'cancel_query' ? 'Cancel query' : 'Kill connection', message: `MySQL/MariaDB connection ${session.connection_id}`, confirmLabel: action === 'cancel_query' ? 'Cancel query' : 'Kill connection', destructive: action === 'terminate', tone: action === 'terminate' ? 'danger' : 'warning' })
+  if (!confirmed) return
   try {
     await operations.runSession(props.connectionId, { action, session_id: session.connection_id })
     await mysqlStore.loadSessions(props.connectionId)
+    showToast({ title: action === 'cancel_query' ? 'Query cancelled' : 'Connection killed', tone: 'success' })
   } catch {}
 }
 
-onMounted(() => void mysqlStore.loadSessions(props.connectionId))
+onMounted(() => {
+  document.addEventListener('click', closeActionMenu)
+  void mysqlStore.loadSessions(props.connectionId)
+})
+
+onUnmounted(() => {
+  document.removeEventListener('click', closeActionMenu)
+})
 </script>
 
 <template>
@@ -88,10 +108,25 @@ onMounted(() => void mysqlStore.loadSessions(props.connectionId))
           <tr v-for="session in filteredSessions" :key="session.connection_id">
             <td>{{ session.connection_id }}</td><td>{{ session.user ?? '—' }}</td><td>{{ session.host ?? '—' }}</td><td>{{ session.database ?? '—' }}</td><td>{{ session.command ?? '—' }}</td>
             <td>{{ formatDuration(session.elapsed_seconds) }}</td><td>{{ session.state ?? '—' }}</td><td>{{ session.blocking_connection_id ?? '—' }}</td><td class="utility-sql-text" :title="session.sql_text ?? ''">{{ session.sql_text ?? '—' }}</td>
-            <td v-if="canOperate"><div class="database-inline-actions">
-              <button v-if="isActive(session)" type="button" class="secondary-button" :disabled="operations.busy" @click="runAction(session, 'cancel_query')">Cancel query</button>
-              <button type="button" class="danger-button" :disabled="operations.busy" @click="runAction(session, 'terminate')">Kill</button>
-            </div></td>
+            <td v-if="canOperate">
+              <div class="user-action-menu-wrap" @click.stop>
+                <button
+                  type="button"
+                  class="user-action-button user-menu-button"
+                  :aria-expanded="actionMenuConnectionId === session.connection_id"
+                  :aria-label="`Actions for connection ${session.connection_id}`"
+                  :disabled="operations.busy"
+                  @click="toggleActionMenu(session, $event)"
+                >
+                  <FontAwesomeIcon icon="ellipsis-vertical" />
+                </button>
+                <div v-if="actionMenuConnectionId === session.connection_id" class="user-action-dropdown" role="menu">
+                  <button v-if="isActive(session)" type="button" role="menuitem" @click="closeActionMenu(); runAction(session, 'cancel_query')">Cancel query</button>
+                  <div v-if="isActive(session)" class="user-action-divider" />
+                  <button type="button" role="menuitem" class="danger-menu-item" @click="closeActionMenu(); runAction(session, 'terminate')">Kill connection</button>
+                </div>
+              </div>
+            </td>
           </tr>
         </ScrollableDataTable>
       </template>

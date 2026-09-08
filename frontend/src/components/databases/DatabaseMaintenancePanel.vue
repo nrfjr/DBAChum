@@ -5,6 +5,7 @@ import { hasPermission } from '@/core/permissions'
 import { useAuthStore } from '@/stores/auth'
 import { useDatabaseOperationsStore, type MaintenanceOperationInput } from '@/stores/databaseOperations'
 import type { DatabaseEngine } from '@/stores/connections'
+import { confirmDialog, formDialog, showToast } from '@/ui/feedback'
 
 const props = defineProps<{
   connectionId: string
@@ -18,58 +19,102 @@ const canOperate = computed(() => hasPermission(authStore.user, 'database:operat
 
 async function run(body: MaintenanceOperationInput, label: string) {
   if (!canOperate.value) return
-  if (!window.confirm(`${label}? This is a database maintenance operation.`)) return
+  const confirmed = await confirmDialog({
+    title: label,
+    message: 'This is a database maintenance operation and will be recorded in DBAChum action history.',
+    confirmLabel: 'Run maintenance',
+    tone: 'warning',
+  })
+  if (!confirmed) return
+
   message.value = null
   try {
     const started = await operations.runMaintenance(props.connectionId, body)
     message.value = `${label} started.`
+    showToast({ title: `${label} started`, tone: 'success' })
     if (started.status === 'running') {
       void operations.waitForAction(props.connectionId, started.id).then((finished) => {
         message.value = finished.status === 'succeeded' ? `${label} completed.` : `${label} failed: ${finished.error ?? 'Unknown error'}`
+        showToast({
+          title: finished.status === 'succeeded' ? `${label} completed` : `${label} failed`,
+          message: finished.status === 'succeeded' ? undefined : finished.error ?? 'Unknown error',
+          tone: finished.status === 'succeeded' ? 'success' : 'danger',
+        })
       }).catch(() => {})
     }
   } catch {}
 }
 
-function promptValue(label: string, defaultValue = '') {
-  const value = window.prompt(label, defaultValue)
-  return value?.trim() || null
+async function gatherSchemaStats() {
+  const result = await formDialog({
+    title: 'Gather schema statistics',
+    confirmLabel: 'Gather statistics',
+    fields: [
+      { name: 'schema', label: 'Schema name', type: 'text', placeholder: 'Leave blank to use the connection user' },
+    ],
+  })
+  if (!result) return
+  const schema = String(result.schema ?? '').trim() || null
+  await run({ action: 'gather_schema_stats', schema_name: schema }, 'Gather schema statistics')
 }
 
-function gatherSchemaStats() {
-  const schema = promptValue('Schema name (leave blank to use the connection user):')
-  void run({ action: 'gather_schema_stats', schema_name: schema }, 'Gather schema statistics')
+async function gatherTableStats() {
+  const result = await formDialog({
+    title: 'Gather table statistics',
+    confirmLabel: 'Gather statistics',
+    fields: [
+      { name: 'schema', label: 'Schema / owner', type: 'text', placeholder: 'Leave blank to use the connection user' },
+      { name: 'table', label: 'Table name', type: 'text', required: true },
+    ],
+  })
+  if (!result) return
+  const schema = String(result.schema ?? '').trim() || null
+  const table = String(result.table).trim()
+  await run({ action: 'gather_table_stats', schema_name: schema, table_name: table }, `Gather statistics for ${table}`)
 }
 
-function gatherTableStats() {
-  const schema = promptValue('Schema/owner (leave blank to use the connection user):')
-  const table = promptValue('Table name:')
-  if (!table) return
-  void run({ action: 'gather_table_stats', schema_name: schema, table_name: table }, `Gather statistics for ${table}`)
+async function sqlServerTableStats() {
+  const result = await formDialog({
+    title: 'Update SQL Server statistics',
+    message: 'Leave the table name blank to update statistics for the whole database.',
+    confirmLabel: 'Continue',
+    fields: [{ name: 'table', label: 'Table name', type: 'text' }],
+  })
+  if (!result) return
+  const table = String(result.table ?? '').trim() || null
+  await run({ action: 'update_statistics', table_name: table }, table ? `Update statistics for ${table}` : 'Update database statistics')
 }
 
-function sqlServerTableStats() {
-  const table = promptValue('Table name (leave blank to update statistics for the whole database):')
-  void run({ action: 'update_statistics', table_name: table }, table ? `Update statistics for ${table}` : 'Update database statistics')
+async function shrinkDatabase() {
+  const result = await formDialog({
+    title: 'Shrink SQL Server database',
+    message: 'Use deliberately. Shrink operations can introduce fragmentation.',
+    confirmLabel: 'Review shrink',
+    tone: 'warning',
+    fields: [
+      { name: 'target', label: 'Target free space (%)', type: 'number', value: 10, min: 0, max: 99, step: 1, required: true },
+    ],
+  })
+  if (!result) return
+  const target = Number(result.target)
+  await run({ action: 'shrink_database', target_percent: target }, `Shrink database to ${target}% free space`)
 }
 
-function shrinkDatabase() {
-  const raw = promptValue('Target free-space percentage after shrink:', '10')
-  if (!raw) return
-  const target = Number(raw)
-  if (!Number.isInteger(target) || target < 0 || target > 99) {
-    window.alert('Enter a whole number from 0 to 99.')
-    return
-  }
-  void run({ action: 'shrink_database', target_percent: target }, `Shrink database to ${target}% free space`)
+async function mysqlTable(action: 'analyze_table' | 'optimize_table' | 'check_table', label: string) {
+  const result = await formDialog({
+    title: `${label} table`,
+    confirmLabel: 'Continue',
+    fields: [
+      { name: 'schema', label: 'Schema / database', type: 'text', required: true },
+      { name: 'table', label: 'Table name', type: 'text', required: true },
+    ],
+  })
+  if (!result) return
+  const schema = String(result.schema).trim()
+  const table = String(result.table).trim()
+  await run({ action, schema_name: schema, table_name: table }, `${label} ${schema}.${table}`)
 }
 
-function mysqlTable(action: 'analyze_table' | 'optimize_table' | 'check_table', label: string) {
-  const schema = promptValue('Schema/database name:')
-  const table = promptValue('Table name:')
-  if (!schema || !table) return
-  void run({ action, schema_name: schema, table_name: table }, `${label} ${schema}.${table}`)
-}
 </script>
 
 <template>

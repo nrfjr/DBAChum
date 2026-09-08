@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 
 import ScrollableDataTable from '@/components/common/ScrollableDataTable.vue'
 import { hasPermission } from '@/core/permissions'
 import { useAuthStore } from '@/stores/auth'
 import { useDatabaseOperationsStore } from '@/stores/databaseOperations'
 import { useSqlServerDbaStore, type SqlServerSession } from '@/stores/sqlServerDba'
+import { confirmDialog, showToast } from '@/ui/feedback'
 
 const props = defineProps<{ connectionId: string }>()
 const sqlServerStore = useSqlServerDbaStore()
@@ -16,6 +17,7 @@ type SessionFilter = 'all' | 'active' | 'blocked' | 'long'
 const filter = ref<SessionFilter>('all')
 const sessions = computed(() => sqlServerStore.sessions[props.connectionId])
 const canOperate = computed(() => hasPermission(authStore.user, 'database:operate'))
+const actionMenuSessionId = ref<number | null>(null)
 
 function isActive(session: SqlServerSession) {
   const status = (session.request_status ?? '').toLowerCase()
@@ -48,15 +50,33 @@ function clientLabel(session: SqlServerSession) {
   return session.program_name || session.host_name || '—'
 }
 
+function toggleActionMenu(session: SqlServerSession, event: Event) {
+  event.stopPropagation()
+  actionMenuSessionId.value = actionMenuSessionId.value === session.session_id ? null : session.session_id
+}
+
+function closeActionMenu() {
+  actionMenuSessionId.value = null
+}
+
 async function terminate(session: SqlServerSession) {
-  if (!window.confirm(`KILL SQL Server SPID ${session.session_id}?`)) return
+  const confirmed = await confirmDialog({ title: 'Kill SQL Server session', message: `SPID ${session.session_id}`, confirmLabel: 'Kill SPID', destructive: true, tone: 'danger' })
+  if (!confirmed) return
   try {
     await operations.runSession(props.connectionId, { action: 'terminate', session_id: session.session_id })
     await sqlServerStore.loadSessions(props.connectionId)
+    showToast({ title: `SPID ${session.session_id} killed`, tone: 'success' })
   } catch {}
 }
 
-onMounted(() => void sqlServerStore.loadSessions(props.connectionId))
+onMounted(() => {
+  document.addEventListener('click', closeActionMenu)
+  void sqlServerStore.loadSessions(props.connectionId)
+})
+
+onUnmounted(() => {
+  document.removeEventListener('click', closeActionMenu)
+})
 </script>
 
 <template>
@@ -90,7 +110,23 @@ onMounted(() => void sqlServerStore.loadSessions(props.connectionId))
             <td>{{ session.session_id }}</td><td>{{ session.login_name ?? '—' }}</td><td>{{ session.request_status ?? session.status ?? '—' }}</td>
             <td>{{ clientLabel(session) }}</td><td>{{ session.command ?? '—' }}</td><td>{{ formatDurationMs(session.elapsed_ms) }}</td><td>{{ formatDurationMs(session.cpu_ms) }}</td>
             <td>{{ session.wait_type ?? '—' }}</td><td>{{ session.blocking_session_id ?? '—' }}</td><td class="utility-sql-text" :title="session.sql_text ?? ''">{{ session.sql_text ?? '—' }}</td>
-            <td v-if="canOperate"><button type="button" class="danger-button" :disabled="operations.busy" @click="terminate(session)">Kill</button></td>
+            <td v-if="canOperate">
+              <div class="user-action-menu-wrap" @click.stop>
+                <button
+                  type="button"
+                  class="user-action-button user-menu-button"
+                  :aria-expanded="actionMenuSessionId === session.session_id"
+                  :aria-label="`Actions for SPID ${session.session_id}`"
+                  :disabled="operations.busy"
+                  @click="toggleActionMenu(session, $event)"
+                >
+                  <FontAwesomeIcon icon="ellipsis-vertical" />
+                </button>
+                <div v-if="actionMenuSessionId === session.session_id" class="user-action-dropdown" role="menu">
+                  <button type="button" role="menuitem" class="danger-menu-item" @click="closeActionMenu(); terminate(session)">Kill SPID</button>
+                </div>
+              </div>
+            </td>
           </tr>
         </ScrollableDataTable>
       </template>

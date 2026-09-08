@@ -22,6 +22,7 @@ import {
   faTrashCan,
   faEllipsisVertical,
   faChevronDown,
+  faChartLine,
 } from '@fortawesome/free-solid-svg-icons'
 
 import { useUiStore } from './stores/ui'
@@ -39,6 +40,7 @@ library.add(
   faTrashCan,
   faEllipsisVertical,
   faChevronDown,
+  faChartLine,
 )
 
 const app = createApp(App)

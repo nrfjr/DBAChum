@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 
 import ScrollableDataTable from '@/components/common/ScrollableDataTable.vue'
 import { hasPermission } from '@/core/permissions'
 import { useAuthStore } from '@/stores/auth'
 import { useDatabaseOperationsStore } from '@/stores/databaseOperations'
 import { useOracleDbaStore, type OracleSession } from '@/stores/oracleDba'
+import { confirmDialog, showToast } from '@/ui/feedback'
 
 const props = defineProps<{ connectionId: string }>()
 const oracleStore = useOracleDbaStore()
@@ -16,6 +17,7 @@ type SessionFilter = 'all' | 'active' | 'blocked' | 'long'
 const filter = ref<SessionFilter>('all')
 const sessions = computed(() => oracleStore.sessions[props.connectionId])
 const canOperate = computed(() => hasPermission(authStore.user, 'database:operate'))
+const actionMenuKey = ref<string | null>(null)
 
 const filteredSessions = computed(() => {
   const items = sessions.value?.items ?? []
@@ -46,9 +48,24 @@ function clientLabel(session: OracleSession) {
   return session.module || session.program || session.machine || '—'
 }
 
+function sessionKey(session: OracleSession) {
+  return `${session.sid}-${session.serial_number}`
+}
+
+function toggleActionMenu(session: OracleSession, event: Event) {
+  event.stopPropagation()
+  const key = sessionKey(session)
+  actionMenuKey.value = actionMenuKey.value === key ? null : key
+}
+
+function closeActionMenu() {
+  actionMenuKey.value = null
+}
+
 async function runSessionAction(session: OracleSession, action: 'terminate' | 'disconnect') {
   const label = action === 'terminate' ? 'KILL' : 'DISCONNECT'
-  if (!window.confirm(`${label} Oracle session ${session.sid},${session.serial_number}?`)) return
+  const confirmed = await confirmDialog({ title: `${label} Oracle session`, message: `SID ${session.sid}, serial ${session.serial_number}`, confirmLabel: action === 'terminate' ? 'Kill session' : 'Disconnect session', destructive: true, tone: 'danger' })
+  if (!confirmed) return
   try {
     await operations.runSession(props.connectionId, {
       action,
@@ -56,13 +73,19 @@ async function runSessionAction(session: OracleSession, action: 'terminate' | 'd
       serial_number: session.serial_number,
     })
     await oracleStore.loadSessions(props.connectionId)
+    showToast({ title: action === 'terminate' ? 'Session killed' : 'Session disconnected', tone: 'success' })
   } catch {
     // Store exposes the backend error below the toolbar.
   }
 }
 
 onMounted(() => {
+  document.addEventListener('click', closeActionMenu)
   void oracleStore.loadSessions(props.connectionId)
+})
+
+onUnmounted(() => {
+  document.removeEventListener('click', closeActionMenu)
 })
 </script>
 
@@ -111,9 +134,22 @@ onMounted(() => {
             <td>{{ formatDuration(session.state_seconds) }}</td>
             <td>{{ session.blocking_session ?? '—' }}</td>
             <td v-if="canOperate">
-              <div class="database-inline-actions">
-                <button type="button" class="secondary-button" :disabled="operations.busy" @click="runSessionAction(session, 'disconnect')">Disconnect</button>
-                <button type="button" class="danger-button" :disabled="operations.busy" @click="runSessionAction(session, 'terminate')">Kill</button>
+              <div class="user-action-menu-wrap" @click.stop>
+                <button
+                  type="button"
+                  class="user-action-button user-menu-button"
+                  :aria-expanded="actionMenuKey === sessionKey(session)"
+                  :aria-label="`Actions for session ${session.sid}`"
+                  :disabled="operations.busy"
+                  @click="toggleActionMenu(session, $event)"
+                >
+                  <FontAwesomeIcon icon="ellipsis-vertical" />
+                </button>
+                <div v-if="actionMenuKey === sessionKey(session)" class="user-action-dropdown" role="menu">
+                  <button type="button" role="menuitem" @click="closeActionMenu(); runSessionAction(session, 'disconnect')">Disconnect</button>
+                  <div class="user-action-divider" />
+                  <button type="button" role="menuitem" class="danger-menu-item" @click="closeActionMenu(); runSessionAction(session, 'terminate')">Kill session</button>
+                </div>
               </div>
             </td>
           </tr>

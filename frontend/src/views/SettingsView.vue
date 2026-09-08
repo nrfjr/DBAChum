@@ -98,12 +98,6 @@ const groups = computed<SettingsNavGroup[]>(() => [
         visible: canManageUsers.value,
       },
       {
-        label: 'Authentication',
-        description: 'Local / LDAP authentication and session policy',
-        visible: true,
-        disabled: true,
-      },
-      {
         label: 'Data & Maintenance',
         description: 'Cleanup, diagnostics and operational maintenance',
         visible: true,

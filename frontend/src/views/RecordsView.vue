@@ -18,6 +18,7 @@ import {
   type RecordType,
 } from '@/stores/records'
 import { useServersStore } from '@/stores/servers'
+import { confirmDialog, showToast } from '@/ui/feedback'
 
 const route = useRoute()
 const router = useRouter()
@@ -293,11 +294,19 @@ async function saveRecord() {
 }
 
 async function removeRecord(record: DbaRecord) {
-  if (!window.confirm(`Delete record "${record.name}"? This does not delete any linked Connection or Server.`)) return
+  const confirmed = await confirmDialog({
+    title: 'Delete record',
+    message: `Delete ${record.name}? Linked Connections and Servers will not be deleted.`,
+    confirmLabel: 'Delete record',
+    destructive: true,
+    tone: 'danger',
+  })
+  if (!confirmed) return
   try {
     await recordsStore.remove(record.id)
+    showToast({ title: 'Record deleted', message: record.name, tone: 'success' })
   } catch (error) {
-    window.alert(error instanceof Error ? error.message : 'Unable to delete record.')
+    showToast({ title: 'Unable to delete record', message: error instanceof Error ? error.message : undefined, tone: 'danger' })
   }
 }
 

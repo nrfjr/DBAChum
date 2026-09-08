@@ -6,6 +6,7 @@ import { hasPermission } from '@/core/permissions'
 import { useAuthStore } from '@/stores/auth'
 import { useDatabaseOperationsStore } from '@/stores/databaseOperations'
 import { useSqlServerDbaStore, type SqlServerFile } from '@/stores/sqlServerDba'
+import { formDialog, showToast } from '@/ui/feedback'
 
 const props = defineProps<{ connectionId: string }>()
 const sqlServerStore = useSqlServerDbaStore()
@@ -27,34 +28,73 @@ const usedPercent = computed(() => storage.value?.allocated_bytes && storage.val
 
 async function resizeFile(file: SqlServerFile) {
   const currentMb = Math.round(file.allocated_bytes / 1024 / 1024)
-  const raw = window.prompt(`Resize logical file ${file.name} to how many MB?`, String(currentMb))
-  if (raw == null) return
-  const sizeMb = Number.parseInt(raw, 10)
-  if (!Number.isFinite(sizeMb) || sizeMb < 1) return window.alert('Enter a valid size in MB.')
-  if (!window.confirm(`Resize ${file.name} from ${currentMb} MB to ${sizeMb} MB?`)) return
+  const result = await formDialog({
+    title: 'Resize SQL Server file',
+    message: `${file.name} · current size ${formatBytes(file.allocated_bytes)}`,
+    confirmLabel: 'Resize file',
+    fields: [
+      {
+        name: 'size_mb',
+        label: 'New size',
+        type: 'size-gb',
+        value: currentMb,
+        presetsGb: [10, 20, 30],
+        minMb: currentMb,
+        hint: 'Shrinking is intentionally blocked here. Use Maintenance only when an explicit shrink is required.',
+      },
+    ],
+  })
+  if (!result) return
   try {
-    await operations.runStorage(props.connectionId, { action: 'resize_file', size_mb: sizeMb, logical_name: file.name })
+    await operations.runStorage(props.connectionId, {
+      action: 'resize_file',
+      size_mb: Number(result.size_mb),
+      logical_name: file.name,
+    })
     await sqlServerStore.loadStorage(props.connectionId)
+    showToast({ title: 'Database file resized', message: file.name, tone: 'success' })
   } catch {}
 }
 
 async function addFile() {
-  const logical = window.prompt('Logical file name:')?.trim()
-  if (!logical) return
-  const physical = window.prompt('Physical file path:')?.trim()
-  if (!physical) return
-  const type = window.prompt('File type: data or log', 'data')?.trim().toLowerCase()
-  if (type !== 'data' && type !== 'log') return window.alert('File type must be data or log.')
-  const rawSize = window.prompt('Initial size in MB:', '1024')
-  if (!rawSize) return
-  const sizeMb = Number.parseInt(rawSize, 10)
-  if (!Number.isFinite(sizeMb) || sizeMb < 1) return window.alert('Enter a valid size in MB.')
-  const rawGrowth = window.prompt('FILEGROWTH in MB (optional):', '128')
-  const growthMb = rawGrowth?.trim() ? Number.parseInt(rawGrowth, 10) : null
-  if (!window.confirm(`Add ${type} file ${logical} (${sizeMb} MB)?`)) return
+  const result = await formDialog({
+    title: 'Add SQL Server database file',
+    confirmLabel: 'Add file',
+    fields: [
+      { name: 'logical_name', label: 'Logical file name', type: 'text', required: true, placeholder: 'AppData02' },
+      { name: 'physical_name', label: 'Physical file path', type: 'text', required: true, placeholder: 'D:\\MSSQL\\DATA\\AppData02.ndf' },
+      {
+        name: 'file_type', label: 'File type', type: 'select', value: 'data',
+        options: [
+          { label: 'Data file', value: 'data' },
+          { label: 'Transaction log', value: 'log' },
+        ],
+      },
+      { name: 'size_mb', label: 'Initial size', type: 'size-gb', value: 10240, presetsGb: [10, 20, 30] },
+      {
+        name: 'growth_mb', label: 'FILEGROWTH', type: 'select', value: '128',
+        options: [
+          { label: '128 MB', value: '128' },
+          { label: '256 MB', value: '256' },
+          { label: '512 MB', value: '512' },
+          { label: '1 GB', value: '1024' },
+        ],
+      },
+    ],
+  })
+  if (!result) return
+
   try {
-    await operations.runStorage(props.connectionId, { action: 'add_file', size_mb: sizeMb, logical_name: logical, physical_name: physical, file_type: type, growth_mb: growthMb })
+    await operations.runStorage(props.connectionId, {
+      action: 'add_file',
+      size_mb: Number(result.size_mb),
+      logical_name: String(result.logical_name).trim(),
+      physical_name: String(result.physical_name).trim(),
+      file_type: String(result.file_type) as 'data' | 'log',
+      growth_mb: Number(result.growth_mb),
+    })
     await sqlServerStore.loadStorage(props.connectionId)
+    showToast({ title: 'Database file added', message: String(result.logical_name), tone: 'success' })
   } catch {}
 }
 

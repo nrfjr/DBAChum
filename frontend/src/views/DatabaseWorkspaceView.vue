@@ -1,16 +1,9 @@
 <script setup lang="ts">
 import { computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { useDatabasesStore } from '@/stores/databases'
-import {
-  engineLabel,
-  engineProductLabel,
-  formatMetric,
-  formatUptime,
-  overviewMetricLabel,
-  statusLabel,
-} from '@/core/databasePresentation'
 
+import { engineLabel } from '@/core/databasePresentation'
+import { useDatabasesStore } from '@/stores/databases'
 import {
   useConnectionsStore,
   type DatabaseConnection,
@@ -22,40 +15,22 @@ const router = useRouter()
 const connectionsStore = useConnectionsStore()
 const databasesStore = useDatabasesStore()
 
-const engineFilter = computed<DatabaseEngine | null>(() => {
-  const engine = String(route.query.engine ?? '')
-  return ['oracle', 'sqlserver', 'mysql'].includes(engine)
-    ? engine as DatabaseEngine
-    : null
+const engineOrder: DatabaseEngine[] = ['oracle', 'sqlserver', 'mysql']
+
+const selectedEngine = computed<DatabaseEngine | null>(() => {
+  const value = String(route.query.engine ?? '')
+  return engineOrder.includes(value as DatabaseEngine) ? value as DatabaseEngine : null
 })
 
 const monitoredConnections = computed(() =>
   connectionsStore.connections.filter(
-    (connection) =>
-      connection.active
-      && connection.monitor_enabled
-      && (!engineFilter.value || connection.engine === engineFilter.value),
+    (connection) => connection.active && connection.monitor_enabled,
   ),
 )
 
-const workspaceTitle = computed(() =>
-  engineFilter.value ? `${engineLabel(engineFilter.value)} databases` : 'Databases',
-)
-
-const workspaceFilterNote = computed(() =>
-  engineFilter.value ? `Showing only ${engineLabel(engineFilter.value)}.` : '',
-)
-
-const emptyDatabaseMessage = computed(() =>
-  engineFilter.value
-    ? `No monitored ${engineLabel(engineFilter.value)} connections match this view.`
-    : 'Enable monitoring for a database connection from Settings.',
-)
-
-const engineOrder: DatabaseEngine[] = ['oracle', 'sqlserver', 'mysql']
-
 const groupedConnections = computed(() =>
   engineOrder
+    .filter((engine) => !selectedEngine.value || selectedEngine.value === engine)
     .map((engine) => ({
       engine,
       label: engineLabel(engine),
@@ -66,11 +41,12 @@ const groupedConnections = computed(() =>
     .filter((group) => group.connections.length > 0),
 )
 
-function databaseIdentity(connection: DatabaseConnection) {
-  if (connection.engine === 'oracle') {
-    return connection.oracle_identifier ?? 'Oracle database'
-  }
+const pageHeading = computed(() =>
+  selectedEngine.value ? `${engineLabel(selectedEngine.value)} databases` : 'Databases',
+)
 
+function databaseIdentity(connection: DatabaseConnection) {
+  if (connection.engine === 'oracle') return connection.oracle_identifier ?? 'Oracle database'
   return connection.database ?? 'Default database'
 }
 
@@ -82,38 +58,32 @@ function openDatabase(connection: DatabaseConnection) {
   })
 }
 
-function overviewFor(id: string) {
-  return databasesStore.overviews[id]
+function statusClass(connectionId: string) {
+  return databasesStore.overviews[connectionId]?.status ?? 'unknown'
 }
 
-onMounted(async () => {
-  await Promise.all([
-    connectionsStore.load(),
-    databasesStore.loadAll(),
-  ])
+async function refresh() {
+  await Promise.allSettled([connectionsStore.load(), databasesStore.loadAll()])
+}
+
+onMounted(() => {
+  void refresh()
 })
 </script>
 
 <template>
-  <section class="page-header">
+  <section class="page-header database-list-page-header">
     <div>
-      <h1>{{ workspaceTitle }}</h1>
-      <p>
-        Monitor and work with configured databases from one place.
-        <template v-if="workspaceFilterNote">{{ workspaceFilterNote }}</template>
-      </p>
+      <h1>{{ pageHeading }}</h1>
+      <p>{{ selectedEngine ? `Monitored ${engineLabel(selectedEngine)} database connections.` : 'Monitor and work with configured databases from one place.' }}</p>
     </div>
 
-    <button type="button" class="secondary-button" :disabled="databasesStore.loading" @click="databasesStore.loadAll()">
-      {{
-        databasesStore.loading
-          ? 'Refreshing...'
-          : 'Refresh'
-      }}
+    <button type="button" class="secondary-button" :disabled="databasesStore.loading" @click="refresh">
+      {{ databasesStore.loading ? 'Refreshing...' : 'Refresh' }}
     </button>
   </section>
 
-  <div v-if="connectionsStore.loading" class="empty-state">
+  <div v-if="connectionsStore.loading && connectionsStore.connections.length === 0" class="empty-state">
     Loading databases...
   </div>
 
@@ -123,98 +93,139 @@ onMounted(async () => {
 
   <div v-else-if="monitoredConnections.length === 0" class="database-empty-state">
     <h2>No monitored databases</h2>
-
-    <p>
-      {{ emptyDatabaseMessage }}
-    </p>
-
-    <RouterLink to="/settings/connections" class="primary-button">
-      Open connection settings
-    </RouterLink>
+    <p>Enable monitoring for a database connection from Settings.</p>
+    <RouterLink to="/settings/connections" class="primary-button">Open connection settings</RouterLink>
   </div>
 
-  <div v-else class="database-engine-groups">
-    <section
-      v-for="group in groupedConnections"
-      :key="group.engine"
-      class="database-engine-group"
-    >
-      <div class="database-engine-group__header">
+  <div v-else-if="groupedConnections.length === 0" class="database-empty-state">
+    <h2>No {{ selectedEngine ? engineLabel(selectedEngine) : '' }} databases found</h2>
+    <p>No monitored database connection matches this category.</p>
+  </div>
+
+  <div v-else class="database-engine-groups" :class="{ 'database-engine-groups--single': selectedEngine }">
+    <section v-for="group in groupedConnections" :key="group.engine" class="database-engine-group">
+      <div v-if="!selectedEngine" class="database-engine-group__header">
         <div>
           <h2>{{ group.label }}</h2>
-          <p>{{ group.connections.length }} monitored {{ group.connections.length === 1 ? 'connection' : 'connections' }}</p>
+          <p>{{ group.connections.length }} monitored {{ group.connections.length === 1 ? 'database' : 'databases' }}</p>
         </div>
-        <span class="database-engine-badge">{{ group.label }}</span>
       </div>
 
-      <div class="database-grid">
+      <div
+        class="database-grid database-selection-grid"
+        :class="selectedEngine ? 'database-selection-grid--wrap' : 'database-selection-grid--strip'"
+      >
         <button
           v-for="connection in group.connections"
           :key="connection.id"
           type="button"
-          class="database-card"
+          class="database-card database-selection-card"
           @click="openDatabase(connection)"
         >
-          <div class="database-card-header">
-            <div>
-              <strong>{{ connection.name }}</strong>
-              <span>
-                {{
-                  engineProductLabel(
-                    connection.engine,
-                    overviewFor(connection.id)?.database_product,
-                  )
-                }}
-              </span>
-            </div>
-
-            <div class="database-card-status">
-              <span
-                class="database-state"
-                :class="overviewFor(connection.id)?.status ?? 'unknown'"
-              >
-                {{ statusLabel(overviewFor(connection.id)?.status) }}
-              </span>
-              <small
-                v-if="overviewFor(connection.id)?.response_time_ms != null"
-                class="database-latency"
-              >
-                {{ overviewFor(connection.id)?.response_time_ms }} ms
-              </small>
-            </div>
+          <div class="database-selection-card__title">
+            <strong>{{ connection.name }}</strong>
+            <span
+              class="database-reachability-dot"
+              :class="`database-reachability-dot--${statusClass(connection.id)}`"
+              :title="statusClass(connection.id)"
+            />
           </div>
 
-          <div class="database-endpoint">
-            {{ connection.host }}:{{ connection.port }}
-          </div>
-
-          <div class="database-identity">
-            {{ databaseIdentity(connection) }}
-          </div>
-
-          <div class="database-preview-grid">
-            <div>
-              <span>{{ overviewMetricLabel(connection.engine, 'active') }}</span>
-              <strong>{{ formatMetric(overviewFor(connection.id)?.active) }}</strong>
-            </div>
-
-            <div>
-              <span>{{ overviewMetricLabel(connection.engine, 'connections') }}</span>
-              <strong>{{ formatMetric(overviewFor(connection.id)?.connections) }}</strong>
-            </div>
-
-            <div>
-              <span>{{ overviewMetricLabel(connection.engine, 'blocked') }}</span>
-              <strong>{{ formatMetric(overviewFor(connection.id)?.blocked) }}</strong>
-            </div>
-
-            <div>
-              <span>Uptime</span>
-              <strong>{{ formatUptime(overviewFor(connection.id)?.uptime_seconds) }}</strong>
-            </div>
-          </div>
+          <div class="database-endpoint">{{ connection.host }}:{{ connection.port }}</div>
+          <div class="database-identity">{{ databaseIdentity(connection) }}</div>
         </button>
       </div>
     </section>
   </div>
 </template>
+
+<style scoped>
+.database-list-page-header {
+  display: flex;
+  width: 100%;
+  gap: 1rem;
+}
+
+.database-list-page-header > .secondary-button {
+  margin-left: auto;
+  flex: 0 0 auto;
+  margin-top: auto;
+}
+
+.database-engine-groups--single {
+  margin-top: .25rem;
+}
+
+.database-selection-grid {
+  gap: 1rem;
+}
+
+.database-selection-grid--strip {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(260px, 320px);
+  grid-template-rows: 1fr;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+  padding: .125rem .125rem .75rem;
+  scroll-snap-type: inline proximity;
+}
+
+.database-selection-grid--wrap {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+}
+
+.database-selection-card {
+  min-width: 0;
+  text-align: left;
+  scroll-snap-align: start;
+}
+
+.database-selection-card__title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .75rem;
+}
+
+.database-reachability-dot {
+  width: .65rem;
+  height: .65rem;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: var(--text-muted);
+  opacity: .65;
+}
+
+.database-reachability-dot--online,
+.database-reachability-dot--limited {
+  background: #22c55e;
+  opacity: 1;
+}
+
+.database-reachability-dot--unreachable {
+  background: #ef4444;
+  opacity: 1;
+}
+
+.database-reachability-dot--disabled {
+  background: var(--text-muted);
+}
+
+@media (max-width: 640px) {
+  .database-list-page-header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .database-list-page-header > .secondary-button {
+    margin-left: 0;
+    align-self: flex-end;
+  }
+
+  .database-selection-grid--strip {
+    grid-auto-columns: minmax(235px, 82vw);
+  }
+}
+</style>

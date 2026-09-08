@@ -7,6 +7,7 @@ import {
   type LdapProfileInput,
   type LdapProfileTestResult,
 } from '@/stores/provisioning'
+import { confirmDialog, showToast } from '@/ui/feedback'
 
 const provisioningStore = useProvisioningStore()
 const formOpen = ref(false)
@@ -123,9 +124,11 @@ async function testProfile(profile: LdapProfile) {
 }
 
 async function remove(profile: LdapProfile) {
-  if (!window.confirm(`Delete LDAP profile "${profile.name}"?`)) return
+  const confirmed = await confirmDialog({ title: 'Delete LDAP profile', message: profile.name, confirmLabel: 'Delete profile', destructive: true, tone: 'danger' })
+  if (!confirmed) return
   try {
     await provisioningStore.removeLdapProfile(profile.id)
+    showToast({ title: 'LDAP profile deleted', message: profile.name, tone: 'success' })
   } catch (error) {
     testResults.value[profile.id] = {
       success: false,

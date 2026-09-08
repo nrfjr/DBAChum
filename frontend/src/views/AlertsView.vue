@@ -4,7 +4,8 @@ import { useRouter } from 'vue-router'
 
 import { useAlertsStore, type AlertSeverity } from '@/stores/alerts'
 import { useAuthStore } from '@/stores/auth'
-import { hasPermission } from '@/core/permissions' 
+import { hasPermission } from '@/core/permissions'
+import { confirmDialog, showToast } from '@/ui/feedback'
 
 const alertsStore = useAlertsStore()
 const authStore = useAuthStore()
@@ -52,9 +53,11 @@ async function clearAlert(id: string) {
 }
 
 async function clearResolved() {
-  if (!window.confirm('Clear all resolved alerts from the Alert Center?')) return
+  const confirmed = await confirmDialog({ title: 'Clear resolved alerts', message: 'Remove all resolved alerts from the Alert Center?', confirmLabel: 'Clear resolved', destructive: true, tone: 'danger' })
+  if (!confirmed) return
   await alertsStore.clearResolved()
   await refresh()
+  showToast({ title: 'Resolved alerts cleared', tone: 'success' })
 }
 
 function openSource(sourceType: string, sourceId: string, history = false) {

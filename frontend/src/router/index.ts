@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 
 import AlertsView from '@/views/AlertsView.vue'
+import AnalyticsView from '@/views/AnalyticsView.vue'
 import DashboardView from '@/views/DashboardView.vue'
 import DatabaseDetailView from '@/views/DatabaseDetailView.vue'
 import DatabaseWorkspaceView from '@/views/DatabaseWorkspaceView.vue'
@@ -38,6 +39,16 @@ const router = createRouter({
       meta: {
         title: 'Dashboard',
         subtitle: 'Infrastructure overview and database health.',
+      },
+    },
+    {
+      path: '/analytics',
+      name: 'analytics',
+      component: AnalyticsView,
+      meta: {
+        title: 'Analytics',
+        subtitle: 'Fleet-level database and server analytics from collected monitoring data.',
+        permission: 'monitor:read',
       },
     },
     {

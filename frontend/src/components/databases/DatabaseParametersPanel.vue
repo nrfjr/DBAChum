@@ -8,6 +8,7 @@ import { useConnectionsStore } from '@/stores/connections'
 import { useDatabaseOperationsStore } from '@/stores/databaseOperations'
 import { useDatabaseParametersStore, type DatabaseParameterItem } from '@/stores/databaseParameters'
 import type { DatabaseEngine } from '@/stores/connections'
+import { formDialog, showToast, type DialogField } from '@/ui/feedback'
 
 const props = defineProps<{ connectionId: string; engine: DatabaseEngine }>()
 const authStore = useAuthStore()
@@ -101,27 +102,45 @@ async function refresh() {
 }
 
 async function setParameter(item: DatabaseParameterItem) {
-  const value = window.prompt(`New value for ${item.name}:`, currentValue(item) === '—' ? '' : currentValue(item))
-  if (value == null || !value.trim()) return
+  const fields: DialogField[] = [
+    {
+      name: 'value',
+      label: 'New value',
+      type: 'text' as const,
+      value: currentValue(item) === '—' ? '' : currentValue(item),
+      required: true,
+    },
+  ]
 
-  let applyMode: 'runtime' | 'persistent' | 'both' = props.engine === 'mysql' ? 'runtime' : 'both'
   if (props.engine !== 'sqlserver') {
-    const mode = window.prompt(
-      props.engine === 'oracle'
-        ? 'Apply mode: runtime, persistent, or both'
-        : 'Apply mode: runtime, persistent, or both (persistence requires MySQL 8)',
-      applyMode,
-    )
-    if (mode == null) return
-    if (!['runtime', 'persistent', 'both'].includes(mode.trim().toLowerCase())) {
-      window.alert('Use runtime, persistent, or both.')
-      return
-    }
-    applyMode = mode.trim().toLowerCase() as typeof applyMode
+    fields.push({
+      name: 'apply_mode',
+      label: 'Apply mode',
+      type: 'select' as const,
+      value: props.engine === 'mysql' ? 'runtime' : 'both',
+      options: [
+        { label: 'Runtime only', value: 'runtime' },
+        { label: 'Persistent only', value: 'persistent' },
+        { label: 'Runtime + persistent', value: 'both' },
+      ],
+      hint: props.engine === 'mysql' ? 'Persistent changes require a supported MySQL generation.' : 'Oracle persistent changes update the SPFILE when available.',
+    })
   }
 
-  const scopeLabel = props.engine === 'sqlserver' ? 'sp_configure + RECONFIGURE' : applyMode
-  if (!window.confirm(`Set ${item.name} to ${value} (${scopeLabel})?`)) return
+  const result = await formDialog({
+    title: `Change ${item.name}`,
+    message: `Current value: ${currentValue(item)}`,
+    confirmLabel: 'Apply parameter',
+    tone: 'warning',
+    fields,
+  })
+  if (!result) return
+
+  const value = String(result.value ?? '').trim()
+  const applyMode = props.engine === 'sqlserver'
+    ? 'both'
+    : String(result.apply_mode ?? 'runtime') as 'runtime' | 'persistent' | 'both'
+
   try {
     await operations.runParameter(props.connectionId, {
       action: 'set',
@@ -130,6 +149,7 @@ async function setParameter(item: DatabaseParameterItem) {
       apply_mode: applyMode,
     })
     await parametersStore.load(props.connectionId)
+    showToast({ title: 'Parameter updated', message: `${item.name} = ${value}`, tone: 'success' })
   } catch {}
 }
 

@@ -9,6 +9,7 @@ import {
   useMySqlDbaStore,
   type MySqlSecurityAccount,
 } from '@/stores/mysqlDba'
+import { formDialog, showToast } from '@/ui/feedback'
 
 const props = defineProps<{
   connectionId: string
@@ -51,31 +52,52 @@ watch(security, chooseDefaultAccount, { immediate: true })
 
 async function roleOperation(action: 'grant_role' | 'revoke_role') {
   if (!selected.value) return
-  const roleName = window.prompt('Role account name (without @host):')?.trim()
-  if (!roleName) return
-  if (!window.confirm(`${action === 'grant_role' ? 'Grant' : 'Revoke'} role ${roleName} ${action === 'grant_role' ? 'to' : 'from'} ${selected.value.account}?`)) return
+  const result = await formDialog({
+    title: action === 'grant_role' ? 'Grant MySQL / MariaDB role' : 'Revoke MySQL / MariaDB role',
+    message: selected.value.account,
+    confirmLabel: action === 'grant_role' ? 'Grant role' : 'Revoke role',
+    tone: action === 'revoke_role' ? 'warning' : 'default',
+    fields: [{ name: 'role_name', label: 'Role account name', type: 'text', required: true, hint: 'Enter the role name without @host.' }],
+  })
+  if (!result) return
   try {
     await operations.runAccess(props.connectionId, {
-      action, principal: selected.value.user, host: selected.value.host, role_name: roleName,
+      action,
+      principal: selected.value.user,
+      host: selected.value.host,
+      role_name: String(result.role_name).trim(),
     })
     await store.loadSecurity(props.connectionId, true)
+    showToast({ title: action === 'grant_role' ? 'Role granted' : 'Role revoked', tone: 'success' })
   } catch {}
 }
 
 async function privilegeOperation(action: 'grant_privilege' | 'revoke_privilege') {
   if (!selected.value) return
-  const privilege = window.prompt('Privilege (example: SELECT, INSERT, UPDATE):')?.trim()
-  if (!privilege) return
-  const objectName = window.prompt('Scope (example: mydb.* or mydb.table):')?.trim()
-  if (!objectName) return
-  if (!window.confirm(`${action === 'grant_privilege' ? 'Grant' : 'Revoke'} ${privilege} on ${objectName} ${action === 'grant_privilege' ? 'to' : 'from'} ${selected.value.account}?`)) return
+  const result = await formDialog({
+    title: action === 'grant_privilege' ? 'Grant MySQL / MariaDB privilege' : 'Revoke MySQL / MariaDB privilege',
+    message: selected.value.account,
+    confirmLabel: action === 'grant_privilege' ? 'Grant privilege' : 'Revoke privilege',
+    tone: action === 'revoke_privilege' ? 'warning' : 'default',
+    fields: [
+      { name: 'privilege', label: 'Privilege', type: 'text', required: true, placeholder: 'SELECT, INSERT, UPDATE' },
+      { name: 'object_name', label: 'Scope', type: 'text', required: true, placeholder: 'mydb.* or mydb.table' },
+    ],
+  })
+  if (!result) return
   try {
     await operations.runAccess(props.connectionId, {
-      action, principal: selected.value.user, host: selected.value.host, privilege, object_name: objectName,
+      action,
+      principal: selected.value.user,
+      host: selected.value.host,
+      privilege: String(result.privilege).trim(),
+      object_name: String(result.object_name).trim(),
     })
     await store.loadSecurity(props.connectionId, true)
+    showToast({ title: action === 'grant_privilege' ? 'Privilege granted' : 'Privilege revoked', tone: 'success' })
   } catch {}
 }
+
 
 onMounted(() => {
   void store.loadSecurity(props.connectionId)

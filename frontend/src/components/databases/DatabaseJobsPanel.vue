@@ -6,6 +6,7 @@ import { hasPermission } from '@/core/permissions'
 import { useAuthStore } from '@/stores/auth'
 import { useDatabaseJobsStore, type DatabaseJobItem, type JobOperation } from '@/stores/databaseJobs'
 import type { DatabaseEngine } from '@/stores/connections'
+import { confirmDialog, showToast } from '@/ui/feedback'
 
 const props = defineProps<{
   connectionId: string
@@ -29,9 +30,16 @@ function formatWhen(value: string | null) {
 async function operate(job: DatabaseJobItem, action: JobOperation) {
   if (!canOperate.value) return
   const verb = action === 'run' ? 'run now' : action
-  if (!window.confirm(`${verb} ${job.name}?`)) return
+  const confirmed = await confirmDialog({
+    title: `${verb.charAt(0).toUpperCase()}${verb.slice(1)} job`,
+    message: job.name,
+    confirmLabel: action === 'run' ? 'Run now' : action === 'enable' ? 'Enable job' : 'Disable job',
+    tone: action === 'disable' ? 'warning' : 'default',
+  })
+  if (!confirmed) return
   try {
     await jobsStore.operate(props.connectionId, job.id, action)
+    showToast({ title: `Job ${action === 'run' ? 'started' : action === 'enable' ? 'enabled' : 'disabled'}`, message: job.name, tone: 'success' })
   } catch {}
 }
 

@@ -1,12 +1,14 @@
 import { use } from 'echarts/core'
 
 import {
+  BarChart,
   LineChart,
 } from 'echarts/charts'
 
 import {
   DataZoomComponent,
   GridComponent,
+  LegendComponent,
   TooltipComponent,
 } from 'echarts/components'
 
@@ -16,10 +18,12 @@ import {
 
 
 use([
+  BarChart,
   LineChart,
 
   DataZoomComponent,
   GridComponent,
+  LegendComponent,
   TooltipComponent,
 
   CanvasRenderer,
