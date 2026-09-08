@@ -213,10 +213,8 @@ async def _latest_samples(database, collection_name: str, id_path: str) -> dict[
         {"$sort": {"collected_at": -1}},
         {"$group": {"_id": f"${id_path}", "sample": {"$first": "$$ROOT"}}},
     ]
-
     cursor = await database[collection_name].aggregate(pipeline)
     docs = await cursor.to_list(None)
-
     return {str(item["_id"]): item["sample"] for item in docs if item.get("_id")}
 
 

@@ -1,6 +1,7 @@
 import asyncio
 import logging
 from dataclasses import dataclass, field
+from typing import Any
 from datetime import datetime, timedelta, timezone
 from pymongo import UpdateOne
 
@@ -72,6 +73,13 @@ class CollectorDeltaState:
     last_analytics_at: dict[str, datetime] = field(default_factory=dict)
     last_analytics_backup_at: dict[str, datetime] = field(default_factory=dict)
     analytics_backup: dict[str, dict | None] = field(default_factory=dict)
+    monitoring_config: dict[str, Any] = field(default_factory=dict)
+
+    def configure(self, config: dict[str, Any]) -> None:
+        self.monitoring_config = dict(config)
+
+    def _setting(self, key: str, fallback: Any) -> Any:
+        return self.monitoring_config.get(key, fallback)
 
     def reset_connection(self, connection_id: str) -> None:
         self.system_stats.pop(connection_id, None)
@@ -94,7 +102,7 @@ class CollectorDeltaState:
             return True
         return (
             now - previous
-        ).total_seconds() >= settings.oracle_storage_interval_seconds
+        ).total_seconds() >= int(self._setting("storage_interval_seconds", settings.oracle_storage_interval_seconds))
 
     def sqlserver_health_due(self, connection_id: str, now: datetime) -> bool:
         previous = self.last_sqlserver_health_at.get(connection_id)
@@ -102,7 +110,7 @@ class CollectorDeltaState:
             return True
         return (
             now - previous
-        ).total_seconds() >= settings.sqlserver_health_interval_seconds
+        ).total_seconds() >= int(self._setting("database_interval_seconds", settings.sqlserver_health_interval_seconds))
 
     def sqlserver_storage_due(self, connection_id: str, now: datetime) -> bool:
         previous = self.last_sqlserver_storage_at.get(connection_id)
@@ -110,13 +118,13 @@ class CollectorDeltaState:
             return True
         return (
             now - previous
-        ).total_seconds() >= settings.sqlserver_storage_interval_seconds
+        ).total_seconds() >= int(self._setting("storage_interval_seconds", settings.sqlserver_storage_interval_seconds))
 
     def analytics_due(self, target_key: str, now: datetime) -> bool:
         previous = self.last_analytics_at.get(target_key)
         if previous is None:
             return True
-        return (now - previous).total_seconds() >= settings.analytics_snapshot_interval_seconds
+        return (now - previous).total_seconds() >= int(self._setting("analytics_snapshot_interval_seconds", settings.analytics_snapshot_interval_seconds))
 
     def analytics_backup_due(self, connection_id: str, now: datetime) -> bool:
         previous = self.last_analytics_backup_at.get(connection_id)
@@ -130,7 +138,7 @@ class CollectorDeltaState:
             return True
         return (
             now - previous
-        ).total_seconds() >= settings.mysql_storage_interval_seconds
+        ).total_seconds() >= int(self._setting("storage_interval_seconds", settings.mysql_storage_interval_seconds))
 
     def server_due(self, server_id: str, now: datetime) -> bool:
         previous = self.last_server_at.get(server_id)
@@ -138,7 +146,7 @@ class CollectorDeltaState:
             return True
         return (
             now - previous
-        ).total_seconds() >= settings.server_metrics_interval_seconds
+        ).total_seconds() >= int(self._setting("server_interval_seconds", settings.server_metrics_interval_seconds))
 
 
 @dataclass
@@ -801,13 +809,7 @@ def _sqlserver_instance_alert_owners(
     connections: list[dict],
     samples: list[dict] | None = None,
 ) -> set[str]:
-    """Pick one deterministic healthy DB connection per SQL Server instance.
 
-    tempdb and SQL Agent belong to the SQL Server instance, not an individual
-    database. Prefer the first healthy monitored connection for each host:port;
-    if every connection is unavailable, fall back to the first one so existing
-    instance alerts can still transition predictably.
-    """
     samples = samples or []
     owners: dict[str, tuple[str, bool]] = {}
     for index, connection in enumerate(connections):
@@ -832,12 +834,7 @@ def _mysql_instance_alert_owners(
     connections: list[dict],
     samples: list[dict] | None = None,
 ) -> set[str]:
-    """Pick one deterministic healthy connection per MySQL/MariaDB instance.
 
-    Threads_connected/running, max_connections, and the InnoDB lock snapshot
-    are instance-level signals. A server may be saved once per schema, so one
-    host:port owner prevents the Alert Center from emitting duplicate events.
-    """
     samples = samples or []
     owners: dict[str, tuple[str, bool]] = {}
     for index, connection in enumerate(connections):
@@ -866,7 +863,7 @@ async def collect_database_metrics_once(
     if not connections:
         return result
 
-    semaphore = asyncio.Semaphore(settings.metrics_collector_concurrency)
+    semaphore = asyncio.Semaphore(int(state._setting("concurrency", settings.metrics_collector_concurrency)))
 
     async def collect_one(connection: dict) -> dict:
         connection_id = str(connection.get("_id", "unknown"))
@@ -874,7 +871,7 @@ async def collect_database_metrics_once(
             async with semaphore:
                 return await asyncio.wait_for(
                     _collect_database_sample(database, connection, state),
-                    timeout=settings.metrics_target_timeout_seconds,
+                    timeout=int(state._setting("target_timeout_seconds", settings.metrics_target_timeout_seconds)),
                 )
         except asyncio.TimeoutError:
             state.reset_connection(connection_id)
@@ -891,7 +888,7 @@ async def collect_database_metrics_once(
                     "warnings": [],
                     "error": (
                         "Telemetry collection timed out after "
-                        f"{settings.metrics_target_timeout_seconds} seconds."
+                        f"{int(state._setting('target_timeout_seconds', settings.metrics_target_timeout_seconds))} seconds."
                     ),
                 }
             )
@@ -1045,7 +1042,7 @@ async def collect_server_metrics_once(
     if not due_servers:
         return result
 
-    semaphore = asyncio.Semaphore(settings.metrics_collector_concurrency)
+    semaphore = asyncio.Semaphore(int(state._setting("concurrency", settings.metrics_collector_concurrency)))
 
     async def collect_one(server: dict) -> dict:
         server_id = str(server["_id"])
@@ -1054,7 +1051,7 @@ async def collect_server_metrics_once(
             async with semaphore:
                 telemetry = await asyncio.wait_for(
                     collect_server_telemetry(database, server_id),
-                    timeout=settings.metrics_target_timeout_seconds,
+                    timeout=int(state._setting("target_timeout_seconds", settings.metrics_target_timeout_seconds)),
                 )
             return _build_server_sample(server, telemetry)
         except asyncio.TimeoutError:
@@ -1064,7 +1061,7 @@ async def collect_server_metrics_once(
                     "status": "unreachable",
                     "error": (
                         "SSH telemetry timed out after "
-                        f"{settings.metrics_target_timeout_seconds} seconds."
+                        f"{int(state._setting('target_timeout_seconds', settings.metrics_target_timeout_seconds))} seconds."
                     ),
                 },
             )

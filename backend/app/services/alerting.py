@@ -9,6 +9,7 @@ from bson import ObjectId
 
 from app.core.collections import ALERTS_COLLECTION_NAME, COLLECTOR_STATUS_COLLECTION_NAME
 from app.core.config import settings
+from app.services.system_settings import runtime_monitoring_settings
 from app.core.exceptions import AppError
 from app.services.email_delivery import (
     enqueue_alert_email_deliveries,
@@ -648,6 +649,8 @@ def transition_alert(existing: dict | None, condition: AlertCondition, now: date
     good_count = int(existing.get("good_count") or 0) + 1
     if status == "cleared":
         if good_count >= condition.recovery_samples:
+            # A cleared active condition stays suppressed until it genuinely
+            # recovers. Deleting here rearms the alert for a future incident.
             return "delete", None
         return "update", {"good_count": good_count}
 
@@ -680,6 +683,9 @@ async def _evaluate_source(
     existing_by_rule = {str(item["rule_key"]): item for item in existing_items}
     conditions_by_rule = {condition.rule_key: condition for condition in conditions}
 
+    # Dynamic rule families (tablespaces/filesystems) can disappear after a
+    # recovery or mount change. When the current snapshot fully evaluated that
+    # family, synthesize a healthy result so stale alerts can resolve/rearm.
     for rule_key in existing_by_rule:
         if rule_key in conditions_by_rule:
             continue
@@ -725,12 +731,17 @@ async def _evaluate_source(
             upsert=True,
         )
 
+        # Email delivery is event-driven, not sample-driven. Queue only when
+        # an incident first becomes active or when its severity escalates.
         if action == "update":
             updated_alert = await collection.find_one({"alert_key": alert_key})
             if updated_alert and should_enqueue_alert_email(existing, updated_alert):
                 try:
                     await enqueue_alert_email_deliveries(database, updated_alert)
                 except Exception:
+                    # Alert persistence is more important than notification
+                    # transport. A mail configuration/provider issue must never
+                    # break the collector's monitoring state machine.
                     logger.exception(
                         "Failed to queue email notification alert_key=%s",
                         alert_key,
@@ -775,9 +786,30 @@ async def evaluate_server_sample(database, server: dict, sample: dict) -> None:
 
 
 async def sync_collector_heartbeat_alert(database) -> None:
-    if not settings.metrics_collector_enabled:
+    monitoring = await runtime_monitoring_settings(database)
+    if not bool(monitoring.get("enabled", settings.metrics_collector_enabled)):
+        await _evaluate_source(
+            database,
+            source_type="collector",
+            source_id="primary",
+            source_name="DBAChum Collector",
+            conditions=[
+                AlertCondition(
+                    rule_key="heartbeat",
+                    active=False,
+                    severity="critical",
+                    title="Background collector heartbeat missing",
+                    message="DBAChum monitoring is intentionally paused in Settings.",
+                    required_samples=1,
+                    recovery_samples=1,
+                    current_value="paused",
+                    threshold="monitoring enabled",
+                )
+            ],
+        )
         return
 
+    stale_seconds = int(monitoring.get("stale_threshold_seconds", settings.alert_collector_stale_seconds))
     status = await database[COLLECTOR_STATUS_COLLECTION_NAME].find_one({"_id": "primary"})
     now = _utcnow()
     heartbeat = status.get("last_heartbeat_at") if status else None
@@ -786,7 +818,7 @@ async def sync_collector_heartbeat_alert(database) -> None:
     state = status.get("state") if status else "not_started"
     alive = bool(
         heartbeat is not None
-        and (now - heartbeat).total_seconds() <= settings.alert_collector_stale_seconds
+        and (now - heartbeat).total_seconds() <= stale_seconds
         and state in {"starting", "running", "degraded"}
     )
     message = "The DBAChum background collector heartbeat is healthy."
@@ -812,7 +844,7 @@ async def sync_collector_heartbeat_alert(database) -> None:
                 required_samples=1,
                 recovery_samples=1,
                 current_value=state,
-                threshold=f"heartbeat <= {settings.alert_collector_stale_seconds}s",
+                threshold=f"heartbeat <= {stale_seconds}s",
             )
         ],
     )

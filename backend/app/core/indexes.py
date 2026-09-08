@@ -235,6 +235,12 @@ async def create_indexes(
     )
 
 
+
+    await database.app_settings.create_index(
+        "updated_at",
+        name="ix_app_settings_updated",
+    )
+
     await database.analytics_daily_snapshots.create_index(
         [("target_type", 1), ("target_id", 1), ("day", 1)],
         unique=True,

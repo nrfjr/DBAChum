@@ -17,6 +17,7 @@ export type Permission =
   | 'users:manage'
   | 'provisioning:manage'
   | 'ldap:manage'
+  | 'system:manage'
 
 export interface PermissionSubject {
   role?: UserRole | string | null
@@ -58,6 +59,7 @@ const rolePermissions:
       'users:manage',
       'provisioning:manage',
       'ldap:manage',
+      'system:manage',
     ]),
   }
 

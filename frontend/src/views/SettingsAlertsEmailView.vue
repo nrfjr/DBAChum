@@ -121,7 +121,6 @@ async function saveSettings() {
     applySettings()
     savedMessage.value = 'Email delivery settings saved.'
   } catch {
-    // Store exposes the server-side validation message.
   }
 }
 
@@ -227,7 +226,6 @@ onMounted(async () => {
     await emailStore.load()
     applySettings()
   } catch {
-    // Error is shown from store state.
   }
 })
 </script>

@@ -1,0 +1,19 @@
+.settings-stack { display: grid; gap: 1rem; }
+.settings-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .85rem; }
+.settings-form-grid label, .settings-toggle-row { display: grid; gap: .35rem; }
+.settings-form-grid label > span { color: var(--text-muted); font-size: .78rem; }
+.settings-toggle-row { grid-template-columns: auto 1fr; align-items: start; margin-bottom: 1rem; }
+.settings-toggle-row span { display: grid; gap: .15rem; }
+.settings-toggle-row small { color: var(--text-muted); }
+.overview-facts-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .75rem; }
+.overview-facts-grid > div { display: grid; gap: .2rem; min-width: 0; padding: .85rem; border: 1px solid var(--border); border-radius: .75rem; background: var(--surface); }
+.overview-facts-grid span { color: var(--text-muted); font-size: .75rem; }
+.maintenance-action-list { display: grid; gap: .65rem; }
+.maintenance-action-list > div { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: .85rem 0; border-bottom: 1px solid var(--border); }
+.maintenance-action-list > div:last-child { border-bottom: 0; }
+.maintenance-action-list span { display: grid; gap: .2rem; }
+.maintenance-action-list small { color: var(--text-muted); }
+@media (max-width: 760px) {
+  .settings-form-grid, .overview-facts-grid { grid-template-columns: 1fr; }
+  .maintenance-action-list > div { align-items: stretch; flex-direction: column; }
+}

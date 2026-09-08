@@ -141,7 +141,6 @@ function selectTab(tab: DatabaseTab) {
 
 function applyTabFromRoute() {
   const raw = String(route.query.tab ?? '')
-  // Keep old deep links useful while the workspace stays intentionally lean.
   const aliases: Record<string, DatabaseTab> = {
     history: 'metrics',
     performance: 'metrics',

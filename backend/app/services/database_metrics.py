@@ -6,12 +6,14 @@ from app.core.collections import (
 )
 from app.core.config import settings
 from app.services.database_connections import get_database_connection
+from app.services.system_settings import runtime_monitoring_settings
 
 
 MAX_SQL_TEXT_ROWS = 2000
 
 
 def _oracle_sql_ids(items: list[dict]) -> list[str]:
+
     seen: set[str] = set()
     result: list[str] = []
 
@@ -72,7 +74,8 @@ async def get_database_metric_history(
         connection_id,
     )
 
-
+    # History is intentionally bounded to DBAChum's rolling 24-hour
+    # telemetry window even for internal callers that bypass API validation.
     hours = min(max(int(hours), 1), 24)
 
     to_at = datetime.now(timezone.utc)
@@ -104,7 +107,8 @@ async def get_database_metric_history(
 
     items = await cursor.to_list(None)
 
-
+    # Mongo returned newest → oldest because we want the newest N points.
+    # Charts and range aggregation want chronological order.
     items.reverse()
 
     oracle_sql_texts: list[dict] = []
@@ -115,12 +119,14 @@ async def get_database_metric_history(
             items,
         )
 
+    monitoring = await runtime_monitoring_settings(database)
+
     return {
         "connection_id": connection_id,
         "engine": connection["engine"],
         "from_at": from_at,
         "to_at": to_at,
-        "sample_interval_seconds": settings.metrics_collector_interval_seconds,
+        "sample_interval_seconds": int(monitoring.get("database_interval_seconds", settings.metrics_collector_interval_seconds)),
         "count": len(items),
         "items": items,
         "oracle_sql_texts": oracle_sql_texts,

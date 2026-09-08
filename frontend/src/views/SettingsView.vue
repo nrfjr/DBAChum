@@ -2,6 +2,8 @@
 import { computed, ref } from 'vue'
 import { RouterLink, RouterView, useRoute } from 'vue-router'
 
+import '@/assets/settingsCompletion.css'
+
 import { hasPermission, type Permission } from '@/core/permissions'
 import { useAuthStore } from '@/stores/auth'
 
@@ -21,9 +23,18 @@ const canAccessConnections = computed(() =>
 )
 const canManageUsers = computed(() => hasPermission(authStore.user, 'users:manage'))
 const canManageNotifications = computed(() => hasPermission(authStore.user, 'notifications:manage'))
+const canManageSystem = computed(() => hasPermission(authStore.user, 'system:manage'))
 
 const sectionTitle = computed(() => {
   switch (route.name) {
+    case 'settings-general':
+      return 'General'
+    case 'settings-monitoring':
+      return 'Monitoring'
+    case 'settings-data':
+      return 'Data'
+    case 'settings-system-maintenance':
+      return 'System Maintenance'
     case 'settings-connections':
       return 'Connections'
     case 'settings-users':
@@ -55,8 +66,8 @@ const groups = computed<SettingsNavGroup[]>(() => [
       {
         label: 'General',
         description: 'Installation identity, global defaults and runtime information',
-        visible: true,
-        disabled: true,
+        to: '/settings/general',
+        visible: canManageSystem.value,
       },
     ],
   },
@@ -76,9 +87,9 @@ const groups = computed<SettingsNavGroup[]>(() => [
     items: [
       {
         label: 'Monitoring',
-        description: 'Collector cadence, retention and monitoring defaults',
-        visible: true,
-        disabled: true,
+        description: 'Collector cadence, status and monitoring defaults',
+        to: '/settings/monitoring',
+        visible: canManageSystem.value,
       },
       {
         label: 'Alerts & Email',
@@ -98,10 +109,16 @@ const groups = computed<SettingsNavGroup[]>(() => [
         visible: canManageUsers.value,
       },
       {
-        label: 'Data & Maintenance',
-        description: 'Cleanup, diagnostics and operational maintenance',
-        visible: true,
-        disabled: true,
+        label: 'Data',
+        description: 'Retention, stored collection usage and metadata export',
+        to: '/settings/data',
+        visible: canManageSystem.value,
+      },
+      {
+        label: 'System Maintenance',
+        description: 'DBAChum cleanup, diagnostics and MongoDB index verification',
+        to: '/settings/system-maintenance',
+        visible: canManageSystem.value,
       },
     ],
   },

@@ -12,6 +12,10 @@ import RecordsView from '@/views/RecordsView.vue'
 import ServerDetailView from '@/views/ServerDetailView.vue'
 import ServersView from '@/views/ServersView.vue'
 import SettingsAlertsEmailView from '@/views/SettingsAlertsEmailView.vue'
+import SettingsGeneralView from '@/views/SettingsGeneralView.vue'
+import SettingsMonitoringView from '@/views/SettingsMonitoringView.vue'
+import SettingsDataView from '@/views/SettingsDataView.vue'
+import SettingsSystemMaintenanceView from '@/views/SettingsSystemMaintenanceView.vue'
 import SettingsConnectionsView from '@/views/SettingsConnectionsView.vue'
 import SettingsUsersView from '@/views/SettingsUsersView.vue'
 import SettingsView from '@/views/SettingsView.vue'
@@ -134,6 +138,30 @@ const router = createRouter({
         {
           path: '',
           redirect: '/settings/connections',
+        },
+        {
+          path: 'general',
+          name: 'settings-general',
+          component: SettingsGeneralView,
+          meta: { permission: 'system:manage' },
+        },
+        {
+          path: 'monitoring',
+          name: 'settings-monitoring',
+          component: SettingsMonitoringView,
+          meta: { permission: 'system:manage' },
+        },
+        {
+          path: 'data',
+          name: 'settings-data',
+          component: SettingsDataView,
+          meta: { permission: 'system:manage' },
+        },
+        {
+          path: 'system-maintenance',
+          name: 'settings-system-maintenance',
+          component: SettingsSystemMaintenanceView,
+          meta: { permission: 'system:manage' },
         },
         {
           path: 'connections',

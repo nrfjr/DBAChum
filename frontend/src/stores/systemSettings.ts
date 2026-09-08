@@ -1,0 +1,118 @@
+import { defineStore } from 'pinia'
+
+export interface GeneralSettings {
+  installation_name: string
+  default_page_size: 10 | 25 | 50 | 100
+  default_analytics_months: number
+  environment: string
+  app_version: string
+  api_docs_enabled: boolean
+}
+
+export interface MonitoringSettings {
+  enabled: boolean
+  database_interval_seconds: number
+  server_interval_seconds: number
+  storage_interval_seconds: number
+  analytics_snapshot_interval_seconds: number
+  target_timeout_seconds: number
+  concurrency: number
+  stale_threshold_seconds: number
+  telemetry_retention_hours: number
+  collector: Record<string, unknown>
+}
+
+export interface DataCollectionStats {
+  name: string
+  count: number
+  size_bytes: number | null
+  storage_bytes: number | null
+  index_bytes: number | null
+}
+
+export interface DataSettings {
+  analytics_retention_days: number
+  action_audit_retention_days: number
+  terminal_audit_retention_days: number
+  provisioning_history_retention_days: number
+  telemetry_retention_hours: number
+  collections: DataCollectionStats[]
+}
+
+export interface MaintenanceDiagnostics {
+  generated_at: string
+  mongodb_ok: boolean
+  collection_count: number
+  collector: Record<string, unknown>
+  orphaned_analytics: number
+  stale_terminal_sessions: number
+  retention: Record<string, number>
+}
+
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL
+
+async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
+  const headers = new Headers(options.headers)
+  if (options.body && !(options.body instanceof FormData)) headers.set('Content-Type', 'application/json')
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    ...options,
+    credentials: 'include',
+    headers,
+  })
+  if (!response.ok) {
+    const body = await response.json().catch(() => null)
+    throw new Error(body?.error?.message ?? `Request failed with status ${response.status}`)
+  }
+  return response.json()
+}
+
+export const useSystemSettingsStore = defineStore('systemSettings', {
+  state: () => ({
+    general: null as GeneralSettings | null,
+    monitoring: null as MonitoringSettings | null,
+    data: null as DataSettings | null,
+    maintenance: null as MaintenanceDiagnostics | null,
+    loading: false,
+    error: null as string | null,
+  }),
+
+  actions: {
+    async loadGeneral() {
+      this.general = await request<GeneralSettings>('/settings/general')
+      return this.general
+    },
+    async saveGeneral(payload: Pick<GeneralSettings, 'installation_name' | 'default_page_size' | 'default_analytics_months'>) {
+      this.general = await request<GeneralSettings>('/settings/general', { method: 'PATCH', body: JSON.stringify(payload) })
+      return this.general
+    },
+    async loadMonitoring() {
+      this.monitoring = await request<MonitoringSettings>('/settings/monitoring')
+      return this.monitoring
+    },
+    async saveMonitoring(payload: Omit<MonitoringSettings, 'telemetry_retention_hours' | 'collector'>) {
+      this.monitoring = await request<MonitoringSettings>('/settings/monitoring', { method: 'PATCH', body: JSON.stringify(payload) })
+      return this.monitoring
+    },
+    async loadData() {
+      this.data = await request<DataSettings>('/settings/data')
+      return this.data
+    },
+    async saveData(payload: Pick<DataSettings, 'analytics_retention_days' | 'action_audit_retention_days' | 'terminal_audit_retention_days' | 'provisioning_history_retention_days'>) {
+      this.data = await request<DataSettings>('/settings/data', { method: 'PATCH', body: JSON.stringify(payload) })
+      return this.data
+    },
+    async loadMaintenance() {
+      this.maintenance = await request<MaintenanceDiagnostics>('/settings/maintenance')
+      return this.maintenance
+    },
+    async cleanup(payload = { apply_retention: true, remove_orphaned_analytics: true, reconcile_stale_terminal_sessions: true }) {
+      return request<{ retention_deleted: Record<string, number>; orphaned_analytics_deleted: number; stale_terminal_sessions_reconciled: number }>('/settings/maintenance/cleanup', { method: 'POST', body: JSON.stringify(payload) })
+    },
+    async verifyIndexes() {
+      return request<{ verified_at: string; message: string }>('/settings/maintenance/indexes/verify', { method: 'POST' })
+    },
+    async exportMetadata() {
+      return request<Record<string, unknown>>('/settings/data/export')
+    },
+  },
+})

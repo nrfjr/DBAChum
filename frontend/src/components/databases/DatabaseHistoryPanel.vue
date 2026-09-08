@@ -409,7 +409,6 @@ function cssVariable(name: string) {
 }
 
 const chartOption = computed(() => {
-  // Recompute ECharts options whenever the persisted appearance changes.
   void uiStore.resolvedTheme
   void uiStore.accent
 
@@ -651,7 +650,6 @@ async function tuneOracleSql(row: AggregatedSqlRow) {
       row.key,
     )
   } catch {
-    // Store error is rendered by the tuning modal / panel.
   }
 }
 
@@ -679,14 +677,12 @@ async function loadHistory(selectedHours: HistoryRange, resetView = true) {
   try {
     await metricsStore.loadHistory(props.connectionId, selectedHours)
   } catch {
-    // The store exposes the request error for the panel to render.
   }
 }
 
 onMounted(async () => {
   await loadHistory(hours.value)
   refreshTimer = setInterval(() => {
-    // Do not disturb a DBA who is zoomed into an incident window.
     if (!selectedWindow.value) void loadHistory(hours.value, false)
   }, 60_000)
 })

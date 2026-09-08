@@ -75,7 +75,6 @@ async function runSessionAction(session: OracleSession, action: 'terminate' | 'd
     await oracleStore.loadSessions(props.connectionId)
     showToast({ title: action === 'terminate' ? 'Session killed' : 'Session disconnected', tone: 'success' })
   } catch {
-    // Store exposes the backend error below the toolbar.
   }
 }
 

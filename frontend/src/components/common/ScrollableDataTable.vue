@@ -11,6 +11,8 @@ import {
   watch,
 } from 'vue'
 
+import { useSystemSettingsStore } from '@/stores/systemSettings'
+
 const emit = defineEmits<{
   scroll: [event: Event]
 }>()
@@ -31,14 +33,14 @@ const props = withDefaults(
     emptyMessage: 'No rows to display.',
     maxHeight: '34rem',
     paginate: true,
-    initialPageSize: 10,
     pageSizes: () => [10, 25, 50, 100],
   },
 )
 
 const slots = useSlots()
+const systemSettingsStore = useSystemSettingsStore()
 const page = ref(1)
-const pageSize = ref(props.initialPageSize)
+const pageSize = ref(props.initialPageSize ?? systemSettingsStore.general?.default_page_size ?? 10)
 
 function flattenRows(nodes: VNode[]): VNode[] {
   const result: VNode[] = []
@@ -65,6 +67,14 @@ const rangeStart = computed(() => totalRows.value === 0 ? 0 : (page.value - 1) *
 const rangeEnd = computed(() => Math.min(page.value * pageSize.value, totalRows.value))
 const showPagination = computed(() => props.paginate && totalRows.value > Math.min(...props.pageSizes))
 const shouldBoundHeight = computed(() => !props.paginate || pageSize.value > 10)
+
+
+watch(
+  () => systemSettingsStore.general?.default_page_size,
+  (value) => {
+    if (props.initialPageSize == null && value) pageSize.value = value
+  },
+)
 
 watch([totalRows, pageSize], () => {
   if (page.value > pageCount.value) page.value = pageCount.value

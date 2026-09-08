@@ -151,7 +151,6 @@ async function initializeMonitoring() {
       await monitoringStore.testSsh(serverId.value)
     }
   } catch {
-    // The monitoring card owns the error state so server inventory still renders.
   }
 }
 
@@ -159,7 +158,6 @@ async function testSsh() {
   try {
     await monitoringStore.testSsh(serverId.value)
   } catch {
-    // Store exposes the error inline.
   }
 }
 
@@ -180,7 +178,6 @@ async function trustHostKey() {
     server.value = await serversStore.loadOne(serverId.value)
     if (canCollectHostMetrics.value) await monitoringStore.loadHealth(serverId.value)
   } catch {
-    // Store exposes the error inline.
   }
 }
 
@@ -188,7 +185,6 @@ async function refreshHost() {
   try {
     await monitoringStore.loadHealth(serverId.value)
   } catch {
-    // Store exposes the error inline.
   }
 }
 

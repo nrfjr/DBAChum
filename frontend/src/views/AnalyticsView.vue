@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import VChart from 'vue-echarts'
 
@@ -9,6 +9,7 @@ import { hasPermission } from '@/core/permissions'
 import { useAnalyticsStore, type DatabaseAnalyticsItem, type ServerAnalyticsItem } from '@/stores/analytics'
 import { useAuthStore } from '@/stores/auth'
 import { useConnectionsStore } from '@/stores/connections'
+import { useSystemSettingsStore } from '@/stores/systemSettings'
 import { showToast } from '@/ui/feedback'
 
 const route = useRoute()
@@ -16,6 +17,7 @@ const router = useRouter()
 const analyticsStore = useAnalyticsStore()
 const authStore = useAuthStore()
 const connectionsStore = useConnectionsStore()
+const systemSettingsStore = useSystemSettingsStore()
 
 const engine = ref('')
 const osFamily = ref('')
@@ -31,6 +33,23 @@ const sizeColumn = ref('')
 const unitColumn = ref('')
 const defaultUnit = ref('GB')
 const databaseMap = ref<Record<string, string>>({})
+
+type SizeUnitChoice = 'auto' | 'MB' | 'GB' | 'TB'
+type SizeChartKey = 'databaseSize' | 'growth' | 'backupSize' | 'oracleMemory' | 'serverDisk' | 'serverMemory'
+const sizeUnits = reactive<Record<SizeChartKey, SizeUnitChoice>>({
+  databaseSize: 'auto',
+  growth: 'auto',
+  backupSize: 'auto',
+  oracleMemory: 'auto',
+  serverDisk: 'auto',
+  serverMemory: 'auto',
+})
+const sizeUnitOptions: { value: SizeUnitChoice; label: string }[] = [
+  { value: 'auto', label: 'Auto' },
+  { value: 'MB', label: 'MB' },
+  { value: 'GB', label: 'GB' },
+  { value: 'TB', label: 'TB' },
+]
 
 const mode = computed<'databases' | 'servers'>(() => String(route.query.type ?? '') === 'servers' ? 'servers' : 'databases')
 const canImport = computed(() => hasPermission(authStore.user, 'connections:manage'))
@@ -85,6 +104,25 @@ function osLabel(value: string) {
   return { linux: 'Linux', windows: 'Windows', aix: 'AIX', unix: 'Unix', other: 'Other' }[value] ?? value
 }
 
+const SIZE_FACTORS = { MB: 1024 ** 2, GB: 1024 ** 3, TB: 1024 ** 4 } as const
+
+type FixedSizeUnit = keyof typeof SIZE_FACTORS
+
+function resolveSizeUnit(choice: SizeUnitChoice, values: (number | null | undefined)[]): FixedSizeUnit {
+  if (choice !== 'auto') return choice
+  const max = Math.max(0, ...values.map((value) => Number(value ?? 0)))
+  if (max >= SIZE_FACTORS.TB) return 'TB'
+  if (max >= SIZE_FACTORS.GB) return 'GB'
+  return 'MB'
+}
+
+function sizeInUnit(value: number | null | undefined, unit: FixedSizeUnit) {
+  if (value == null || !Number.isFinite(value)) return '—'
+  const converted = value / SIZE_FACTORS[unit]
+  const digits = converted >= 100 ? 0 : converted >= 10 ? 1 : 2
+  return `${converted.toFixed(digits)} ${unit}`
+}
+
 function chartBase() {
   return {
     animationDuration: 250,
@@ -97,9 +135,12 @@ const databaseSizeOption = computed(() => {
   const rows = [...(databaseData.value?.items ?? [])]
     .filter((item) => item.database_size_bytes != null)
     .sort((a, b) => Number(b.database_size_bytes ?? 0) - Number(a.database_size_bytes ?? 0))
+  const values = rows.map((row) => row.database_size_bytes)
+  const unit = resolveSizeUnit(sizeUnits.databaseSize, values)
   return {
     ...chartBase(),
-    xAxis: { type: 'value', axisLabel: { formatter: (value: number) => bytes(value) } },
+    tooltip: { trigger: 'axis', valueFormatter: (value: number) => sizeInUnit(value, unit) },
+    xAxis: { type: 'value', axisLabel: { formatter: (value: number) => sizeInUnit(value, unit) } },
     yAxis: { type: 'category', data: rows.map((row) => row.name), inverse: true },
     series: [{ type: 'bar', data: rows.map((row) => ({ value: row.database_size_bytes, connectionId: row.connection_id, engine: row.engine })) }],
   }
@@ -133,9 +174,12 @@ const backupSizeOption = computed(() => {
   const rows = [...(databaseData.value?.items ?? [])]
     .filter((item) => item.last_backup_size_bytes != null)
     .sort((a, b) => Number(b.last_backup_size_bytes ?? 0) - Number(a.last_backup_size_bytes ?? 0))
+  const values = rows.map((row) => row.last_backup_size_bytes)
+  const unit = resolveSizeUnit(sizeUnits.backupSize, values)
   return {
     ...chartBase(),
-    xAxis: { type: 'value', axisLabel: { formatter: (value: number) => bytes(value) } },
+    tooltip: { trigger: 'axis', valueFormatter: (value: number) => sizeInUnit(value, unit) },
+    xAxis: { type: 'value', axisLabel: { formatter: (value: number) => sizeInUnit(value, unit) } },
     yAxis: { type: 'category', data: rows.map((row) => row.name), inverse: true },
     series: [{ type: 'bar', data: rows.map((row) => ({ value: row.last_backup_size_bytes, connectionId: row.connection_id, engine: row.engine })) }],
   }
@@ -156,13 +200,15 @@ const growthOption = computed(() => {
   }
   const names = new Map(points.map((point) => [point.connection_id, point.name]))
   const engines = new Map((databaseData.value?.items ?? []).map((item) => [item.connection_id, item.engine]))
+  const values = points.filter((point) => selectedIds.includes(point.connection_id)).map((point) => point.size_bytes)
+  const unit = resolveSizeUnit(sizeUnits.growth, values)
   return {
     ...chartBase(),
-    tooltip: { trigger: 'axis', valueFormatter: (value: number) => bytes(value) },
+    tooltip: { trigger: 'axis', valueFormatter: (value: number) => sizeInUnit(value, unit) },
     legend: { type: 'scroll', top: 0 },
     grid: { left: 18, right: 18, top: 54, bottom: 34, containLabel: true },
     xAxis: { type: 'category', boundaryGap: false, data: monthsFound },
-    yAxis: { type: 'value', axisLabel: { formatter: (value: number) => bytes(value) } },
+    yAxis: { type: 'value', axisLabel: { formatter: (value: number) => sizeInUnit(value, unit) } },
     series: selectedIds.map((id) => ({
       type: 'line',
       name: names.get(id) ?? id,
@@ -185,12 +231,15 @@ const engineDistributionOption = computed(() => ({
 
 const oracleMemoryOption = computed(() => {
   const rows = (databaseData.value?.items ?? []).filter((item) => item.engine === 'oracle' && (item.sga_bytes || item.pga_allocated_bytes))
+  const values = rows.flatMap((row) => [row.sga_bytes, row.pga_allocated_bytes])
+  const unit = resolveSizeUnit(sizeUnits.oracleMemory, values)
   return {
     ...chartBase(),
+    tooltip: { trigger: 'axis', valueFormatter: (value: number) => sizeInUnit(value, unit) },
     legend: { top: 0 },
     grid: { left: 18, right: 18, top: 44, bottom: 34, containLabel: true },
     xAxis: { type: 'category', data: rows.map((row) => row.name) },
-    yAxis: { type: 'value', axisLabel: { formatter: (value: number) => bytes(value) } },
+    yAxis: { type: 'value', axisLabel: { formatter: (value: number) => sizeInUnit(value, unit) } },
     series: [
       { type: 'bar', name: 'SGA', stack: 'memory', data: rows.map((row) => row.sga_bytes ?? 0) },
       { type: 'bar', name: 'PGA allocated', stack: 'memory', data: rows.map((row) => row.pga_allocated_bytes ?? 0) },
@@ -200,9 +249,12 @@ const oracleMemoryOption = computed(() => {
 
 const serverDiskCapacityOption = computed(() => {
   const rows = [...(serverData.value?.items ?? [])].filter((item) => item.disk_total_bytes != null).sort((a, b) => Number(b.disk_total_bytes ?? 0) - Number(a.disk_total_bytes ?? 0))
+  const values = rows.map((row) => row.disk_total_bytes)
+  const unit = resolveSizeUnit(sizeUnits.serverDisk, values)
   return {
     ...chartBase(),
-    xAxis: { type: 'value', axisLabel: { formatter: (value: number) => bytes(value) } },
+    tooltip: { trigger: 'axis', valueFormatter: (value: number) => sizeInUnit(value, unit) },
+    xAxis: { type: 'value', axisLabel: { formatter: (value: number) => sizeInUnit(value, unit) } },
     yAxis: { type: 'category', data: rows.map((row) => row.name), inverse: true },
     series: [{ type: 'bar', data: rows.map((row) => ({ value: row.disk_total_bytes, serverId: row.server_id, osFamily: row.os_family })) }],
   }
@@ -215,6 +267,19 @@ const serverDiskUsageOption = computed(() => {
     xAxis: { type: 'value', min: 0, max: 100, axisLabel: { formatter: '{value}%' } },
     yAxis: { type: 'category', data: rows.map((row) => row.name), inverse: true },
     series: [{ type: 'bar', data: rows.map((row) => ({ value: row.disk_used_percent, serverId: row.server_id, osFamily: row.os_family })) }],
+  }
+})
+
+const serverMemoryCapacityOption = computed(() => {
+  const rows = [...(serverData.value?.items ?? [])].filter((item) => item.memory_total_bytes != null).sort((a, b) => Number(b.memory_total_bytes ?? 0) - Number(a.memory_total_bytes ?? 0))
+  const values = rows.map((row) => row.memory_total_bytes)
+  const unit = resolveSizeUnit(sizeUnits.serverMemory, values)
+  return {
+    ...chartBase(),
+    tooltip: { trigger: 'axis', valueFormatter: (value: number) => sizeInUnit(value, unit) },
+    xAxis: { type: 'value', axisLabel: { formatter: (value: number) => sizeInUnit(value, unit) } },
+    yAxis: { type: 'category', data: rows.map((row) => row.name), inverse: true },
+    series: [{ type: 'bar', data: rows.map((row) => ({ value: row.memory_total_bytes, serverId: row.server_id, osFamily: row.os_family })) }],
   }
 })
 
@@ -270,9 +335,6 @@ async function load() {
   else await analyticsStore.loadServers(osFamily.value, months.value)
 }
 
-function setMode(next: 'databases' | 'servers') {
-  void router.push({ path: '/analytics', query: next === 'servers' ? { type: 'servers' } : {} })
-}
 
 function closeImport() {
   importOpen.value = false
@@ -346,6 +408,11 @@ async function submitImport() {
 watch([mode, engine, osFamily, months], () => { void load() })
 
 onMounted(async () => {
+  try {
+    await systemSettingsStore.loadGeneral()
+    months.value = systemSettingsStore.general?.default_analytics_months ?? months.value
+  } catch {
+  }
   await Promise.all([load(), canImport.value ? connectionsStore.load() : Promise.resolve()])
 })
 </script>
@@ -353,10 +420,7 @@ onMounted(async () => {
 <template>
   <section class="analytics-report">
     <div class="analytics-report__toolbar">
-      <div class="workspace-tabs analytics-mode-tabs">
-        <button type="button" :class="{ active: mode === 'databases' }" @click="setMode('databases')">Databases</button>
-        <button type="button" :class="{ active: mode === 'servers' }" @click="setMode('servers')">Servers</button>
-      </div>
+      <div class="analytics-report__identity"><strong>{{ mode === 'databases' ? 'Database analytics' : 'Server analytics' }}</strong><span>Collected estate report</span></div>
 
       <div class="analytics-report__filters">
         <label v-if="mode === 'databases'">
@@ -378,6 +442,7 @@ onMounted(async () => {
             <option :value="12">12 months</option>
             <option :value="24">24 months</option>
             <option :value="36">36 months</option>
+            <option :value="60">60 months</option>
           </select>
         </label>
         <button v-if="mode === 'databases' && canImport" type="button" class="secondary-button" @click="importOpen = true">Import growth history</button>
@@ -392,18 +457,18 @@ onMounted(async () => {
         <article class="analytics-summary-card"><span>Databases</span><strong>{{ databaseData.summary.database_count }}</strong><small>{{ databaseData.summary.online_count }} online · {{ databaseData.summary.unreachable_count }} unreachable</small></article>
         <article class="analytics-summary-card"><span>Total database size</span><strong>{{ bytes(databaseData.summary.total_size_bytes) }}</strong><small>Across the current filter</small></article>
         <article class="analytics-summary-card"><span>Used data space</span><strong>{{ bytes(databaseData.summary.used_size_bytes) }}</strong><small>Where the engine exposes used allocation</small></article>
-        <article class="analytics-summary-card"><span>Latest snapshot</span><strong>{{ new Date(databaseData.generated_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }}</strong><small>{{ new Date(databaseData.generated_at).toLocaleDateString() }}</small></article>
+        <article class="analytics-summary-card"><span>Report generated</span><strong>{{ new Date(databaseData.generated_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }}</strong><small>{{ new Date(databaseData.generated_at).toLocaleDateString() }}</small></article>
       </div>
 
       <div class="analytics-report-grid">
         <article class="analytics-chart-card analytics-chart-card--wide">
-          <header><div><h2>Database size</h2><p>Current allocated database size across monitored targets.</p></div></header>
+          <header><div><h2>Database size</h2><p>Current allocated database size across monitored targets.</p></div><label class="analytics-unit-select">Unit<select v-model="sizeUnits.databaseSize"><option v-for="option in sizeUnitOptions" :key="option.value" :value="option.value">{{ option.label }}</option></select></label></header>
           <VChart v-if="databaseData.items.some((item) => item.database_size_bytes != null)" class="analytics-chart analytics-chart--tall" :option="databaseSizeOption" autoresize @click="openDatabaseFromChart" />
           <p v-else class="empty-state">Size telemetry has not been collected yet.</p>
         </article>
 
         <article class="analytics-chart-card analytics-chart-card--wide">
-          <header><div><h2>Database growth</h2><p>Month-end size from DBAChum daily snapshots and imported history. Up to the 10 largest databases are shown together for readability.</p></div></header>
+          <header><div><h2>Database growth</h2><p>Month-end size from DBAChum daily snapshots and imported history. Up to the 10 largest databases are shown together for readability.</p></div><label class="analytics-unit-select">Unit<select v-model="sizeUnits.growth"><option v-for="option in sizeUnitOptions" :key="option.value" :value="option.value">{{ option.label }}</option></select></label></header>
           <VChart v-if="databaseData.growth.length" class="analytics-chart analytics-chart--tall" :option="growthOption" autoresize @click="openDatabaseFromChart" />
           <p v-else class="empty-state">Growth history begins after snapshots are collected or historical data is imported.</p>
         </article>
@@ -421,7 +486,7 @@ onMounted(async () => {
         </article>
 
         <article class="analytics-chart-card">
-          <header><div><h2>Latest backup size</h2><p>Most recent backup size where the engine/provider reports it.</p></div></header>
+          <header><div><h2>Latest backup size</h2><p>Most recent backup size where the engine/provider reports it.</p></div><label class="analytics-unit-select">Unit<select v-model="sizeUnits.backupSize"><option v-for="option in sizeUnitOptions" :key="option.value" :value="option.value">{{ option.label }}</option></select></label></header>
           <VChart v-if="databaseData.items.some((item) => item.last_backup_size_bytes != null)" class="analytics-chart" :option="backupSizeOption" autoresize @click="openDatabaseFromChart" />
           <p v-else class="empty-state">Backup size is unavailable for the current targets.</p>
         </article>
@@ -433,7 +498,7 @@ onMounted(async () => {
         </article>
 
         <article v-if="engine === 'oracle'" class="analytics-chart-card analytics-chart-card--wide">
-          <header><div><h2>Oracle memory footprint</h2><p>SGA plus currently allocated PGA from the latest collected Oracle memory snapshot.</p></div></header>
+          <header><div><h2>Oracle memory footprint</h2><p>SGA plus currently allocated PGA from the latest collected Oracle memory snapshot.</p></div><label class="analytics-unit-select">Unit<select v-model="sizeUnits.oracleMemory"><option v-for="option in sizeUnitOptions" :key="option.value" :value="option.value">{{ option.label }}</option></select></label></header>
           <VChart v-if="databaseData.items.some((item) => item.sga_bytes || item.pga_allocated_bytes)" class="analytics-chart" :option="oracleMemoryOption" autoresize />
           <p v-else class="empty-state">Oracle memory telemetry has not been collected yet.</p>
         </article>
@@ -459,12 +524,12 @@ onMounted(async () => {
         <article class="analytics-summary-card"><span>Servers</span><strong>{{ serverData.summary.server_count }}</strong><small>{{ serverData.summary.online_count }} online · {{ serverData.summary.unreachable_count }} unreachable</small></article>
         <article class="analytics-summary-card"><span>Total storage</span><strong>{{ bytes(serverData.summary.total_disk_bytes) }}</strong><small>{{ bytes(serverData.summary.used_disk_bytes) }} used</small></article>
         <article class="analytics-summary-card"><span>Total memory</span><strong>{{ bytes(serverData.summary.total_memory_bytes) }}</strong><small>Across servers with telemetry</small></article>
-        <article class="analytics-summary-card"><span>Latest snapshot</span><strong>{{ new Date(serverData.generated_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }}</strong><small>{{ new Date(serverData.generated_at).toLocaleDateString() }}</small></article>
+        <article class="analytics-summary-card"><span>Report generated</span><strong>{{ new Date(serverData.generated_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }}</strong><small>{{ new Date(serverData.generated_at).toLocaleDateString() }}</small></article>
       </div>
 
       <div class="analytics-report-grid">
         <article class="analytics-chart-card analytics-chart-card--wide">
-          <header><div><h2>Disk capacity</h2><p>Total mounted filesystem capacity visible to DBAChum.</p></div></header>
+          <header><div><h2>Disk capacity</h2><p>Total mounted filesystem capacity visible to DBAChum.</p></div><label class="analytics-unit-select">Unit<select v-model="sizeUnits.serverDisk"><option v-for="option in sizeUnitOptions" :key="option.value" :value="option.value">{{ option.label }}</option></select></label></header>
           <VChart v-if="serverData.items.some((item) => item.disk_total_bytes != null)" class="analytics-chart analytics-chart--tall" :option="serverDiskCapacityOption" autoresize @click="openServerFromChart" />
           <p v-else class="empty-state">Disk capacity telemetry has not been collected yet.</p>
         </article>
@@ -472,6 +537,11 @@ onMounted(async () => {
           <header><div><h2>Disk utilization</h2><p>Aggregate used percentage across collected filesystems.</p></div></header>
           <VChart v-if="serverData.items.some((item) => item.disk_used_percent != null)" class="analytics-chart" :option="serverDiskUsageOption" autoresize @click="openServerFromChart" />
           <p v-else class="empty-state">Disk utilization is not available yet.</p>
+        </article>
+        <article class="analytics-chart-card">
+          <header><div><h2>Memory capacity</h2><p>Total physical memory reported by each monitored server.</p></div><label class="analytics-unit-select">Unit<select v-model="sizeUnits.serverMemory"><option v-for="option in sizeUnitOptions" :key="option.value" :value="option.value">{{ option.label }}</option></select></label></header>
+          <VChart v-if="serverData.items.some((item) => item.memory_total_bytes != null)" class="analytics-chart" :option="serverMemoryCapacityOption" autoresize @click="openServerFromChart" />
+          <p v-else class="empty-state">Memory capacity telemetry is not available yet.</p>
         </article>
         <article class="analytics-chart-card">
           <header><div><h2>Memory utilization</h2><p>Latest collected memory usage by server.</p></div></header>
@@ -544,7 +614,11 @@ onMounted(async () => {
 <style scoped>
 .analytics-report { display: grid; gap: 1rem; min-width: 0; }
 .analytics-report__toolbar { display: flex; align-items: end; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
-.analytics-mode-tabs { margin: 0; }
+.analytics-report__identity { display: grid; gap: .15rem; }
+.analytics-report__identity strong { font-size: 1rem; }
+.analytics-report__identity span { color: var(--text-muted); font-size: .75rem; }
+.analytics-unit-select { display: flex; align-items: center; gap: .4rem; color: var(--text-muted); font-size: .72rem; white-space: nowrap; }
+.analytics-unit-select select { min-width: 5rem; min-height: 2rem; }
 .analytics-report__filters { display: flex; align-items: end; justify-content: flex-end; gap: .65rem; flex-wrap: wrap; }
 .analytics-report__filters label { display: grid; gap: .3rem; min-width: 9rem; color: var(--text-muted); font-size: .75rem; }
 .analytics-report__filters select { min-height: 2.35rem; }

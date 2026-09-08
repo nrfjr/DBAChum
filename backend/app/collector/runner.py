@@ -21,6 +21,7 @@ from app.services.metrics_collector import (
     collect_collector_cycle,
 )
 from app.services.email_delivery import process_pending_email_deliveries
+from app.services.system_settings import runtime_monitoring_settings, runtime_data_settings, run_retention_cleanup
 
 
 logger = logging.getLogger(__name__)
@@ -48,6 +49,7 @@ class CollectorRuntime:
         self.hostname = socket.gethostname()
         self.pid = os.getpid()
         self._heartbeat_task: asyncio.Task | None = None
+        self.last_retention_cleanup_at: datetime | None = None
 
     async def acquire_lease(self) -> None:
         now = _utcnow()
@@ -160,10 +162,11 @@ class CollectorRuntime:
         cycle_started_at: datetime,
         duration_ms: float,
         cycle,
+        interval_seconds: int,
     ) -> None:
         completed_at = _utcnow()
         next_cycle_at = cycle_started_at + timedelta(
-            seconds=settings.metrics_collector_interval_seconds
+            seconds=interval_seconds
         )
         status_update = {
             "state": "running",
@@ -176,6 +179,7 @@ class CollectorRuntime:
             "database_samples_inserted": cycle.database.inserted_count,
             "samples_inserted": cycle.inserted_count,
             "last_error": None,
+            "interval_seconds": interval_seconds,
         }
         if cycle.server.performed:
             status_update.update(
@@ -197,6 +201,8 @@ class CollectorRuntime:
         self,
         cycle_started_at: datetime,
         exc: Exception,
+        *,
+        interval_seconds: int,
     ) -> None:
         await self.collection.update_one(
             {"_id": COLLECTOR_STATUS_ID, "owner_id": self.owner_id},
@@ -205,8 +211,9 @@ class CollectorRuntime:
                     "state": "degraded",
                     "last_cycle_completed_at": _utcnow(),
                     "next_cycle_at": cycle_started_at + timedelta(
-                        seconds=settings.metrics_collector_interval_seconds
+                        seconds=interval_seconds
                     ),
+                    "interval_seconds": interval_seconds,
                     "last_error": str(exc).strip() or exc.__class__.__name__,
                 }
             },
@@ -232,18 +239,37 @@ class CollectorRuntime:
         await self.start_heartbeat()
         await self.mark_running()
 
-        interval = settings.metrics_collector_interval_seconds
-        next_cycle_monotonic = time.monotonic()
         logger.info(
-            "DBAChum collector started owner_id=%s interval_seconds=%s retention_hours=24",
+            "DBAChum collector started owner_id=%s retention_hours=24",
             self.owner_id,
-            interval,
         )
 
         try:
             while True:
                 if self._heartbeat_task is not None and self._heartbeat_task.done():
                     await self._heartbeat_task
+
+                monitoring = await runtime_monitoring_settings(self.database)
+                self.state.configure(monitoring)
+                interval = int(monitoring.get("database_interval_seconds") or settings.metrics_collector_interval_seconds)
+                server_interval = int(monitoring.get("server_interval_seconds") or settings.server_metrics_interval_seconds)
+
+                await self.collection.update_one(
+                    {"_id": COLLECTOR_STATUS_ID, "owner_id": self.owner_id},
+                    {"$set": {
+                        "interval_seconds": interval,
+                        "server_interval_seconds": server_interval,
+                        "monitoring_enabled": bool(monitoring.get("enabled", True)),
+                    }},
+                )
+
+                if not bool(monitoring.get("enabled", True)):
+                    await self.collection.update_one(
+                        {"_id": COLLECTOR_STATUS_ID, "owner_id": self.owner_id},
+                        {"$set": {"state": "paused", "next_cycle_at": None, "last_error": None}},
+                    )
+                    await asyncio.sleep(min(max(interval, 10), 30))
+                    continue
 
                 cycle_started_at = _utcnow()
                 cycle_started_monotonic = time.monotonic()
@@ -266,13 +292,23 @@ class CollectorRuntime:
                     except Exception:
                         logger.exception("Email delivery batch failed")
 
-                    duration_ms = (
-                        time.monotonic() - cycle_started_monotonic
-                    ) * 1000
+                    now = _utcnow()
+                    if self.last_retention_cleanup_at is None or (now - self.last_retention_cleanup_at).total_seconds() >= 86400:
+                        try:
+                            data_settings = await runtime_data_settings(self.database)
+                            cleanup = await run_retention_cleanup(self.database, data_settings)
+                            self.last_retention_cleanup_at = now
+                            if any(cleanup.values()):
+                                logger.info("Retention cleanup deleted=%s", cleanup)
+                        except Exception:
+                            logger.exception("Retention cleanup failed")
+
+                    duration_ms = (time.monotonic() - cycle_started_monotonic) * 1000
                     await self.mark_cycle_completed(
                         cycle_started_at=cycle_started_at,
                         duration_ms=duration_ms,
                         cycle=cycle,
+                        interval_seconds=interval,
                     )
                     log_cycle = (
                         logger.warning
@@ -292,13 +328,14 @@ class CollectorRuntime:
                     raise
                 except Exception as exc:
                     logger.exception("Collector cycle failed")
-                    await self.mark_cycle_failed(cycle_started_at, exc)
+                    await self.mark_cycle_failed(
+                        cycle_started_at,
+                        exc,
+                        interval_seconds=interval,
+                    )
 
-                next_cycle_monotonic += interval
-                sleep_seconds = max(0.0, next_cycle_monotonic - time.monotonic())
-                if sleep_seconds == 0:
-                    next_cycle_monotonic = time.monotonic()
-                await asyncio.sleep(sleep_seconds)
+                elapsed = time.monotonic() - cycle_started_monotonic
+                await asyncio.sleep(max(0.0, interval - elapsed))
         finally:
             await self.stop_heartbeat()
             await self.release()
@@ -306,10 +343,6 @@ class CollectorRuntime:
 
 
 async def run_collector_process() -> None:
-    if not settings.metrics_collector_enabled:
-        logger.warning("DBAChum collector is disabled by configuration.")
-        return
-
     client = AsyncMongoClient(
         settings.mongodb_uri,
         serverSelectionTimeoutMS=3000,

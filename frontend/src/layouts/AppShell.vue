@@ -9,6 +9,7 @@ import { hasPermission, type Permission } from '@/core/permissions'
 import { useAlertsStore } from '@/stores/alerts'
 import { useAuthStore } from '@/stores/auth'
 import { useTerminalSessionsStore } from '@/stores/terminalSessions'
+import { useSystemSettingsStore } from '@/stores/systemSettings'
 import { useUiStore } from '@/stores/ui'
 
 const route = useRoute()
@@ -17,6 +18,7 @@ const uiStore = useUiStore()
 const authStore = useAuthStore()
 const terminalStore = useTerminalSessionsStore()
 const alertsStore = useAlertsStore()
+const systemSettingsStore = useSystemSettingsStore()
 
 const databaseNavOpen = ref(route.path.startsWith('/databases'))
 const analyticsNavOpen = ref(route.path.startsWith('/analytics'))
@@ -36,6 +38,7 @@ const isContextDetail = computed(() =>
 )
 
 const displayName = computed(() => authStore.user?.display_name || authStore.user?.username || 'DBA')
+const installationName = computed(() => systemSettingsStore.general?.installation_name || 'DBAChum')
 
 function updateClock() {
   currentTime.value = new Intl.DateTimeFormat(undefined, {
@@ -73,6 +76,7 @@ const settingsPermissions: Permission[] = [
   'provisioning:manage',
   'ldap:manage',
   'notifications:manage',
+  'system:manage',
 ]
 
 const canAccessSettings = computed(() =>
@@ -177,6 +181,7 @@ onMounted(() => {
   updateClock()
   clockTimer = setInterval(updateClock, 1000)
   void alertsStore.loadSummary()
+  void systemSettingsStore.loadGeneral().catch(() => undefined)
   alertSummaryTimer = setInterval(() => {
     void alertsStore.loadSummary()
   }, 30_000)
@@ -198,7 +203,7 @@ onUnmounted(() => {
         <div class="brand__logo">D</div>
 
         <div class="brand__text">
-          <strong>DBAChum</strong>
+          <strong>{{ installationName }}</strong>
           <span>Database workspace</span>
         </div>
       </div>
@@ -366,7 +371,7 @@ onUnmounted(() => {
         <span class="status-dot status-dot--online" />
 
         <div>
-          <strong>DBAChum v1</strong>
+          <strong>{{ installationName }} v1</strong>
           <span>Development build</span>
         </div>
       </div>
@@ -384,7 +389,7 @@ onUnmounted(() => {
             <p>{{ pageSubtitle }}</p>
           </div>
           <div v-else class="page-heading page-heading--context">
-            <strong>DBAChum</strong>
+            <strong>{{ installationName }}</strong>
             <span>{{ pageTitle }} workspace</span>
           </div>
         </div>

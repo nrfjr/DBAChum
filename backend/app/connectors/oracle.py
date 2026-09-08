@@ -57,14 +57,7 @@ def oracle_error_message(exc: oracledb.Error) -> str:
 
 
 class OracleConnectionAdapter:
-    """Async facade around one synchronous python-oracledb Thick connection.
 
-    python-oracledb 2.5.x supports the old OCI client needed by Oracle 10g,
-    but AsyncConnection is Thin-mode only in that driver generation.  Each
-    adapter therefore owns a single-worker executor so the synchronous OCI
-    connection is created, queried, and closed on the same worker thread while
-    FastAPI's event loop remains non-blocking.
-    """
 
     def __init__(self, connect_kwargs: dict):
         self._connect_kwargs = connect_kwargs
@@ -172,7 +165,7 @@ class OracleConnectionAdapter:
 
 @asynccontextmanager
 async def open_oracle_connection(connection: dict):
-    """Open Oracle through the common async facade over sync OCI calls."""
+
     encrypted_password = connection.get("password_encrypted")
 
     if not encrypted_password:
