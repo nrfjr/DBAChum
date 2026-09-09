@@ -60,8 +60,7 @@ def _session_sync(connection: dict, data) -> dict:
                 )
             if data.action.value not in {"terminate", "disconnect", "cancel_query"}:
                 raise AppError("Unsupported SQL Server session operation.", status_code=400)
-            # SQL Server has no portable request-only cancel statement across
-            # supported legacy generations. KILL is the native operation.
+
             statement = f"KILL {int(data.session_id)}"
             cursor.execute(statement)
             return {"target": str(data.session_id), "statement": statement}
@@ -96,7 +95,6 @@ def _storage_sync(connection: dict, data) -> dict:
                 )
                 row = cursor.fetchone()
                 if not row:
-                    # SQL Server 2005/legacy compatibility.
                     cursor.execute(
                         "SELECT name, filename, CAST(size AS bigint) * 8192 "
                         "FROM dbo.sysfiles WHERE name = ?",
@@ -228,8 +226,7 @@ def _access_sync(connection: dict, data) -> dict:
                     raise AppError("object_name is required.", status_code=400)
                 cursor.execute(f"USE {_qident(database_name)}")
                 verb = "GRANT" if data.action.value == "grant_privilege" else "REVOKE"
-                # Object name may be schema.object. Quote each component instead
-                # of accepting arbitrary SQL text.
+
                 quoted_object = ".".join(_qident(part) for part in object_name.split(".") if part)
                 if not quoted_object:
                     raise AppError("Invalid SQL Server object name.", status_code=400)

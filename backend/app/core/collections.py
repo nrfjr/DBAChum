@@ -9,6 +9,8 @@ ORACLE_SQL_TEXT_COLLECTION_NAME = "oracle_sql_texts"
 COLLECTOR_STATUS_COLLECTION_NAME = "collector_status"
 ALERTS_COLLECTION_NAME = "alerts"
 ANALYTICS_DAILY_COLLECTION_NAME = "analytics_daily_snapshots"
+APP_BRANDING_COLLECTION_NAME = "app_branding"
+USER_AVATARS_COLLECTION_NAME = "user_avatars"
 
 
 def telemetry_retention_seconds() -> int:

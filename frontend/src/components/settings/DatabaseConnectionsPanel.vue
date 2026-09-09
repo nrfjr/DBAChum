@@ -361,11 +361,8 @@ onMounted(() => {
   <div class="settings-connections">
     <section class="panel">
       <div class="panel-header">
-        <div>
+        <div title="Configure the database targets available to DBAChum.">
           <h2>Database connections</h2>
-          <p>
-            Configure the database targets available to DBAChum.
-          </p>
         </div>
 
         <button type="button" class="primary-button" @click="openAddConnection">
@@ -461,10 +458,6 @@ onMounted(() => {
                   : 'Add connection'
               }}
             </h2>
-
-            <p>
-              Connection credentials are stored encrypted.
-            </p>
           </div>
 
           <button type="button" class="modal-close" aria-label="Close" @click="closeForm">
@@ -474,15 +467,13 @@ onMounted(() => {
 
         <form class="connection-form" @submit.prevent="saveConnection">
           <label>
-            Connection name
-
+            <span class="field-label">Connection name <span class="required-mark" aria-hidden="true">*</span></span>
             <input v-model="form.name" required maxlength="100" placeholder="ERP Production" />
           </label>
 
           <label>
-            Database engine
-
-            <select v-model="form.engine" @change="changeEngine">
+            <span class="field-label">Database engine <span class="required-mark" aria-hidden="true">*</span></span>
+            <select v-model="form.engine" required @change="changeEngine">
               <option value="oracle">Oracle</option>
               <option value="sqlserver">
                 SQL Server
@@ -493,14 +484,12 @@ onMounted(() => {
 
           <div class="connection-form-row">
             <label>
-              Host
-
-              <input v-model="form.host" required placeholder="db01.example.local" />
+              <span class="field-label">Host <span class="required-mark" aria-hidden="true">*</span></span>
+              <input v-model="form.host" required maxlength="255" placeholder="db01.example.local" />
             </label>
 
             <label>
-              Port
-
+              <span class="field-label">Port <span class="required-mark" aria-hidden="true">*</span></span>
               <input v-model.number="form.port" required type="number" min="1" max="65535" />
             </label>
           </div>
@@ -518,14 +507,11 @@ onMounted(() => {
             </label>
 
             <label>
-              {{
-                form.oracle_identifier_type ===
-                  'service_name'
-                  ? 'Service name'
-                  : 'SID'
-              }}
-
-              <input v-model="form.oracle_identifier" required placeholder="ORCLPDB1" />
+              <span class="field-label">
+                {{ form.oracle_identifier_type === 'service_name' ? 'Service name' : 'SID' }}
+                <span class="required-mark" aria-hidden="true">*</span>
+              </span>
+              <input v-model="form.oracle_identifier" required maxlength="128" placeholder="ORCLPDB1" />
             </label>
 
             <label>
@@ -552,7 +538,7 @@ onMounted(() => {
               Optional
             </span>
 
-            <input v-model="form.database" placeholder="Database name" />
+            <input v-model="form.database" maxlength="128" placeholder="Database name" />
           </label>
 
           <template v-if="form.engine === 'sqlserver'">
@@ -578,11 +564,11 @@ onMounted(() => {
             </label>
 
             <label v-if="form.sqlserver_provider !== 'mssql_python'">
-              ODBC driver
-              <span class="optional-label">Optional</span>
+              ODBC driver (Optional)
 
               <input
                 v-model="form.sqlserver_driver"
+                maxlength="128"
                 placeholder="SQL Server or SQL Server Native Client 10.0"
               />
 
@@ -608,10 +594,7 @@ onMounted(() => {
             </label>
           </template>
           <label>
-            Servers
-            <span class="optional-label">
-              Optional
-            </span>
+            Servers (Optional)
 
             <select v-model="form.server_ids" multiple size="4">
               <option v-for="server in serversStore.servers" :key="server.id" :value="server.id">
@@ -620,24 +603,16 @@ onMounted(() => {
                 {{ server.hostname }}
               </option>
             </select>
-
-            <small>
-              Database endpoints may represent
-              listeners, VIPs or clusters, so
-              server relationships are optional.
-            </small>
           </label>
 
           <label>
-            Username
-
-            <input v-model="form.username" required autocomplete="off" />
+            <span class="field-label">Username <span class="required-mark" aria-hidden="true">*</span></span>
+            <input v-model="form.username" required maxlength="128" autocomplete="off" />
           </label>
 
           <label>
-            Password
-
-            <input v-model="form.password" :required="!isEditing" type="password" autocomplete="new-password"
+            <span class="field-label">Password <span v-if="!isEditing" class="required-mark" aria-hidden="true">*</span></span>
+            <input v-model="form.password" :required="!isEditing" maxlength="512" type="password" autocomplete="new-password"
               :placeholder="isEditing
                 ? 'Leave blank to keep current password'
                 : 'Database password'
@@ -649,21 +624,12 @@ onMounted(() => {
 
             Connection enabled
           </label>
-          <small>
-            Allows DBAChum to use this connection for provisioning, metadata
-            discovery and DBA operations.
-          </small>
 
           <label class="connection-checkbox">
             <input v-model="form.monitor_enabled" type="checkbox" />
 
             Monitor this connection
           </label>
-          <small>
-            Shows this connection in the Databases workspace and collects
-            background monitoring history. Provisioning still works when this
-            is unchecked.
-          </small>
 
           <p v-if="formError" class="login-error">
             {{ formError }}

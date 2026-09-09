@@ -28,7 +28,7 @@ onMounted(load)
 <template>
   <div class="settings-stack">
     <section class="panel">
-      <div class="panel-header"><div><h3>System diagnostics</h3><p>Maintenance here affects DBAChum's own MongoDB metadata and histories, never the managed database engines.</p></div><button type="button" class="secondary-button" :disabled="busy" @click="load">Refresh</button></div>
+      <div class="panel-header"><div title="Maintenance here affects DBAChum's own MongoDB metadata and histories, never the managed database engines."><h3>System diagnostics</h3></div><button type="button" class="secondary-button" :disabled="busy" @click="load">Refresh</button></div>
       <p v-if="error" class="login-error">{{ error }}</p>
       <div class="overview-facts-grid">
         <div><span>MongoDB</span><strong>{{ store.maintenance?.mongodb_ok ? 'Healthy' : 'Unavailable' }}</strong></div>
@@ -40,10 +40,10 @@ onMounted(load)
     </section>
 
     <section class="panel">
-      <div class="panel-header"><div><h3>Maintenance actions</h3><p>Safe application-level housekeeping. Each action is explicit and does not run against Oracle, SQL Server or MySQL targets.</p></div></div>
+      <div class="panel-header"><div title="Safe application-level housekeeping. Each action is explicit and does not run against Oracle, SQL Server or MySQL targets."><h3>Maintenance actions</h3></div></div>
       <div class="maintenance-action-list">
-        <div><span><strong>Retention and orphan cleanup</strong><small>Apply Data retention, remove detached Analytics snapshots and reconcile stale terminal audit rows.</small></span><button type="button" class="primary-button" :disabled="busy" @click="cleanup">Run cleanup</button></div>
-        <div><span><strong>Verify MongoDB indexes</strong><small>Re-run DBAChum's idempotent index definitions and create any missing application indexes.</small></span><button type="button" class="secondary-button" :disabled="busy" @click="verifyIndexes">Verify indexes</button></div>
+        <div><span><strong>Retention and orphan cleanup</strong></span><button type="button" class="primary-button" :disabled="busy" @click="cleanup" title="Apply Data retention, remove detached Analytics snapshots and reconcile stale terminal audit rows.">Run cleanup</button></div>
+        <div><span><strong>Verify MongoDB indexes</strong></span><button type="button" class="secondary-button" :disabled="busy" @click="verifyIndexes" title="Re-run DBAChum's idempotent index definitions and create any missing application indexes.">Verify indexes</button></div>
       </div>
     </section>
   </div>

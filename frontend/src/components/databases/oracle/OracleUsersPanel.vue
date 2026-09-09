@@ -1365,11 +1365,8 @@ onBeforeUnmount(() => {
 <template>
   <section>
     <div class="utility-toolbar">
-      <div>
+      <div title="Oracle accounts, status and schema defaults.">
         <h2>Users &amp; Schemas</h2>
-        <p>
-          Oracle accounts, status and schema defaults.
-        </p>
       </div>
 
       <div class="utility-toolbar-actions">
@@ -1478,11 +1475,10 @@ onBeforeUnmount(() => {
 
         <div class="utility-filter-row">
           <label>
-            <span>Find account</span>
             <input
               v-model="search"
               type="search"
-              placeholder="Username, status, tablespace or profile"
+              placeholder="Find username, status, tablespace or profile"
             />
           </label>
 
@@ -1656,7 +1652,6 @@ onBeforeUnmount(() => {
       <div class="provisioning-history-heading">
         <div>
           <h3>Provisioning history</h3>
-          <p>Lifecycle runs created from this parent Oracle database. Passwords are never stored.</p>
         </div>
         <div class="provisioning-history-actions">
           <template v-if="canClearProvisioningHistory">
@@ -1687,10 +1682,6 @@ onBeforeUnmount(() => {
           </button>
         </div>
       </div>
-
-      <p class="profile-muted-note">
-        Dates use your profile timezone. Clearing history never changes the current Oracle account, application rows or LDAP entry. It does remove DBAChum retry and history-linked deprovision context for those runs; running lifecycle records are protected.
-      </p>
       <p v-if="historyError" class="login-error">{{ historyError }}</p>
       <p v-if="historyClearMessage" class="profile-success">{{ historyClearMessage }}</p>
 
@@ -2113,7 +2104,7 @@ onBeforeUnmount(() => {
             <button type="button" class="secondary-button" @click="passwordShow = !passwordShow">{{ passwordShow ? 'Hide password' : 'Show password' }}</button>
           </div>
           <label>
-            Request / ticket <span class="optional-label">Optional</span>
+            Request / ticket (Optional)
             <input v-model="passwordRequestReference" maxlength="100" placeholder="Change or ticket reference" />
           </label>
         </div>
@@ -2340,17 +2331,7 @@ onBeforeUnmount(() => {
       >
         <div class="modal-header">
           <div>
-            <h2>Create Oracle user</h2>
-            <p v-if="createStep === 'identity'">
-              Enter the identity fields that determine the Oracle username.
-            </p>
-            <p v-else-if="createStep === 'access'">
-              Configure password, reference access and application provisioning.
-            </p>
-            <p v-else-if="createStep === 'review'">
-              Review exactly what DBAChum will change before execution.
-            </p>
-            <p v-else>Provisioning completed.</p>
+            <h2>Create User</h2>
           </div>
 
           <button
@@ -2375,7 +2356,7 @@ onBeforeUnmount(() => {
           @submit.prevent="continueIdentity"
         >
           <label :class="{ 'field-invalid': createFieldErrors.employeeId }">
-            Employee ID
+            <span class="field-label">Employee ID <span class="required-mark" aria-hidden="true">*</span></span>
             <input
               v-model="createForm.employeeId"
               required
@@ -2389,7 +2370,7 @@ onBeforeUnmount(() => {
 
           <div class="connection-form-row">
             <label :class="{ 'field-invalid': createFieldErrors.firstName }">
-              First name
+              <span class="field-label">First name <span class="required-mark" aria-hidden="true">*</span></span>
               <input
                 v-model="createForm.firstName"
                 required
@@ -2401,7 +2382,7 @@ onBeforeUnmount(() => {
             </label>
 
             <label :class="{ 'field-invalid': createFieldErrors.lastName }">
-              Last name
+              <span class="field-label">Last name <span class="required-mark" aria-hidden="true">*</span></span>
               <input
                 v-model="createForm.lastName"
                 required
@@ -2414,7 +2395,7 @@ onBeforeUnmount(() => {
           </div>
 
           <label :class="{ 'field-invalid': createFieldErrors.middleName }">
-            Middle name <span class="optional-label">Optional</span>
+            Middle name (Optional)
             <input
               v-model="createForm.middleName"
               maxlength="100"
@@ -2427,7 +2408,6 @@ onBeforeUnmount(() => {
           <div class="username-generation-block" :class="{ 'field-invalid': createFieldErrors.username }">
             <div>
               <strong>Generated username</strong>
-              <small>DBAChum uses first initial + optional middle initial + concatenated last name + exact employee ID. Punctuation is removed and the username is always uppercase.</small>
             </div>
             <input
               :value="createForm.username"
@@ -2481,7 +2461,7 @@ onBeforeUnmount(() => {
           </div>
 
           <label :class="{ 'field-invalid': createFieldErrors.password }">
-            Initial password
+            <span class="field-label">Initial password <span class="required-mark" aria-hidden="true">*</span></span>
             <input
               v-model="createForm.password"
               required
@@ -2497,11 +2477,10 @@ onBeforeUnmount(() => {
               <button type="button" class="secondary-button" @click="generatePassword">Generate password</button>
               <button type="button" class="secondary-button" @click="showPassword = !showPassword">{{ showPassword ? 'Hide password' : 'Show password' }}</button>
             </span>
-            <small>Type the requested custom password, or generate the current 3-letter + 5-digit pattern.</small>
           </label>
 
           <label :class="{ 'field-invalid': createFieldErrors.referenceUsername }">
-            Reference user <span class="optional-label">Optional</span>
+            Reference user (Optional)
             <input
               v-model="createForm.referenceUsername"
               maxlength="30"
@@ -2510,7 +2489,6 @@ onBeforeUnmount(() => {
               @input="referenceInput"
             />
             <small v-if="createFieldErrors.referenceUsername" class="field-error">{{ createFieldErrors.referenceUsername }}</small>
-            <small>Leave blank when no reference user is needed. Direct system privileges are never copied.</small>
             <button
               v-if="createForm.referenceUsername.trim()"
               type="button"
@@ -2568,15 +2546,15 @@ onBeforeUnmount(() => {
           </section>
 
           <div class="connection-form-row">
-            <label>Default tablespace <span class="optional-label">Optional</span><input v-model="createForm.defaultTablespace" maxlength="30" placeholder="Uses reference/default when blank" /></label>
-            <label>Temporary tablespace <span class="optional-label">Optional</span><input v-model="createForm.temporaryTablespace" maxlength="30" placeholder="Uses reference/default when blank" /></label>
+            <label>Default tablespace (Optional)<input v-model="createForm.defaultTablespace" maxlength="30" placeholder="Uses reference/default when blank" /></label>
+            <label>Temporary tablespace (Optional)<input v-model="createForm.temporaryTablespace" maxlength="30" placeholder="Uses reference/default when blank" /></label>
           </div>
-          <label>Profile <span class="optional-label">Optional</span><input v-model="createForm.profile" maxlength="30" placeholder="Uses reference/default when blank" /></label>
+          <label>Profile (Optional)<input v-model="createForm.profile" maxlength="30" placeholder="Uses reference/default when blank" /></label>
           <div class="connection-form-row">
-            <label>Requestor <span class="optional-label">Optional</span><input v-model="createForm.requestorName" maxlength="200" placeholder="Requestor full name" /></label>
-            <label>Request / ticket reference <span class="optional-label">Optional</span><input v-model="createForm.requestReference" maxlength="100" placeholder="REQ-12345" /></label>
+            <label>Requestor (Optional)<input v-model="createForm.requestorName" maxlength="200" placeholder="Requestor full name" /></label>
+            <label>Request / ticket reference (Optional)<input v-model="createForm.requestReference" maxlength="100" placeholder="REQ-12345" /></label>
           </div>
-          <label>Remarks <span class="optional-label">Optional</span><textarea v-model="createForm.remarks" rows="3" maxlength="1000" placeholder="Reason, access note, or provisioning remarks"></textarea></label>
+          <label>Remarks (Optional)<textarea v-model="createForm.remarks" rows="3" maxlength="1000" placeholder="Reason, access note, or provisioning remarks"></textarea></label>
 
           <p v-if="createError" class="login-error">{{ createError }}</p>
           <div class="connection-form-actions">
@@ -2688,15 +2666,6 @@ onBeforeUnmount(() => {
               </ul>
             </div>
           </section>
-
-          <div class="utility-warning oracle-create-warning">
-            <template v-if="provisioningPreview">
-              Provision will CREATE or ALTER the Oracle account, reconcile roles, then upsert the configured application rows. Duplicate matches block execution.
-            </template>
-            <template v-else>
-              This action creates a real Oracle account and grants the selected roles. The password will not be stored in DBAChum's action history.
-            </template>
-          </div>
 
           <p v-if="createError" class="login-error">
             {{ createError }}
@@ -2867,7 +2836,7 @@ onBeforeUnmount(() => {
 .requester-summary-actions { display: flex; align-items: center; gap: .7rem; }
 .oracle-provisioning-preview { display: grid; gap: 1rem; margin-top: 1rem; }
 .preview-callout { display: flex; flex-direction: column; gap: .2rem; padding: .8rem; border: 1px solid var(--border-color); border-radius: .7rem; }
-.preview-summary-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .75rem; }
+.preview-summary-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem; }
 .preview-summary-grid > div { display: grid; gap: .2rem; padding: .7rem; border: 1px solid var(--border-color); border-radius: .65rem; }
 .preview-summary-grid span { font-size: .78rem; opacity: .7; }
 .preview-section { display: grid; gap: .7rem; }

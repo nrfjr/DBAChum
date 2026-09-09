@@ -49,11 +49,8 @@ onMounted(() => void jobsStore.load(props.connectionId))
 <template>
   <section class="utility-section">
     <div class="utility-toolbar">
-      <div>
+      <div title="{{ (engine === 'oracle' ? 'Oracle Scheduler and legacy DBMS_JOB.' : engine === 'sqlserver' ? 'SQL Server Agent jobs.' : 'MySQL/MariaDB Event Scheduler.') }}">
         <h2>Jobs</h2>
-        <p>
-          {{ engine === 'oracle' ? 'Oracle Scheduler and legacy DBMS_JOB.' : engine === 'sqlserver' ? 'SQL Server Agent jobs.' : 'MySQL/MariaDB Event Scheduler.' }}
-        </p>
       </div>
       <button type="button" class="secondary-button" :disabled="loading" @click="jobsStore.load(connectionId)">
         {{ loading ? 'Refreshing...' : 'Refresh' }}

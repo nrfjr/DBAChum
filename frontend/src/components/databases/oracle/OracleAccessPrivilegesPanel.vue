@@ -167,11 +167,8 @@ async function runCompare() {
 <template>
   <section class="panel access-privileges-panel">
     <div class="panel-header access-page-header">
-      <div>
+      <div title="Investigate effective Oracle access and safely manage custom Oracle roles.">
         <h2>Access &amp; Privileges</h2>
-        <p>
-          Investigate effective Oracle access and safely manage custom Oracle roles.
-        </p>
       </div>
       <span class="access-read-only-pill">{{ workspaceMode === 'roles' ? 'Audited DBA actions' : 'Read only' }}</span>
     </div>
@@ -229,28 +226,26 @@ async function runCompare() {
         <template v-if="lookupKind === 'role'">
           <label>
             <span>Role name</span>
-            <input
+            <input class="utility-search-input"
               v-model="lookupValue"
               type="text"
               autocomplete="off"
-              placeholder="APP_USER"
+              placeholder="Find users who receive the role directly or through another role."
               @keyup.enter="runLookup"
             />
-            <small>Find users who receive the role directly or through another role.</small>
           </label>
         </template>
 
         <template v-else-if="lookupKind === 'system_privilege'">
           <label>
             <span>System privilege</span>
-            <input
+            <input class="utility-search-input"
               v-model="lookupValue"
               type="text"
               autocomplete="off"
               placeholder="SELECT ANY TABLE"
               @keyup.enter="runLookup"
             />
-            <small>Find direct, role-inherited and PUBLIC effective access.</small>
           </label>
         </template>
 
@@ -258,7 +253,7 @@ async function runCompare() {
           <div class="access-object-inputs">
             <label>
               <span>Owner</span>
-              <input
+              <input class="utility-search-input"
                 v-model="owner"
                 type="text"
                 autocomplete="off"
@@ -268,7 +263,7 @@ async function runCompare() {
             </label>
             <label>
               <span>Object</span>
-              <input
+              <input class="utility-search-input"
                 v-model="objectName"
                 type="text"
                 autocomplete="off"
@@ -278,7 +273,7 @@ async function runCompare() {
             </label>
             <label>
               <span>Privilege <small>optional</small></span>
-              <input
+              <input class="utility-search-input"
                 v-model="objectPrivilege"
                 type="text"
                 autocomplete="off"
@@ -287,9 +282,6 @@ async function runCompare() {
               />
             </label>
           </div>
-          <small>
-            Includes explicit object/column grants and applicable broad ANY-style privileges.
-          </small>
         </template>
 
         <div class="access-search-actions">
@@ -402,11 +394,6 @@ async function runCompare() {
           {{ warning }}
         </div>
       </template>
-
-      <div v-else-if="!loading && !error" class="access-start-state">
-        <strong>Start with an access question.</strong>
-        <span>For example: who has DBA, who has SELECT ANY TABLE, or who can SELECT APP.ORDERS?</span>
-      </div>
     </template>
 
     <template v-else-if="workspaceMode === 'compare'">
@@ -414,7 +401,7 @@ async function runCompare() {
         <div class="compare-user-inputs">
           <label>
             <span>First user</span>
-            <input
+            <input class="utility-search-input"
               v-model="leftUsername"
               type="text"
               autocomplete="off"
@@ -427,7 +414,7 @@ async function runCompare() {
 
           <label>
             <span>Second user</span>
-            <input
+            <input class="utility-search-input"
               v-model="rightUsername"
               type="text"
               autocomplete="off"
@@ -542,11 +529,6 @@ async function runCompare() {
           {{ warning }}
         </div>
       </template>
-
-      <div v-else-if="!compareLoading && !compareError" class="access-start-state">
-        <strong>Compare two Oracle users.</strong>
-        <span>DBAChum will separate common access from grants that only one account receives, including inherited role paths.</span>
-      </div>
     </template>
 
     <div v-show="workspaceMode === 'roles'" class="access-workspace-content">
@@ -610,8 +592,6 @@ async function runCompare() {
   display: grid;
   gap: .8rem;
   padding: 1rem;
-  border: 1px solid var(--border);
-  border-radius: .8rem;
 }
 
 .access-search-card label {

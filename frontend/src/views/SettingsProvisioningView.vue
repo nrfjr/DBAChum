@@ -471,11 +471,8 @@ onMounted(async () => {
   <div class="settings-provisioning">
     <section class="panel">
       <div class="panel-header">
-        <div>
+        <div title="Define reusable user-creation workflows. Connections only provide access; profiles decide what DBAChum does.">
           <h2>Provisioning profiles</h2>
-          <p>
-            Define reusable user-creation workflows. Connections only provide access; profiles decide what DBAChum does.
-          </p>
         </div>
 
         <button class="primary-button" type="button" @click="openAdd">
@@ -532,14 +529,13 @@ onMounted(async () => {
         <div class="modal-header">
           <div>
             <h2>{{ editingId ? 'Edit provisioning profile' : 'Add provisioning profile' }}</h2>
-            <p>Build the workflow from real Oracle connections, tables and form values.</p>
           </div>
           <button class="modal-close" type="button" aria-label="Close" @click="closeForm">×</button>
         </div>
 
         <form class="connection-form" @submit.prevent="save">
           <label>
-            Profile name
+            <span class="field-label">Profile name <span class="required-mark" aria-hidden="true">*</span></span>
             <input v-model="form.name" required maxlength="100" placeholder="ORMS User" />
           </label>
 
@@ -549,14 +545,13 @@ onMounted(async () => {
           </label>
 
           <label>
-            Parent database connection (monitored)
+            <span class="field-label">Parent database connection <span class="required-mark" aria-hidden="true">*</span></span>
             <select v-model="form.schema_connection_id" required>
               <option value="" disabled>Select Oracle connection</option>
               <option v-for="connection in parentOracleConnections" :key="connection.id" :value="connection.id">
                 {{ connection.name }} · {{ connection.username }}{{ connection.oracle_auth_mode === 'sysdba' ? ' / SYSDBA' : '' }}
               </option>
             </select>
-            <small>This is the parent database context. The profile appears only in this connection's Users &amp; Schemas → Create User flow. Table steps can use separate application connections below.</small>
           </label>
 
           <label class="connection-checkbox">
@@ -578,7 +573,7 @@ onMounted(async () => {
           </small>
 
           <label v-if="form.ldap_enabled">
-            LDAP profile
+            <span class="field-label">LDAP profile <span class="required-mark" aria-hidden="true">*</span></span>
             <select v-model="form.ldap_profile_id" required>
               <option :value="null" disabled>Select LDAP profile</option>
               <option
@@ -596,7 +591,6 @@ onMounted(async () => {
             <div class="panel-header">
               <div>
                 <h3>Application table steps</h3>
-                <p>Each step upserts one application row. DBAChum first matches the identity columns you select, then Phase 4B will INSERT when absent or UPDATE when exactly one row exists.</p>
               </div>
               <button type="button" class="secondary-button" @click="addTableStep">Add table step</button>
             </div>
@@ -620,12 +614,12 @@ onMounted(async () => {
               </div>
 
               <label>
-                Step name
-                <input v-model="step.name" required placeholder="Upsert USER_MASTER" />
+                <span class="field-label">Step name <span class="required-mark" aria-hidden="true">*</span></span>
+                <input v-model="step.name" required maxlength="100" placeholder="Upsert USER_MASTER" />
               </label>
 
               <label>
-                Application provisioning connection for this step
+                <span class="field-label">Application provisioning connection <span class="required-mark" aria-hidden="true">*</span></span>
                 <select v-model="step.connection_id" required @change="connectionChanged(index)">
                   <option value="" disabled>Select Oracle connection</option>
                   <option v-for="connection in oracleConnections" :key="connection.id" :value="connection.id">
@@ -636,7 +630,7 @@ onMounted(async () => {
 
               <div class="connection-form-row">
                 <label>
-                  Schema
+                  <span class="field-label">Schema <span class="required-mark" aria-hidden="true">*</span></span>
                   <select v-model="step.owner" required @focus="loadSchemas(index)" @change="ownerChanged(index)">
                     <option value="" disabled>Select schema</option>
                     <option v-for="schema in stepMetadata[index]?.schemas ?? []" :key="schema.name" :value="schema.name">
@@ -646,7 +640,7 @@ onMounted(async () => {
                 </label>
 
                 <label>
-                  Table
+                  <span class="field-label">Table <span class="required-mark" aria-hidden="true">*</span></span>
                   <select v-model="step.table_name" required @change="tableChanged(index)">
                     <option value="" disabled>Select table</option>
                     <option v-for="table in stepMetadata[index]?.tables ?? []" :key="table.name" :value="table.name">
@@ -742,7 +736,6 @@ onMounted(async () => {
               <section v-if="step.mappings.length" class="provisioning-upsert-match">
                 <div>
                   <strong>Upsert match columns</strong>
-                  <p>Choose the stable identity column(s) DBAChum should use to find an existing application row before INSERT/UPDATE. Username is the normal choice when it is unique.</p>
                 </div>
 
                 <div class="provisioning-match-options">
@@ -761,8 +754,6 @@ onMounted(async () => {
                     {{ mapping.column_name }}
                   </label>
                 </div>
-
-                <small>Use stable identity only: generated username, employee ID, or a fixed custom literal. Sequence, password, requester IP, timestamps, NULL and omitted columns cannot be match keys. Multiple selections form a composite match.</small>
               </section>
             </article>
           </section>

@@ -61,8 +61,7 @@ def _backup_sync(connection: dict, data) -> dict:
             cursor = db.cursor()
             try:
                 cursor.execute(statement)
-                # Some providers expose informational messages only after the
-                # result stream is drained. Consume result sets until done.
+
                 while True:
                     try:
                         if not cursor.nextset():

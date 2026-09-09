@@ -109,7 +109,6 @@ onMounted(() => {
     <div class="utility-toolbar">
       <div>
         <h2>Access &amp; Grants</h2>
-        <p>Native role and privilege visibility with credential material redacted before it reaches the browser.</p>
       </div>
 
       <div class="database-inline-actions">
@@ -167,7 +166,7 @@ onMounted(() => {
             </option>
           </select>
         </label>
-        <input v-model="search" type="search" placeholder="Filter privileges or scope..." />
+        <input class="utility-search-input" v-model="search" type="search" placeholder="Filter privileges or scope..." />
       </div>
 
       <template v-if="selected">

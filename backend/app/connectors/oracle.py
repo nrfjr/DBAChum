@@ -175,7 +175,6 @@ async def open_oracle_connection(connection: dict):
             status_code=400,
         )
 
-    # Idempotent. In Thick mode this loads OCI before ConnectParams/connect.
     initialize_oracle_client()
 
     password = decrypt_secret(encrypted_password)
@@ -281,9 +280,6 @@ async def get_oracle_overview(connection: dict) -> dict:
                 1,
             )
 
-            # CON_NAME is a multitenant-era USERENV attribute and is not
-            # available on Oracle 10g/11g.  Keep the common identity query
-            # legacy-safe, then read CON_NAME only on 12c+.
             identity = await db.fetchone(
                 """
                 SELECT
@@ -365,10 +361,7 @@ async def get_oracle_overview(connection: dict) -> dict:
                 warnings,
             )
 
-            # These surfaces exist on legacy Oracle releases supported by
-            # DBAChum, including 10g. Optional workspace identity probes do not
-            # downgrade monitoring health if a restricted account cannot read
-            # one of them.
+
             detail_warnings: list[str] = []
             database_role = await _oracle_scalar(
                 db,

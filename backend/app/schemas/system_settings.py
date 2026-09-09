@@ -24,9 +24,7 @@ class MonitoringSettingsUpdate(BaseModel):
 
     @model_validator(mode="after")
     def validate_cadence(self):
-        # The collector loop is driven by the database interval. Slower
-        # activities can be scheduled independently, but they cannot run more
-        # frequently than the loop that wakes the collector.
+
         if self.server_interval_seconds < self.database_interval_seconds:
             raise ValueError("Server interval must be greater than or equal to the database interval.")
         if self.storage_interval_seconds < self.database_interval_seconds:

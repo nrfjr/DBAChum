@@ -106,8 +106,6 @@ async def _run_audited(
         )
         raise
 
-    # Never persist plaintext reset passwords or full executable statements.
-    # Action-specific results are reduced to safe structured details.
     details = _audit_details(result)
 
     return await finish_database_action(

@@ -144,6 +144,8 @@ const RowRenderer = defineComponent({
   overflow: auto;
   border: 1px solid var(--border);
   border-radius: .75rem;
+  margin-top: 10px;
+  margin-bottom: 20px;
 }
 
 .reusable-data-table {
@@ -185,6 +187,7 @@ const RowRenderer = defineComponent({
   margin-top: .75rem;
   color: var(--text-muted);
   font-size: .875rem;
+  margin-bottom: 20px;
 }
 
 .reusable-table-pagination__controls,

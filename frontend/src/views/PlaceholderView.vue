@@ -8,9 +8,6 @@ const title = computed(() =>
   String(route.meta.title ?? 'Module'),
 )
 
-const subtitle = computed(() =>
-  String(route.meta.subtitle ?? ''),
-)
 </script>
 
 <template>
@@ -21,9 +18,6 @@ const subtitle = computed(() =>
 
     <h2>{{ title }}</h2>
 
-    <p>
-      {{ subtitle }}
-    </p>
 
     <div class="placeholder-page__message">
       This module will be implemented in a later milestone.

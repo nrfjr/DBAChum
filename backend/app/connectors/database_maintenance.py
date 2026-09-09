@@ -96,7 +96,6 @@ def _sqlserver_maintenance_sync(connection: dict, data) -> dict:
                 if action == "check_integrity":
                     statement = f"DBCC CHECKDB ({_sqlserver_qident(database_name)}) WITH NO_INFOMSGS"
                     cursor.execute(statement)
-                    # Drain all result sets so DBCC can finish cleanly across providers.
                     try:
                         while True:
                             cursor.fetchall()

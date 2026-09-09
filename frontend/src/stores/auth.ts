@@ -93,6 +93,8 @@ export interface User {
   is_active: boolean
   permissions?: Permission[]
   avatar_initials: string
+  has_avatar: boolean
+  avatar_version: string | null
   preferences: UserPreferences
   notifications: UserNotificationPreferences
   created_at?: string | null
@@ -140,15 +142,17 @@ async function apiRequest<T>(
   path: string,
   options: RequestInit = {},
 ): Promise<T> {
+  const headers = new Headers(options.headers)
+  if (options.body && !(options.body instanceof FormData)) {
+    headers.set('Content-Type', 'application/json')
+  }
+
   const response = await fetch(
     `${API_BASE_URL}${path}`,
     {
       ...options,
       credentials: 'include',
-      headers: {
-        'Content-Type': 'application/json',
-        ...options.headers,
-      },
+      headers,
     },
   )
 
@@ -182,6 +186,11 @@ export const useAuthStore = defineStore(
     getters: {
       isAuthenticated: (state) =>
         state.user !== null,
+      avatarUrl: (state) => {
+        if (!state.user?.has_avatar) return null
+        const version = encodeURIComponent(state.user.avatar_version ?? 'current')
+        return `${API_BASE_URL}/profile/avatar?v=${version}`
+      },
     },
 
     actions: {
@@ -248,6 +257,25 @@ export const useAuthStore = defineStore(
         } finally {
           this.loading = false
         }
+      },
+
+      async uploadAvatar(file: File) {
+        const body = new FormData()
+        body.append('file', file)
+        const user = await apiRequest<User>('/profile/avatar', {
+          method: 'PUT',
+          body,
+        })
+        this.user = user
+        return user
+      },
+
+      async removeAvatar() {
+        const user = await apiRequest<User>('/profile/avatar', {
+          method: 'DELETE',
+        })
+        this.user = user
+        return user
       },
 
       async updateProfile(

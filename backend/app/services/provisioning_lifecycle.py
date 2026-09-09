@@ -84,7 +84,7 @@ def _pending_state(document: dict) -> tuple[list[str], bool, bool, str | None]:
     inputs = document.get("input_snapshot")
     if not profile or not inputs:
         return [], False, False, (
-            "This run predates Phase 4C lifecycle snapshots and cannot be safely retried automatically."
+            "This run predates lifecycle snapshots and cannot be safely retried automatically."
         )
 
     pending: list[str] = []
@@ -707,7 +707,7 @@ async def build_deprovision_preview(
     generated_at = datetime.now(timezone.utc)
     items: list[ProvisioningDeprovisionPreviewItem] = []
     warnings = [
-        "Preview only. Phase 4C does not expose DROP USER, REVOKE, DELETE, UPDATE restore, or LDAP delete execution.",
+        "Preview only. does not expose DROP USER, REVOKE, DELETE, UPDATE restore, or LDAP delete execution.",
         "Any state changed after provisioning blocks automatic reversal unless DBAChum can prove the row still matches the recorded post-provision state.",
     ]
 
@@ -753,7 +753,7 @@ async def build_deprovision_preview(
             planned_action="Preserve account",
             safe_to_reverse=True,
             state="no_action",
-            reason="The account existed before this lifecycle; Phase 4C will never propose dropping it.",
+            reason="The account existed before this lifecycle; application will never propose dropping it.",
         ))
 
     for role in document.get("roles") or []:

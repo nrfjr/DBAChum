@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from bson import ObjectId
 from pymongo.errors import DuplicateKeyError
 
+from app.core.collections import USER_AVATARS_COLLECTION_NAME
 from app.core.exceptions import AppError
 from app.core.permissions import permission_values_for_role
 from app.core.security import hash_password
@@ -71,6 +72,8 @@ def preferences_from_document(
     try:
         return UserPreferences.model_validate(raw)
     except Exception:
+        # Older/development records should never make login fail merely
+        # because a preference value became invalid during development.
         return UserPreferences()
 
 
@@ -85,6 +88,8 @@ def notification_preferences_from_document(
     try:
         return UserNotificationPreferences.model_validate(raw)
     except Exception:
+        # Development/legacy user rows should fall back safely rather than
+        # making authentication fail because subscription fields changed.
         return UserNotificationPreferences()
 
 
@@ -164,6 +169,14 @@ def user_to_response(
         avatar_initials=build_avatar_initials(
             display_name,
             username,
+        ),
+
+        has_avatar=bool(user.get("has_avatar")),
+
+        avatar_version=(
+            user["avatar_updated_at"].isoformat()
+            if isinstance(user.get("avatar_updated_at"), datetime)
+            else None
         ),
 
         preferences=preferences_from_document(
@@ -610,7 +623,9 @@ async def delete_managed_user(
             "_id": object_id,
         }
     )
+    await database[USER_AVATARS_COLLECTION_NAME].delete_one({"_id": object_id})
 
+    # Remove their active sessions too.
     await database.auth_sessions.delete_many(
         {
             "user_id": {
@@ -621,3 +636,85 @@ async def delete_managed_user(
             }
         }
     )
+
+async def save_current_user_avatar(
+    database,
+    user_id: str,
+    *,
+    content_type: str,
+    data: bytes,
+) -> UserResponse:
+    object_id = parse_user_id(user_id)
+    now = datetime.now(timezone.utc)
+
+    user = await database.users.find_one({"_id": object_id})
+    if user is None:
+        raise AppError(
+            "User not found.",
+            code="USER_NOT_FOUND",
+            status_code=404,
+        )
+
+    await database[USER_AVATARS_COLLECTION_NAME].update_one(
+        {"_id": object_id},
+        {
+            "$set": {
+                "content_type": content_type,
+                "data": data,
+                "updated_at": now,
+            },
+            "$setOnInsert": {"created_at": now},
+        },
+        upsert=True,
+    )
+    await database.users.update_one(
+        {"_id": object_id},
+        {
+            "$set": {
+                "has_avatar": True,
+                "avatar_updated_at": now,
+                "updated_at": now,
+            }
+        },
+    )
+    updated = await database.users.find_one({"_id": object_id})
+    return user_to_response(updated)
+
+
+async def delete_current_user_avatar(database, user_id: str) -> UserResponse:
+    object_id = parse_user_id(user_id)
+    now = datetime.now(timezone.utc)
+
+    user = await database.users.find_one({"_id": object_id})
+    if user is None:
+        raise AppError(
+            "User not found.",
+            code="USER_NOT_FOUND",
+            status_code=404,
+        )
+
+    await database[USER_AVATARS_COLLECTION_NAME].delete_one({"_id": object_id})
+    await database.users.update_one(
+        {"_id": object_id},
+        {
+            "$set": {
+                "has_avatar": False,
+                "updated_at": now,
+            },
+            "$unset": {"avatar_updated_at": ""},
+        },
+    )
+    updated = await database.users.find_one({"_id": object_id})
+    return user_to_response(updated)
+
+
+async def current_user_avatar(database, user_id: str) -> tuple[str, bytes] | None:
+    object_id = parse_user_id(user_id)
+    avatar = await database[USER_AVATARS_COLLECTION_NAME].find_one(
+        {"_id": object_id},
+        {"content_type": 1, "data": 1},
+    )
+    if not avatar or not avatar.get("data") or not avatar.get("content_type"):
+        return None
+    return str(avatar["content_type"]), bytes(avatar["data"])
+

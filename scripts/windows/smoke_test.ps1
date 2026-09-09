@@ -37,8 +37,6 @@ if (-not $SkipCollector) {
     $collectorHealthy = $false
     $collectorOutput = @()
 
-    # The collector writes a 10-second heartbeat. Give a newly started stack a
-    # short grace period before declaring the lifecycle unhealthy.
     for ($attempt = 1; $attempt -le 15; $attempt++) {
         Push-Location $BackendDir
         try {

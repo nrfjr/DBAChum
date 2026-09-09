@@ -1,5 +1,5 @@
 .settings-stack { display: grid; gap: 1rem; }
-.settings-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .85rem; }
+.settings-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .85rem; padding-bottom: inherit;}
 .settings-form-grid label, .settings-toggle-row { display: grid; gap: .35rem; }
 .settings-form-grid label > span { color: var(--text-muted); font-size: .78rem; }
 .settings-toggle-row { grid-template-columns: auto 1fr; align-items: start; margin-bottom: 1rem; }

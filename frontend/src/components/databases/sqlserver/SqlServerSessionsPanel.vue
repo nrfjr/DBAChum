@@ -82,7 +82,7 @@ onUnmounted(() => {
 <template>
   <section>
     <div class="utility-toolbar">
-      <div><h2>Sessions</h2><p>Current SQL Server user sessions and requests.</p></div>
+      <div title="Current SQL Server user sessions and requests."><h2>Sessions</h2></div>
       <button type="button" class="secondary-button" :disabled="sqlServerStore.loadingSessions[connectionId]" @click="sqlServerStore.loadSessions(connectionId)">
         {{ sqlServerStore.loadingSessions[connectionId] ? 'Refreshing...' : 'Refresh' }}
       </button>

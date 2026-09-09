@@ -147,11 +147,8 @@ onMounted(() => provisioningStore.loadLdapProfiles())
   <div class="settings-ldap">
     <section class="panel">
       <div class="panel-header">
-        <div>
+        <div title="Keep directory connections independent. Provisioning profiles choose the LDAP profile they need.">
           <h2>LDAP profiles</h2>
-          <p>
-            Keep directory connections independent. Provisioning profiles choose the LDAP profile they need.
-          </p>
         </div>
 
         <button class="primary-button" type="button" @click="openAdd">
@@ -224,14 +221,13 @@ onMounted(() => provisioningStore.loadLdapProfiles())
         <div class="modal-header">
           <div>
             <h2>{{ editingId ? 'Edit LDAP profile' : 'Add LDAP profile' }}</h2>
-            <p>Connection, credentials and LDIF template travel together as one reusable profile. Provisioning can add entries and deprovisioning can remove exact matches automatically.</p>
           </div>
           <button class="modal-close" type="button" aria-label="Close" @click="closeForm">×</button>
         </div>
 
         <form class="connection-form" @submit.prevent="save">
           <label>
-            Profile name
+            <span class="field-label">Profile name <span class="required-mark" aria-hidden="true">*</span></span>
             <input v-model="form.name" required maxlength="100" placeholder="Oracle Retail LDAP" />
           </label>
 
@@ -247,12 +243,12 @@ onMounted(() => provisioningStore.loadLdapProfiles())
 
           <div class="connection-form-row">
             <label>
-              Host
-              <input v-model="form.host" :required="form.enabled" placeholder="ldap.example.local" />
+              <span class="field-label">Host <span v-if="form.enabled" class="required-mark" aria-hidden="true">*</span></span>
+              <input v-model="form.host" :required="form.enabled" maxlength="255" placeholder="ldap.example.local" />
             </label>
 
             <label>
-              Port
+              <span class="field-label">Port <span class="required-mark" aria-hidden="true">*</span></span>
               <input v-model.number="form.port" type="number" min="1" max="65535" required />
             </label>
           </div>
@@ -263,13 +259,13 @@ onMounted(() => provisioningStore.loadLdapProfiles())
           </label>
 
           <label>
-            Base DN
-            <input v-model="form.base_dn" :required="form.enabled" placeholder="dc=example,dc=local" />
+            <span class="field-label">Base DN <span v-if="form.enabled" class="required-mark" aria-hidden="true">*</span></span>
+            <input v-model="form.base_dn" :required="form.enabled" maxlength="500" placeholder="dc=example,dc=local" />
           </label>
 
           <label>
-            Bind DN
-            <input v-model="form.bind_dn" :required="form.enabled" placeholder="cn=dbachum,ou=service,dc=example,dc=local" />
+            <span class="field-label">Bind DN <span v-if="form.enabled" class="required-mark" aria-hidden="true">*</span></span>
+            <input v-model="form.bind_dn" :required="form.enabled" maxlength="500" placeholder="cn=dbachum,ou=service,dc=example,dc=local" />
           </label>
 
           <label>
@@ -277,10 +273,10 @@ onMounted(() => provisioningStore.loadLdapProfiles())
             <input
               v-model="form.bind_password"
               type="password"
+              maxlength="512"
               autocomplete="new-password"
               placeholder="Leave blank while editing to keep the saved password"
             />
-            <small>Stored encrypted. Existing passwords are never returned to the browser.</small>
           </label>
 
           <label>

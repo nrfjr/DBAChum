@@ -2,6 +2,7 @@ from fastapi import APIRouter
 
 from app.api.v1.endpoints import (
     analytics,
+    branding,
     alerts,
     auth,
     collector,
@@ -34,6 +35,7 @@ from app.api.v1.endpoints import (
 api_router = APIRouter()
 
 api_router.include_router(analytics.router)
+api_router.include_router(branding.router)
 api_router.include_router(health.router)
 api_router.include_router(alerts.router)
 api_router.include_router(auth.router)

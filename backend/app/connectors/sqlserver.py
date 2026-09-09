@@ -79,11 +79,6 @@ def _get_sqlserver_overview_sync(connection: dict) -> dict:
 
                 identity = probe_sqlserver_identity(db)
 
-                # This path deliberately uses the SQL Server 2000-era system
-                # surface. Microsoft retains it as compatibility views on
-                # modern releases, giving Overview one query family from 2000
-                # through current SQL Server instead of branching on every
-                # generation.
                 cursor.execute(
                     """
                     SELECT

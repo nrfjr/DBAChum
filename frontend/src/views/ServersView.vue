@@ -56,7 +56,7 @@ const filteredServers = computed(() => {
   })
 })
 
-const pageHeading = computed(() => selectedOs.value ? `${osLabel(selectedOs.value)} servers` : 'Servers')
+const pageHeading = computed(() => selectedOs.value ? `${osLabel(selectedOs.value)} servers` : '')
 
 function serverTypeLabel(value: ServerType) {
   return {
@@ -82,9 +82,8 @@ onMounted(() => {
 
 <template>
   <section class="page-header server-list-page-header">
-    <div>
+    <div v-if="pageHeading !== ''" title="Host inventory and operating-system workspace.">
       <h1>{{ pageHeading }}</h1>
-      <p>Host inventory and operating-system workspace. Connection configuration lives under Settings → Connections.</p>
     </div>
     <div class="server-list-page-actions">
       <RouterLink v-if="canManageServers" class="secondary-button" :to="{ name: 'settings-connections', query: { type: 'servers' } }">Manage connections</RouterLink>
@@ -95,12 +94,12 @@ onMounted(() => {
   </section>
 
   <div class="server-workspace-filters">
-    <input v-model="search" placeholder="Search server, hostname, owner or tag..." />
-    <select v-model="environmentFilter">
+    <input class="utility-search-input" v-model="search" placeholder="Search server, hostname, owner or tag..." />
+    <select class="utility-select-input" v-model="environmentFilter">
       <option value="">All environments</option>
       <option v-for="environment in environments" :key="environment" :value="environment">{{ environment }}</option>
     </select>
-    <select v-model="typeFilter">
+    <select class="utility-select-input" v-model="typeFilter">
       <option value="">All server types</option>
       <option value="database">Database server</option>
       <option value="application">Application server</option>
@@ -149,6 +148,7 @@ onMounted(() => {
 }
 .server-list-page-header {
   justify-content: space-between;
+  margin-bottom: 20px;
 }
 .server-list-page-actions {
   margin-left: auto;

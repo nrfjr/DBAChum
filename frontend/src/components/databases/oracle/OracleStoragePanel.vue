@@ -159,7 +159,7 @@ onMounted(() => void oracleStore.loadStorage(props.connectionId))
 <template>
   <section>
     <div class="utility-toolbar">
-      <div><h2>Storage</h2><p>Oracle tablespaces, datafiles, and recovery area usage.</p></div>
+      <div title="Oracle tablespaces, datafiles, and recovery area usage."><h2>Fast Recovery Area</h2></div>
       <div class="database-inline-actions">
         <button v-if="canOperate" type="button" class="primary-button" :disabled="operations.busy" @click="createTablespace">Create tablespace</button>
         <button type="button" class="secondary-button" :disabled="oracleStore.loadingStorage" @click="oracleStore.loadStorage(connectionId)">{{ oracleStore.loadingStorage ? 'Refreshing...' : 'Refresh' }}</button>
@@ -172,8 +172,7 @@ onMounted(() => void oracleStore.loadStorage(props.connectionId))
     <template v-else-if="storage">
       <div v-for="warning in storage.warnings" :key="warning" class="utility-warning">{{ warning }}</div>
 
-      <section v-if="storage.fra" class="panel utility-section">
-        <h3>Fast Recovery Area</h3>
+      <section v-if="storage.fra" class="utility-section">
         <div class="utility-summary">
           <div><span>Used</span><strong>{{ formatBytes(storage.fra.used_bytes) }}</strong></div>
           <div><span>Limit</span><strong>{{ formatBytes(storage.fra.limit_bytes) }}</strong></div>

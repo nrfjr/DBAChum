@@ -62,7 +62,7 @@ onMounted(() => void store.loadSecurity(props.connectionId))
 
 <template>
   <section>
-    <div class="utility-toolbar"><div><h2>Users &amp; Hosts</h2><p>MySQL/MariaDB accounts are host-qualified identities. DBAChum never reads or returns password/authentication hashes.</p></div><button type="button" class="secondary-button" :disabled="store.loadingSecurity[connectionId]" @click="store.loadSecurity(connectionId, true)">{{ store.loadingSecurity[connectionId] ? 'Refreshing...' : 'Refresh' }}</button></div>
+    <div class="utility-toolbar"><div><h2>Users &amp; Hosts</h2></div><button type="button" class="secondary-button" :disabled="store.loadingSecurity[connectionId]" @click="store.loadSecurity(connectionId, true)">{{ store.loadingSecurity[connectionId] ? 'Refreshing...' : 'Refresh' }}</button></div>
     <p v-if="operations.error" class="login-error">{{ operations.error }}</p>
     <p v-if="store.securityError[connectionId]" class="login-error">{{ store.securityError[connectionId] }}</p>
 
@@ -72,7 +72,7 @@ onMounted(() => void store.loadSecurity(props.connectionId))
       <div class="utility-summary">
         <button type="button" :class="{ active: filter === 'all' }" @click="filter = 'all'"><span>Visible accounts</span><strong>{{ security.account_count }}</strong></button><button type="button" :class="{ active: filter === 'current' }" @click="filter = 'current'"><span>Connected identity</span><strong>{{ security.accounts.filter((item) => item.current_identity).length }}</strong></button><button type="button" :class="{ active: filter === 'wildcard' }" @click="filter = 'wildcard'"><span>Wildcard hosts</span><strong>{{ security.wildcard_host_count }}</strong></button><button type="button" :class="{ active: filter === 'anonymous' }" @click="filter = 'anonymous'"><span>Anonymous</span><strong>{{ security.anonymous_account_count }}</strong></button><button type="button" :class="{ active: filter === 'roles' }" @click="filter = 'roles'"><span>Role accounts</span><strong>{{ security.role_account_count }}</strong></button>
       </div>
-      <div class="mysql-security-toolbar"><span>{{ security.complete_account_list ? 'Full account inventory visible' : 'Limited account inventory' }}</span><input v-model="search" type="search" placeholder="Search user, host, plugin, role..." /></div>
+      <div class="mysql-security-toolbar"><span>{{ security.complete_account_list ? 'Full account inventory visible' : 'Limited account inventory' }}</span><input class="utility-search-input" v-model="search" type="search" placeholder="Search user, host, plugin, role..." /></div>
       <ScrollableDataTable :empty="accounts.length === 0" empty-message="No matching MySQL/MariaDB accounts." max-height="34rem">
         <template #header><tr><th>Account</th><th>Authentication</th><th>Default role</th><th>SSL</th><th>State</th><th>Grants</th><th>Password changed</th><th v-if="canOperate">Actions</th></tr></template>
         <tr v-for="account in accounts" :key="account.account">

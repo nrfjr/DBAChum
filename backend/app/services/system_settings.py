@@ -5,6 +5,7 @@ from typing import Any
 
 from bson import ObjectId
 
+from app.core.collections import APP_BRANDING_COLLECTION_NAME
 from app.core.config import settings
 from app.core.indexes import create_indexes
 from app.schemas.system_settings import (
@@ -17,6 +18,7 @@ from app.schemas.system_settings import (
 
 APP_SETTINGS_ID = "global"
 APP_SETTINGS_COLLECTION = "app_settings"
+BRANDING_LOGO_ID = "logo"
 
 
 def _utcnow() -> datetime:
@@ -67,6 +69,47 @@ def _merge_settings(document: dict | None) -> dict[str, Any]:
 async def get_system_settings(database) -> dict[str, Any]:
     document = await database[APP_SETTINGS_COLLECTION].find_one({"_id": APP_SETTINGS_ID})
     return _merge_settings(document)
+
+
+async def branding_logo_document(database) -> dict | None:
+    return await database[APP_BRANDING_COLLECTION_NAME].find_one({"_id": BRANDING_LOGO_ID})
+
+
+async def public_branding_response(database) -> dict:
+    general = (await get_system_settings(database))["general"]
+    logo = await database[APP_BRANDING_COLLECTION_NAME].find_one(
+        {"_id": BRANDING_LOGO_ID},
+        {"updated_at": 1},
+    )
+    updated_at = logo.get("updated_at") if logo else None
+    return {
+        "installation_name": general["installation_name"],
+        "has_logo": logo is not None,
+        "logo_version": updated_at.isoformat() if isinstance(updated_at, datetime) else None,
+    }
+
+
+async def save_branding_logo(database, *, content_type: str, data: bytes, username: str) -> dict:
+    now = _utcnow()
+    await database[APP_BRANDING_COLLECTION_NAME].update_one(
+        {"_id": BRANDING_LOGO_ID},
+        {
+            "$set": {
+                "content_type": content_type,
+                "data": data,
+                "updated_at": now,
+                "updated_by": username,
+            },
+            "$setOnInsert": {"created_at": now},
+        },
+        upsert=True,
+    )
+    return await public_branding_response(database)
+
+
+async def delete_branding_logo(database) -> dict:
+    await database[APP_BRANDING_COLLECTION_NAME].delete_one({"_id": BRANDING_LOGO_ID})
+    return await public_branding_response(database)
 
 
 async def update_general_settings(database, payload: GeneralSettingsUpdate, *, username: str) -> dict:

@@ -193,9 +193,7 @@ def _parameter_operation_sync(connection: dict, data) -> dict:
                             cursor.execute("RECONFIGURE")
                             advanced_changed = True
                 else:
-                    # SQL Server 2000 and restricted modern logins use the legacy
-                    # sp_configure result set. If the option is hidden, briefly
-                    # enable advanced options to resolve it, then restore the old state.
+
                     advanced_state = _find_sp_configure_row(cursor, "show advanced options")
                     advanced_enabled = bool(advanced_state and int(advanced_state[4] or 0))
                     row = _find_sp_configure_row(cursor, canonical)

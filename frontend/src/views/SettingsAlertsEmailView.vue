@@ -240,11 +240,8 @@ onMounted(async () => {
     <template v-else>
       <section class="panel email-settings-panel">
         <div class="panel-header">
-          <div>
+          <div title="Configure the installation-wide mail transport. User profiles decide which matching alerts they personally receive.">
             <h2>Email delivery</h2>
-            <p>
-              Configure the installation-wide mail transport. User profiles decide which matching alerts they personally receive.
-            </p>
           </div>
         </div>
 
@@ -252,9 +249,8 @@ onMounted(async () => {
           <label class="notification-toggle-row email-master-toggle">
             <span>
               <strong>Enable alert email delivery</strong>
-              <small>New active alerts are queued only while this is enabled.</small>
             </span>
-            <input v-model="form.enabled" type="checkbox">
+            <input v-model="form.enabled" type="checkbox" title="New active alerts are queued only while this is enabled.">
           </label>
 
           <div class="connection-form-row email-provider-row">
@@ -298,21 +294,17 @@ onMounted(async () => {
             </label>
 
             <label>
-              DBAChum URL
-              <input v-model="form.application_url" type="url" placeholder="https://dbachum.example.com">
-              <span class="optional-label">Used for the “Open DBAChum” link in alert mail.</span>
+              Application URL
+              <input v-model="form.application_url" type="url" placeholder="https://dbachum.example.com" title="Used for the “Open DBAChum” link in alert mail.">
             </label>
           </div>
 
           <section v-if="form.provider === 'brevo'" class="email-provider-card">
             <div>
               <strong>Brevo API</strong>
-              <p>
-                DBAChum sends transactional mail through Brevo's HTTPS API. The API key is encrypted at rest and never returned to the browser.
-              </p>
             </div>
 
-            <label>
+            <label title="DBAChum sends transactional mail through Brevo's HTTPS API. The API key is encrypted at rest and never returned to the browser.">
               API key
               <input
                 v-model="form.brevo_api_key"
@@ -370,10 +362,6 @@ onMounted(async () => {
             </label>
           </section>
 
-          <p class="email-recipient-note">
-            Recipient addresses come from DBAChum user profiles and may be any valid email address. DBAChum does not impose a corporate-domain restriction.
-          </p>
-
           <p v-if="emailStore.error" class="login-error">{{ emailStore.error }}</p>
           <p v-if="savedMessage" class="profile-success">{{ savedMessage }}</p>
 
@@ -389,16 +377,13 @@ onMounted(async () => {
         <div class="panel-header">
           <div>
             <h2>Send a test email</h2>
-            <p>
-              Test {{ providerLabel }} without changing a user's alert subscription. Email delivery may remain globally disabled while you test the provider.
-            </p>
           </div>
         </div>
 
         <form class="connection-form" @submit.prevent="sendTest">
           <div class="connection-form-row email-sender-row">
             <label>
-              Recipient email
+              <span class="field-label">Recipient email <span class="required-mark" aria-hidden="true">*</span></span>
               <input v-model="testRecipient" type="email" required placeholder="dba@example.com">
             </label>
 
@@ -423,9 +408,6 @@ onMounted(async () => {
         <div class="panel-header">
           <div>
             <h2>Delivery status</h2>
-            <p>
-              Latest alert/test deliveries. Failed alert mail can be re-queued after the provider problem is fixed.
-            </p>
           </div>
 
           <div class="table-bulk-actions">
@@ -450,10 +432,6 @@ onMounted(async () => {
             </button>
           </div>
         </div>
-
-        <p class="profile-muted-note">
-          Sent/failed rows are history and may be cleared at any time. Queued, retrying and in-flight messages are protected so cleanup cannot cancel delivery. Dates use your profile timezone.
-        </p>
         <p v-if="deliveryClearError" class="login-error">{{ deliveryClearError }}</p>
         <p v-if="deliveryClearMessage" class="profile-success">{{ deliveryClearMessage }}</p>
 

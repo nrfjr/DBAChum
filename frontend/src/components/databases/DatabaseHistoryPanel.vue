@@ -695,12 +695,9 @@ onUnmounted(() => {
 <template>
   <section class="database-history-panel">
     <div class="utility-toolbar">
-      <div>
+      <div title="Collector-backed telemetry only. Drag the chart range to inspect the
+          exact incident window; Oracle detail tables follow that selection when available.">
         <h2>Metrics</h2>
-        <p>
-          Collector-backed telemetry only. Drag the chart range to inspect the
-          exact incident window; Oracle detail tables follow that selection when available.
-        </p>
       </div>
 
       <button
@@ -726,7 +723,6 @@ onUnmounted(() => {
       class="database-empty-state"
     >
       <h2>No metric samples yet</h2>
-      <p>DBAChum has not collected metrics for this time range yet.</p>
     </div>
 
     <template v-else>
@@ -814,24 +810,6 @@ onUnmounted(() => {
         <div class="history-section-heading">
           <div>
             <h3>{{ currentMetric.label }}</h3>
-            <p v-if="metric === 'cpu'">
-              CPU time consumed during each collector interval; this is not an instantaneous CPU percentage.
-            </p>
-            <p v-else-if="['slow_queries_delta', 'aborted_connects_delta', 'aborted_clients_delta'].includes(metric)">
-              Per-collector-interval delta from the server's cumulative GLOBAL STATUS counter. The first healthy sample after startup/recovery is a baseline.
-            </p>
-            <p v-else-if="metric === 'tmp_disk_interval'">
-              Percentage of temporary tables created on disk during each collector interval; no temporary-table activity is shown as unavailable rather than 0%.
-            </p>
-            <p v-else-if="metric === 'storage_bytes'">
-              Logical data + index size visible through INFORMATION_SCHEMA. This is not filesystem free-space capacity; server disk pressure remains a Server Assets metric.
-            </p>
-            <p v-else-if="metric === 'buffer_pool_used'">
-              InnoDB buffer-pool data occupancy. High occupancy is normal and is graphed for context, not treated as a pressure alert by itself.
-            </p>
-            <p v-else>
-              Gaps are kept visible when the target or collector did not return a sample.
-            </p>
           </div>
         </div>
 
@@ -847,9 +825,8 @@ onUnmounted(() => {
       <template v-if="isOracle">
         <section class="history-detail-card">
           <div class="history-section-heading">
-            <div>
+            <div title="Ranks the collector's per-interval SQL deltas only inside the visible chart window.">
               <h3>Top SQL · selected window</h3>
-              <p>Ranks the collector's per-interval SQL deltas only inside the visible chart window.</p>
             </div>
             <button
               v-if="topSqlRows.length > 5"
@@ -911,9 +888,8 @@ onUnmounted(() => {
 
         <section class="history-detail-card">
           <div class="history-section-heading">
-            <div>
+            <div title="Ranks active/problem sessions by CPU consumed while they appeared in collector samples.">
               <h3>Top sessions · selected window</h3>
-              <p>Ranks active/problem sessions by CPU consumed while they appeared in collector samples.</p>
             </div>
             <button
               v-if="topSessionRows.length > 5"
@@ -965,9 +941,8 @@ onUnmounted(() => {
         <section class="history-detail-card history-two-column">
           <div>
             <div class="history-section-heading">
-              <div>
+              <div title="Non-idle system wait deltas captured by the collector.">
                 <h3>Top waits · selected window</h3>
-                <p>Non-idle system wait deltas captured by the collector.</p>
               </div>
               <button
                 v-if="topWaitRows.length > 5"
@@ -1001,9 +976,8 @@ onUnmounted(() => {
 
           <div>
             <div class="history-section-heading">
-              <div>
+              <div title="Most recent 5-minute Oracle storage sample inside the selected window.">
                 <h3>Latest storage snapshot</h3>
-                <p>Most recent 5-minute Oracle storage sample inside the selected window.</p>
               </div>
             </div>
 
@@ -1065,7 +1039,7 @@ onUnmounted(() => {
           <ul v-if="selectedPlan.diagnostics.length">
             <li v-for="note in selectedPlan.diagnostics" :key="note">{{ note }}</li>
           </ul>
-          <p v-else>No obvious plan-level warning was detected. Review the plan and SQL shape before changing anything.</p>
+          <p v-else>No obvious plan-level warning was detected.</p>
         </section>
 
         <pre v-if="selectedPlan.plan_text" class="utility-code-block">{{ selectedPlan.plan_text }}</pre>

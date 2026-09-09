@@ -113,8 +113,7 @@ onMounted(() => {
       <article class="panel">
         <div class="panel__header">
           <div>
-            <h2>Database health</h2>
-            <p>Current state of configured database connections.</p>
+            <h2 title="Current state of configured database connections.">Database health</h2>
           </div>
           <RouterLink class="text-link" to="/databases">View databases</RouterLink>
         </div>
@@ -146,9 +145,9 @@ onMounted(() => {
       <article class="panel">
         <div class="panel__header">
           <div>
-            <h2>System status</h2>
-            <p>DBAChum application services.</p>
+            <h2 title="DBAChum application services.">System status</h2>
           </div>
+            <button type="button" class="secondary-button" @click="checkHealth">Refresh</button>
         </div>
 
         <div v-if="!uiStore.isOnline" class="status-message">Status unknown — device offline.</div>
@@ -158,16 +157,13 @@ onMounted(() => {
         </div>
         <div v-else-if="healthError" class="status-message status-message--error">Backend unavailable.</div>
         <div v-else class="status-message">Checking services...</div>
-
-        <button type="button" class="secondary-button" @click="checkHealth">Check again</button>
       </article>
     </section>
 
     <section class="panel">
       <div class="panel__header">
         <div>
-          <h2>Recent alerts</h2>
-          <p>Active database and server conditions that need attention.</p>
+          <h2 title="Active database and server conditions that need attention.">Recent alerts</h2>
         </div>
         <RouterLink class="text-link" to="/alerts">View all</RouterLink>
       </div>
@@ -181,7 +177,6 @@ onMounted(() => {
 
       <div v-else class="empty-state empty-state--small">
         <strong>No active alerts</strong>
-        <p>Current monitored resources have nothing requiring attention.</p>
       </div>
     </section>
   </div>

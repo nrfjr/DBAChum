@@ -38,9 +38,7 @@ async def oracle_session_operation(connection: dict, data) -> dict:
     elif data.action.value == "disconnect":
         statement = f"ALTER SYSTEM DISCONNECT SESSION '{target}' IMMEDIATE"
     elif data.action.value == "cancel_query":
-        # ALTER SYSTEM CANCEL SQL is not available on Oracle 10g. Keep the
-        # compatibility contract explicit rather than silently killing a
-        # session when the caller asked only to cancel its SQL.
+
         async with open_oracle_connection(connection) as db:
             try:
                 major = int(str(db.version).split(".", 1)[0])

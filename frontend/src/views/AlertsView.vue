@@ -86,13 +86,9 @@ onUnmounted(() => {
 
 <template>
   <section class="alerts-page">
-    <div class="page-header">
-      <div>
-        <h1>Alerts</h1>
-        <p>Collector-backed warnings and incidents. Clearing is real: resolved alerts are removed, while active alerts stay suppressed until the condition recovers.</p>
-      </div>
-
-      <button type="button" class="secondary-button" :disabled="alertsStore.loading" @click="refresh">
+    <div class="page-header alert-header-list">
+      <div></div>
+      <button type="button" class="secondary-button alert-refresh-button" :disabled="alertsStore.loading" @click="refresh">
         {{ alertsStore.loading ? 'Refreshing...' : 'Refresh' }}
       </button>
     </div>

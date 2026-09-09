@@ -74,7 +74,7 @@
   --color-danger: #dc777f;
 }
 
-/* Phase 7B.1 user accent foundation. Severity colors stay independent. */
+/* user accent foundation. Severity colors stay independent. */
 :root[data-accent='blue'] {
   --color-purple: #4777d4;
   --color-purple-hover: #3868c4;
@@ -448,9 +448,11 @@ button {
 .secondary-button {
   min-height: 38px;
 
-  padding: 0 13px;
+  padding: 8px;
 
   border-radius: 10px;
+
+  text-decoration: none;
 }
 
 .theme-button:hover,
@@ -1677,6 +1679,7 @@ button {
   justify-content: space-between;
   gap: 1rem;
   margin-bottom: 1.25rem;
+  margin-top: 20px;
 }
 
 .utility-toolbar h2,
@@ -1985,7 +1988,7 @@ button {
   }
 }
 
-/* Weekend 19 Phase 2: Oracle user provisioning */
+/* Oracle user provisioning */
 .utility-toolbar-actions {
   display: flex;
   flex-wrap: wrap;
@@ -2140,7 +2143,7 @@ button {
   gap: 0.5rem;
 }
 
-/* Weekend 19 Phase 3 - Provisioning profile engine */
+/* Provisioning profile engine */
 .provisioning-warning {
   margin: 0 0 1rem;
   padding: 0.85rem 1rem;
@@ -2246,7 +2249,7 @@ button {
 }
 
 
-/* Weekend 19 Phase 4A redo - idempotent application-table identity matching */
+/* idempotent application-table identity matching */
 .provisioning-upsert-match {
   display: grid;
   gap: 0.65rem;
@@ -2271,7 +2274,7 @@ button {
   opacity: 0.45;
 }
 
-/* Phase 4C - provisioning lifecycle history, retry and deprovision preview */
+/* provisioning lifecycle history, retry and deprovision preview */
 .provisioning-history-panel {
   margin-top: 1.25rem;
   padding: 1rem;
@@ -2463,7 +2466,7 @@ button {
   }
 }
 
-/* Phase 4D - typed-confirmation Oracle schema deprovision */
+/* typed-confirmation Oracle schema deprovision */
 .deprovision-confirmation {
   display: grid;
   gap: 0.75rem;
@@ -2517,7 +2520,7 @@ button {
   }
 }
 
-/* Phase 4E: compact Oracle user lifecycle actions */
+/* compact Oracle user lifecycle actions */
 .user-list-table-wrap {
   overflow: visible;
 }
@@ -2705,7 +2708,7 @@ button {
   }
 }
 
-/* Phase 5A/5B — infrastructure configuration + server workspace */
+/* infrastructure configuration + server workspace */
 .infrastructure-settings {
   display: grid;
   gap: 1rem;
@@ -2734,6 +2737,7 @@ button {
 
 .table-filter-input {
   width: min(34rem, 100%);
+  margin-bottom: 20px;
 }
 
 .table-actions-cell {
@@ -2758,7 +2762,7 @@ button {
 
 .server-workspace-filters {
   display: grid;
-  grid-template-columns: minmax(14rem, 2fr) minmax(10rem, 1fr) minmax(10rem, 1fr) auto;
+  grid-template-columns: minmax(14rem, 2fr) minmax(10rem, 1fr) minmax(10rem, 1fr);
   gap: .75rem;
   margin-bottom: 1rem;
 }
@@ -2888,7 +2892,7 @@ button {
   }
 }
 
-/* Phase 5C — read-only SSH host monitoring */
+/* read-only SSH host monitoring */
 .server-card-heading {
   display: flex;
   align-items: flex-start;
@@ -3068,7 +3072,7 @@ button {
   }
 }
 
-/* Phase 5D: persistent SSH terminal workspace */
+/* persistent SSH terminal workspace */
 .terminal-dock {
   position: relative;
   z-index: 80;
@@ -3362,7 +3366,7 @@ button {
   }
 }
 
-/* Phase 5D polish — explicit terminal shortcut server scope */
+/* explicit terminal shortcut server scope */
 .terminal-shortcut-scope {
   display: grid;
   gap: 0.75rem;
@@ -3469,7 +3473,7 @@ button {
   }
 }
 
-/* Phase 6D: alert center + compact history controls */
+/* alert center + compact history controls */
 .sr-only {
   position: absolute;
   width: 1px;
@@ -3773,7 +3777,7 @@ button {
   font-size: 0.9rem;
 }
 
-/* Phase 7A.2: group monitored databases by engine. */
+/* group monitored databases by engine. */
 .database-engine-groups {
   display: grid;
   gap: 1.75rem;
@@ -3825,7 +3829,7 @@ button {
   }
 }
 
-/* Phase 7A.3: recent backup history and transparent engine details. */
+/* recent backup history and transparent engine details. */
 .backup-toolbar {
   align-items: flex-start;
 }
@@ -4026,7 +4030,7 @@ button {
   }
 }
 
-/* Phase 7A.4 SQL Server access/security */
+/* SQL Server access/security */
 .sqlserver-security-toolbar {
   display: flex;
   align-items: center;
@@ -4161,7 +4165,7 @@ button {
   }
 }
 
-/* Phase 7A.5 SQL Server operational health */
+/* SQL Server operational health */
 .sqlserver-health-summary {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
@@ -4257,14 +4261,18 @@ button {
   font-size: 0.72rem;
 }
 
-/* Phase 7A.8 — MySQL/MariaDB monitoring transparency */
+.sqlserver-user-section {
+  margin-bottom: 20px;
+}
+
+
 .database-monitoring-note {
   margin: -0.35rem 0 0.9rem;
   color: var(--text-muted);
   font-size: 0.82rem;
 }
 
-/* Phase 7A.9 MySQL/MariaDB access inspector */
+/* MySQL/MariaDB access inspector */
 .mysql-security-source {
   display: flex;
   gap: 0.9rem 1.4rem;
@@ -4480,7 +4488,7 @@ button {
   }
 }
 
-/* Phase 7A.11 cross-engine monitoring notice */
+/* cross-engine monitoring notice */
 .database-monitoring-notice {
   margin-bottom: 1.25rem;
 }
@@ -4495,7 +4503,7 @@ button {
 }
 
 /* ==============================================
-   Phase 7B.6 — Profile workspace navigation
+    Profile workspace navigation
    ============================================== */
 .profile-settings-layout {
   align-items: start;
@@ -4545,7 +4553,7 @@ button {
 }
 
 /* ==============================================
-   Phase 7B.1 — User identity/profile foundation
+   User identity/profile foundation
    ============================================== */
 .profile-layout {
   display: grid;
@@ -4687,7 +4695,7 @@ button {
 }
 
 /* ==========================================================
-   Phase 7B.3 — Per-user notification subscription foundation
+    Per-user notification subscription foundation
    ========================================================== */
 .profile-card-wide {
   grid-column: 1 / -1;
@@ -4841,7 +4849,7 @@ button {
 }
 
 /* ==========================================================
-   Phase 7B.4 — Email delivery administration
+   Email delivery administration
    ========================================================== */
 .email-settings-stack {
   display: grid;
@@ -4962,7 +4970,7 @@ button {
 }
 
 /* ==========================================================
-   Phase 7B.5 — Personal preferences and history controls
+   Personal preferences and history controls
    ========================================================== */
 .preference-file-input {
   display: none;
@@ -5032,7 +5040,7 @@ button {
 }
 
 /* ==============================================
-   Phase 8.1 + 8.2 — Navigation, IA and Connections
+   Navigation, IA and Connections
    ============================================== */
 :root {
   --navigation-active-indicator: #242329;
@@ -5405,7 +5413,7 @@ button {
 }
 
 /* ==============================================
-   Phase 8.3 — Records Workspace
+   Records Workspace
    ============================================== */
 .records-page-header,
 .record-detail-header {
@@ -5864,7 +5872,7 @@ button {
 }
 
 /* ========================================================================== */
-/* Phase 8.4 — Database Detail Workspace + linked SSH terminal                */
+/* Database Detail Workspace + linked SSH terminal                */
 /* ========================================================================== */
 
 .database-workspace-header {
@@ -6148,7 +6156,7 @@ button {
   white-space: nowrap;
 }
 
-/* Phase 8.6 functional controls. Kept intentionally small pending UI consolidation. */
+/* functional controls. Kept intentionally small pending UI consolidation. */
 .utility-search-input {
   min-width: 14rem;
   padding: 0.62rem 0.75rem;
@@ -6171,7 +6179,7 @@ button {
   line-height: 1.45;
 }
 
-/* Phase 8.6 monitoring-first database overview */
+/* monitoring-first database overview */
 .database-overview-summary-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
@@ -6226,7 +6234,7 @@ button {
   white-space: nowrap;
 }
 
-/* Phase 8.6 R3 workspace refinement */
+/* workspace refinement */
 .database-more-menu {
   position: relative;
   flex: 0 0 auto;
@@ -6342,7 +6350,7 @@ button {
 }
 
 /* ============================================================
-   Phase 9 — application-wide UI consolidation
+   application-wide UI consolidation
    Shared interaction language for database/server workspaces,
    profile actions, dialogs, notifications and dense DBA tables.
    ============================================================ */
@@ -6389,7 +6397,7 @@ button {
   min-height: 42px;
   padding: 3px 8px 3px 4px;
   border: 1px solid transparent;
-  border-radius: 999px;
+  border-radius: 10px 30px 30px 10px;
   background: transparent;
   color: var(--text);
   cursor: pointer;
@@ -6397,7 +6405,7 @@ button {
 
 .profile-menu__trigger:hover,
 .profile-menu__trigger[aria-expanded='true'] {
-  border-color: var(--border);
+  background: #222229
 }
 
 .profile-menu__trigger > svg {
@@ -7146,7 +7154,7 @@ button {
 
 .app-toast--danger { border-left-color: var(--danger); }
 
-/* Bring existing feature modals into the same Phase 9 visual system. */
+/* Bring existing feature modals into the same visual system. */
 .modal-backdrop {
   padding: 1rem;
   background: rgb(0 0 0 / 50%);
@@ -7193,6 +7201,12 @@ button {
   min-width: 0;
 }
 
+.alert-header-list{
+  display: flex;
+  align-items: end;
+  justify-content: end;
+}
+
 .settings-nav {
   position: sticky;
   top: calc(var(--topbar-height) + 20px);
@@ -7210,3 +7224,268 @@ button {
     position: static;
   }
 }
+
+.field-label {
+  display: inline-flex;
+  align-items: baseline;
+  gap: .2rem;
+}
+
+.required-mark {
+  color: var(--danger);
+  font-weight: 750;
+}
+
+.connection-form input[type='number'],
+.settings-form-grid input[type='number'] {
+  width: min(100%, 10rem);
+}
+
+.connection-form select:not([multiple]),
+.settings-form-grid select {
+  width: min(100%, 28rem);
+}
+
+.connection-form input[type='password'] {
+  width: min(100%, 26rem);
+}
+
+.connection-form input[type='email'] {
+  width: min(100%, 32rem);
+}
+
+.connection-form input[maxlength='30'] {
+  width: min(100%, 18rem);
+}
+
+.connection-form input[maxlength='64'] {
+  width: min(100%, 22rem);
+}
+
+.connection-form input[maxlength='80'],
+.connection-form input[maxlength='100'],
+.connection-form input[maxlength='120'],
+.connection-form input[maxlength='128'] {
+  width: min(100%, 26rem);
+}
+
+.connection-form input[maxlength='160'],
+.connection-form input[maxlength='254'],
+.connection-form input[maxlength='255'] {
+  width: min(100%, 32rem);
+}
+
+.records-form select,
+.records-form textarea,
+.provisioning-mapping-row input,
+.provisioning-mapping-row select {
+  max-width: none;
+  width: 100%;
+}
+
+.brand__logo img {
+  width: 100%;
+  height: 100%;
+  padding: 3px;
+  border-radius: inherit;
+  object-fit: contain;
+  background: var(--surface);
+}
+
+.avatar img,
+.profile-avatar-large img {
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  object-fit: cover;
+}
+
+.avatar--image,
+.profile-avatar-large--image {
+  overflow: hidden;
+  padding: 0;
+}
+
+.app-legal-footer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: .65rem;
+  flex-wrap: wrap;
+  color: var(--text-muted);
+  font-size: .72rem;
+}
+
+.app-legal-footer a {
+  display: inline-flex;
+  align-items: center;
+  gap: .28rem;
+  color: var(--text-muted);
+  text-decoration: none;
+}
+
+.app-legal-footer a:hover {
+  color: var(--accent);
+}
+
+.app-legal-footer svg {
+  width: 15px;
+  height: 15px;
+}
+
+.login-shell {
+  display: grid;
+  gap: 1rem;
+  width: 100%;
+  max-width: 400px;
+}
+
+.login-shell .login-card {
+  max-width: none;
+}
+
+.login-brand__logo {
+  overflow: hidden;
+}
+
+.login-brand__logo span {
+  margin: 0;
+  color: inherit;
+  font-size: inherit;
+}
+
+.login-heading p {
+  line-height: 1.45;
+}
+
+.branding-setting {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-top: .9rem;
+  padding: .9rem;
+  border: 1px solid var(--border);
+  border-radius: .8rem;
+  background: var(--surface-muted);
+}
+
+.branding-setting__preview {
+  display: grid;
+  place-items: center;
+  width: 64px;
+  height: 64px;
+  flex: 0 0 64px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: .85rem;
+  background: var(--surface);
+  color: var(--accent);
+  font-size: 1.2rem;
+  font-weight: 750;
+}
+
+.branding-setting__preview img {
+  width: 100%;
+  height: 100%;
+  padding: 4px;
+  object-fit: contain;
+}
+
+.branding-setting__body {
+  display: grid;
+  gap: .35rem;
+  min-width: 0;
+}
+
+.branding-setting__body p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: .78rem;
+}
+
+.branding-setting__actions,
+.profile-avatar-actions {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  flex-wrap: wrap;
+}
+
+.hidden-file-input {
+  display: none;
+}
+
+.profile-identity-heading--editable {
+  align-items: flex-start;
+}
+
+.profile-avatar-actions {
+  margin-top: .5rem;
+}
+
+.profile-avatar-actions button {
+  min-height: 32px;
+  padding: .35rem .6rem;
+  font-size: .75rem;
+}
+
+.settings-runtime-footer {
+  margin-top: 1rem;
+  padding-top: .85rem;
+  border-top: 1px solid var(--border);
+}
+
+.analytics-import-column-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: .8rem 1rem;
+}
+
+.analytics-import-column-grid label,
+.analytics-import-file-field,
+.analytics-import-default-unit {
+  display: grid;
+  gap: .35rem;
+}
+
+.analytics-import-column-grid select {
+  width: 100%;
+  min-width: 0;
+}
+
+.analytics-import-default-unit select {
+  width: min(100%, 12rem);
+}
+
+.analytics-import-mapping select {
+  min-width: 0;
+}
+
+.app-dialog-field > label:first-child {
+  display: inline-flex;
+  align-items: baseline;
+  gap: .2rem;
+}
+
+.app-dialog-field input[type='number'] {
+  max-width: 12rem;
+}
+
+@media (max-width: 720px) {
+  .connection-form input,
+  .connection-form select,
+  .settings-form-grid input,
+  .settings-form-grid select {
+    width: 100%;
+    max-width: none;
+  }
+
+  .analytics-import-column-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .branding-setting {
+    align-items: flex-start;
+  }
+}
+

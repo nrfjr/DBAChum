@@ -29,16 +29,17 @@ let clockTimer: ReturnType<typeof setInterval> | undefined
 const currentTime = ref('')
 
 const pageTitle = computed(() => String(route.meta.title ?? 'DBAChum'))
-const pageSubtitle = computed(() =>
-  String(route.meta.subtitle ?? 'Database administration workspace.'),
-)
+
 
 const isContextDetail = computed(() =>
   route.name === 'database-detail' || route.name === 'server-detail' || route.name === 'record-detail',
 )
 
 const displayName = computed(() => authStore.user?.display_name || authStore.user?.username || 'DBA')
-const installationName = computed(() => systemSettingsStore.general?.installation_name || 'DBAChum')
+const installationName = computed(() => systemSettingsStore.branding?.installation_name || systemSettingsStore.general?.installation_name || 'DBAChum')
+const logoUrl = computed(() => systemSettingsStore.brandingLogoUrl)
+const installationInitial = computed(() => installationName.value.trim().charAt(0).toUpperCase() || 'D')
+const avatarUrl = computed(() => authStore.avatarUrl)
 
 function updateClock() {
   currentTime.value = new Intl.DateTimeFormat(undefined, {
@@ -181,7 +182,10 @@ onMounted(() => {
   updateClock()
   clockTimer = setInterval(updateClock, 1000)
   void alertsStore.loadSummary()
-  void systemSettingsStore.loadGeneral().catch(() => undefined)
+  void Promise.all([
+    systemSettingsStore.loadGeneral(),
+    systemSettingsStore.loadBranding(),
+  ]).catch(() => undefined)
   alertSummaryTimer = setInterval(() => {
     void alertsStore.loadSummary()
   }, 30_000)
@@ -200,11 +204,13 @@ onUnmounted(() => {
 
     <aside class="sidebar" :class="{ 'sidebar--open': uiStore.sidebarOpen }">
       <div class="brand">
-        <div class="brand__logo">D</div>
+        <div class="brand__logo">
+          <img v-if="logoUrl" :src="logoUrl" :alt="`${installationName} logo`" />
+          <span v-else>{{ installationInitial }}</span>
+        </div>
 
         <div class="brand__text">
           <strong>{{ installationName }}</strong>
-          <span>Database workspace</span>
         </div>
       </div>
 
@@ -371,8 +377,8 @@ onUnmounted(() => {
         <span class="status-dot status-dot--online" />
 
         <div>
-          <strong>{{ installationName }} v1</strong>
-          <span>Development build</span>
+          <strong>{{ installationName }} {{ systemSettingsStore.general?.app_version || 'v1' }}</strong>
+          <span>{{ systemSettingsStore.general?.environment || 'Development' }}</span>
         </div>
       </div>
     </aside>
@@ -386,7 +392,6 @@ onUnmounted(() => {
 
           <div v-if="!isContextDetail" class="page-heading">
             <h1>{{ pageTitle }}</h1>
-            <p>{{ pageSubtitle }}</p>
           </div>
           <div v-else class="page-heading page-heading--context">
             <strong>{{ installationName }}</strong>
@@ -409,12 +414,18 @@ onUnmounted(() => {
                 <strong>{{ displayName }}</strong>
                 <time>{{ currentTime }}</time>
               </span>
-              <div class="avatar">{{ authStore.user?.avatar_initials || 'DB' }}</div>
+              <div class="avatar" :class="{ 'avatar--image': avatarUrl }">
+                <img v-if="avatarUrl" :src="avatarUrl" alt="Profile photo" />
+                <span v-else>{{ authStore.user?.avatar_initials || 'DB' }}</span>
+              </div>
             </button>
 
             <div v-if="profileMenuOpen" class="profile-menu__popover">
               <div class="profile-menu__identity">
-                <div class="avatar avatar--large">{{ authStore.user?.avatar_initials || 'DB' }}</div>
+                <div class="avatar avatar--large" :class="{ 'avatar--image': avatarUrl }">
+                  <img v-if="avatarUrl" :src="avatarUrl" alt="Profile photo" />
+                  <span v-else>{{ authStore.user?.avatar_initials || 'DB' }}</span>
+                </div>
                 <div>
                   <strong>{{ displayName }}</strong>
                   <span>{{ authStore.user?.email || authStore.user?.username }}</span>
@@ -426,7 +437,7 @@ onUnmounted(() => {
               </RouterLink>
 
               <div class="profile-menu__section">
-                <span>Appearance</span>
+                <span>Theme</span>
                 <div class="profile-menu__theme-grid">
                   <button type="button" :class="{ active: uiStore.themePreference === 'system' }" @click="setTheme('system')">System</button>
                   <button type="button" :class="{ active: uiStore.themePreference === 'light' }" @click="setTheme('light')">Light</button>

@@ -68,9 +68,9 @@ onMounted(() => void store.loadSecurity(props.connectionId))
 </script>
 
 <template>
-  <section>
+  <section class="sqlserver-user-section">
     <div class="utility-toolbar">
-      <div><h2>Users &amp; Principals</h2><p>Database users and server logins visible to the connected SQL Server account.</p></div>
+      <div title="Database users and server logins visible to the connected SQL Server account."><h2>Users &amp; Principals</h2></div>
       <button type="button" class="secondary-button" :disabled="store.loadingSecurity[connectionId]" @click="store.loadSecurity(connectionId, true)">{{ store.loadingSecurity[connectionId] ? 'Refreshing...' : 'Refresh' }}</button>
     </div>
     <p v-if="operations.error" class="login-error">{{ operations.error }}</p>

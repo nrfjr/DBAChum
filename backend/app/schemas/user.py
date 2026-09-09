@@ -58,7 +58,11 @@ class HistoryRangePreference(str, Enum):
 
 
 class UserPreferences(BaseModel):
+    """Personal presentation preferences stored with a DBAChum user.
 
+    Notification subscriptions live in a sibling user field rather than here,
+    keeping identity/appearance independent from alert-delivery choices.
+    """
 
     timezone: str = Field(
         default="system",
@@ -115,6 +119,8 @@ class UserResponse(BaseModel):
     is_active: bool
     permissions: list[str] = Field(default_factory=list)
     avatar_initials: str = "DB"
+    has_avatar: bool = False
+    avatar_version: str | None = None
     preferences: UserPreferences = Field(
         default_factory=UserPreferences
     )
@@ -176,6 +182,9 @@ class UserUpdate(BaseModel):
     role: UserRole
     is_active: bool
 
+    # Admin identity edits are accepted by the API foundation without forcing
+    # the existing Settings > Users controls to submit them on every role/status
+    # change. They are only changed when explicitly included in the request.
     display_name: str | None = Field(
         default=None,
         max_length=120,

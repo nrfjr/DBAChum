@@ -33,9 +33,7 @@ if ($null -ne $existingTask -and $existingTask.State -eq 'Running') {
     Start-Sleep -Seconds 2
 }
 
-# Phase 6A originally installed the collector as a second Scheduled Task.
-# The stack supervisor now owns both processes. Remove the old task first so
-# upgrading an existing machine cannot accidentally run two collectors.
+
 $legacyCollectorTask = Get-ScheduledTask -TaskName $LegacyCollectorTaskName -ErrorAction SilentlyContinue
 if ($null -ne $legacyCollectorTask) {
     Stop-ScheduledTask -TaskName $LegacyCollectorTaskName -ErrorAction SilentlyContinue

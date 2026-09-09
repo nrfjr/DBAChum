@@ -104,7 +104,7 @@ onMounted(() => void sqlServerStore.loadStorage(props.connectionId))
 <template>
   <section>
     <div class="utility-toolbar">
-      <div><h2>Storage</h2><p>SQL Server data and transaction-log file allocation.</p></div>
+      <div title="SQL Server data and transaction-log file allocation."><h2>Storage</h2></div>
       <div class="database-inline-actions">
         <button v-if="canOperate" type="button" class="secondary-button" :disabled="operations.busy" @click="addFile">Add file</button>
         <button type="button" class="secondary-button" :disabled="sqlServerStore.loadingStorage[connectionId]" @click="sqlServerStore.loadStorage(connectionId)">{{ sqlServerStore.loadingStorage[connectionId] ? 'Refreshing...' : 'Refresh' }}</button>

@@ -48,7 +48,7 @@ async function loadPlan(item: TopSqlItem) {
         plan_handle: item.plan_handle,
       }, item.key)
     } else {
-      const result = await formDialog({ title: 'Explain representative SQL', message: 'Paste a representative real SELECT for this normalized digest. DBAChum runs EXPLAIN only.', confirmLabel: 'Explain SQL', fields: [{ name: 'sql', label: 'SELECT statement', type: 'textarea', required: true }] })
+      const result = await formDialog({ title: 'Explain representative SQL', message: 'Paste a representative real SELECT for this normalized digest. application runs EXPLAIN only.', confirmLabel: 'Explain SQL', fields: [{ name: 'sql', label: 'SELECT statement', type: 'textarea', required: true }] })
       if (!result) return
       selectedPlan.value = await store.loadPlan(props.connectionId, { sql_text: String(result.sql).trim() }, item.key)
     }
@@ -70,9 +70,8 @@ onMounted(() => void store.loadTopSql(props.connectionId))
 <template>
   <section class="utility-section">
     <div class="utility-toolbar">
-      <div>
+      <div title="{{ result?.source ?? 'Highest-cost cached SQL with engine-native plan inspection and practical tuning hints.' }}">
         <h2>Current Top SQL</h2>
-        <p>{{ result?.source ?? 'Highest-cost cached SQL with engine-native plan inspection and practical tuning hints.' }}</p>
       </div>
       <div class="database-inline-actions">
         <button v-if="engine === 'mysql'" type="button" class="secondary-button" :disabled="loadingPlan" @click="explainMySqlSql">Explain SQL</button>

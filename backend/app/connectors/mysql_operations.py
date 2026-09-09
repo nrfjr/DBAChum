@@ -100,9 +100,7 @@ def _account_sync(connection: dict, data) -> dict:
         target = _account(data.account_name, data.host)
 
         if data.action.value in {"enable", "disable"}:
-            # ACCOUNT LOCK/UNLOCK is broadly available in MySQL 5.7.6+ and
-            # modern MariaDB. Reject old generations instead of emulating an
-            # account lock by corrupting credentials.
+
             mysql_supported = (
                 not version.mariadb
                 and version.major is not None

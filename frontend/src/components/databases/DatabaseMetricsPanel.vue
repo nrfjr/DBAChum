@@ -12,7 +12,6 @@ defineProps<{
 <template>
   <DatabaseHistoryPanel :connection-id="connectionId" />
 
-  <!-- Oracle Top SQL is already part of the collector-backed Metrics feed. -->
   <DatabasePerformancePanel
     v-if="engine !== 'oracle'"
     :connection-id="connectionId"

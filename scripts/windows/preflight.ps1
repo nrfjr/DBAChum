@@ -171,7 +171,6 @@ if ($null -ne $gitCommand -and (Test-Path (Join-Path $ProjectRoot '.git'))) {
     }
 }
 
-# Oracle runtime compatibility. Thick mode is required for Oracle 10g.
 $oracleDriverMode = Get-EnvValue -Text $envText -Name 'ORACLE_DRIVER_MODE'
 if ([string]::IsNullOrWhiteSpace($oracleDriverMode)) {
     $oracleDriverMode = 'thin'

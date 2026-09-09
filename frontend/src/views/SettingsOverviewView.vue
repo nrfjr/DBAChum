@@ -2,11 +2,6 @@
   <div class="settings-overview">
     <section class="settings-overview__intro">
       <h3>Installation settings</h3>
-      <p>
-        Use the navigation on the left to configure DBAChum. Connection-related
-        areas are grouped together now; their screens will be consolidated in the
-        next Phase 8 pass without changing the underlying connection behavior.
-      </p>
     </section>
 
     <div class="settings-overview-grid">

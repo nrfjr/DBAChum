@@ -290,11 +290,8 @@ async function downloadResultsXlsx() {
     <section class="modal-panel oracle-bulk-modal" role="dialog" aria-modal="true" aria-label="Bulk create Oracle users">
       <div class="modal-header">
         <div>
-          <h2>Bulk create Oracle users</h2>
-          <p v-if="step === 'import'">Import employee details first. Nothing is created during import.</p>
-          <p v-else-if="step === 'access'">Choose the shared provisioning settings for this batch.</p>
-          <p v-else-if="step === 'review'">Review every generated account before execution.</p>
-          <p v-else>Batch execution results.</p>
+          <h2>Batch User Creation</h2>
+
         </div>
         <button type="button" class="modal-close" aria-label="Close" :disabled="loading" @click="close">×</button>
       </div>
@@ -311,7 +308,7 @@ async function downloadResultsXlsx() {
           <strong>Spreadsheet headers</strong>
           <p>Required: <code>employee_id</code>, <code>first_name</code>, <code>last_name</code></p>
           <p>Optional: <code>middle_name</code>, <code>password</code>, <code>reference_user</code></p>
-          <small>Supported: .xlsx and UTF-8 .csv · blank password = DBAChum generates one · reference user is optional.</small>
+          <small>Supported: .xlsx and UTF-8 .csv · blank password = application generates one · reference user is optional.</small>
         </div>
 
         <div class="bulk-file-row">
@@ -371,7 +368,6 @@ async function downloadResultsXlsx() {
 
           <label class="bulk-common-reference">
             <span class="checkbox-row"><input v-model="useCommonReference" type="checkbox" /> Use the same reference user for all rows</span>
-            <small>When enabled, spreadsheet reference_user values are ignored for this batch.</small>
           </label>
           <label v-if="useCommonReference" :class="{ 'field-invalid': useCommonReference && !commonReferenceUser.trim() }">
             Common reference user
@@ -380,10 +376,10 @@ async function downloadResultsXlsx() {
           </label>
 
           <div class="connection-form-row">
-            <label>Requestor <span class="optional-label">Optional</span><input v-model="requestor" maxlength="200" /></label>
-            <label>Request / ticket <span class="optional-label">Optional</span><input v-model="requestReference" maxlength="100" /></label>
+            <label>Requestor (Optional)<input v-model="requestor" maxlength="200" /></label>
+            <label>Request / ticket (Optional)<input v-model="requestReference" maxlength="100" /></label>
           </div>
-          <label>Remarks <span class="optional-label">Optional</span><textarea v-model="remarks" rows="3" maxlength="1000"></textarea></label>
+          <label>Remarks (Optional)<textarea v-model="remarks" rows="3" maxlength="1000"></textarea></label>
         </div>
         <p v-if="error" class="login-error">{{ error }}</p>
         <div class="connection-form-actions">
@@ -411,7 +407,6 @@ async function downloadResultsXlsx() {
                 <td><span class="provisioning-status" :data-status="row.valid ? 'succeeded' : 'failed'">{{ row.valid ? 'READY' : 'BLOCKED' }}</span><small v-if="!row.valid" class="field-error bulk-row-error">{{ rowError(row) }}</small></td>
               </tr>
         </ScrollableDataTable>
-        <div class="utility-warning oracle-create-warning">Execution performs the normal single-user provisioning lifecycle for each row. One row failing does not hide later row results.</div>
         <p v-if="error" class="login-error">{{ error }}</p>
         <div class="connection-form-actions">
           <button type="button" class="primary-button" :disabled="loading || !preview.ready_to_execute" @click="executeBatch">{{ loading ? 'Provisioning batch...' : `Provision ${preview.row_count} users` }}</button>

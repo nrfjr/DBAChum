@@ -41,8 +41,7 @@ const router = createRouter({
       name: 'dashboard',
       component: DashboardView,
       meta: {
-        title: 'Dashboard',
-        subtitle: 'Infrastructure overview and database health.',
+        title: 'Dashboard'
       },
     },
     {
@@ -51,7 +50,6 @@ const router = createRouter({
       component: AnalyticsView,
       meta: {
         title: 'Analytics',
-        subtitle: 'Fleet-level database and server analytics from collected monitoring data.',
         permission: 'monitor:read',
       },
     },
@@ -61,7 +59,6 @@ const router = createRouter({
       component: DatabaseWorkspaceView,
       meta: {
         title: 'Databases',
-        subtitle: 'Monitored Oracle, SQL Server and MySQL / MariaDB databases.',
       },
     },
     {
@@ -94,7 +91,6 @@ const router = createRouter({
       component: RecordsView,
       meta: {
         title: 'Records',
-        subtitle: 'Fast DBA operational lookup and reference catalog.',
       },
     },
     {
@@ -103,7 +99,6 @@ const router = createRouter({
       component: RecordDetailView,
       meta: {
         title: 'Record',
-        subtitle: 'DBA operational reference record.',
       },
     },
     {
@@ -116,7 +111,6 @@ const router = createRouter({
       component: AlertsView,
       meta: {
         title: 'Alerts',
-        subtitle: 'Warnings, incidents and recovery history.',
       },
     },
     {
@@ -125,7 +119,6 @@ const router = createRouter({
       component: ProfileView,
       meta: {
         title: 'My profile',
-        subtitle: 'Identity and personal DBAChum preferences.',
       },
     },
     {

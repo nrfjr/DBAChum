@@ -609,11 +609,6 @@ onUnmounted(() => {
         :error="overview?.error"
       />
 
-      <!--
-        Panels are lazy-mounted the first time their tab is opened, then kept
-        alive with v-show. This preserves filters, form inputs and search
-        results while avoiding repeat API loads on every tab switch.
-      -->
       <div v-if="visitedTabs.metrics" v-show="activeTab === 'metrics'" class="database-tab-panel">
         <DatabaseMetricsPanel
           :key="`metrics-${connection.id}`"
@@ -694,11 +689,8 @@ onUnmounted(() => {
 
       <section v-if="activeTab === 'overview'" class="panel database-overview-panel">
         <div class="panel-header">
-          <div>
+          <div title="Engine-aware connection identity, runtime state and compatibility context.">
             <h2>Database information</h2>
-            <p>
-              Engine-aware connection identity, runtime state and compatibility context.
-            </p>
           </div>
         </div>
 

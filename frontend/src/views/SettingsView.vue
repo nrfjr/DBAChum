@@ -48,7 +48,6 @@ const sectionTitle = computed(() => {
 
 interface SettingsNavItem {
   label: string
-  description: string
   to?: string
   visible: boolean
   disabled?: boolean
@@ -65,7 +64,6 @@ const groups = computed<SettingsNavGroup[]>(() => [
     items: [
       {
         label: 'General',
-        description: 'Installation identity, global defaults and runtime information',
         to: '/settings/general',
         visible: canManageSystem.value,
       },
@@ -76,7 +74,6 @@ const groups = computed<SettingsNavGroup[]>(() => [
     items: [
       {
         label: 'Connections',
-        description: 'Databases, Servers / SSH, LDAP and Provisioning',
         to: '/settings/connections',
         visible: canAccessConnections.value,
       },
@@ -87,13 +84,11 @@ const groups = computed<SettingsNavGroup[]>(() => [
     items: [
       {
         label: 'Monitoring',
-        description: 'Collector cadence, status and monitoring defaults',
         to: '/settings/monitoring',
         visible: canManageSystem.value,
       },
       {
         label: 'Alerts & Email',
-        description: 'Alert rules and email transport',
         to: '/settings/alerts-email',
         visible: canManageNotifications.value,
       },
@@ -104,19 +99,16 @@ const groups = computed<SettingsNavGroup[]>(() => [
     items: [
       {
         label: 'Users & Access',
-        description: 'DBAChum users, roles and account status',
         to: '/settings/users',
         visible: canManageUsers.value,
       },
       {
         label: 'Data',
-        description: 'Retention, stored collection usage and metadata export',
         to: '/settings/data',
         visible: canManageSystem.value,
       },
       {
         label: 'System Maintenance',
-        description: 'DBAChum cleanup, diagnostics and MongoDB index verification',
         to: '/settings/system-maintenance',
         visible: canManageSystem.value,
       },
@@ -133,7 +125,7 @@ const filteredGroups = computed(() => {
       items: group.items.filter((item) => {
         if (!item.visible) return false
         if (!q) return true
-        return `${group.label} ${item.label} ${item.description}`.toLowerCase().includes(q)
+        return `${group.label} ${item.label}`.toLowerCase().includes(q)
       }),
     }))
     .filter((group) => group.items.length > 0)
@@ -142,17 +134,15 @@ const filteredGroups = computed(() => {
 
 <template>
   <section class="page-header settings-page-header">
-    <div>
+    <div title="Technical and installation-wide configuration. Personal choices remain under Profile / Preferences.">
       <h1>Settings</h1>
-      <p>Technical and installation-wide configuration. Personal choices remain under Profile / Preferences.</p>
     </div>
   </section>
 
   <div class="settings-layout settings-layout--phase8">
     <aside class="settings-nav settings-nav--grouped">
       <label class="settings-search">
-        <span>Search settings</span>
-        <input v-model="search" type="search" placeholder="Search settings..." />
+        <input v-model="search" type="search" placeholder="Looking for something?" />
       </label>
 
       <div v-for="group in filteredGroups" :key="group.label" class="settings-nav-group">
@@ -162,14 +152,12 @@ const filteredGroups = computed(() => {
           <RouterLink v-if="item.to" class="settings-nav-item settings-nav-item--rich" :to="item.to">
             <span>
               <strong>{{ item.label }}</strong>
-              <small>{{ item.description }}</small>
             </span>
           </RouterLink>
 
           <div v-else class="settings-nav-item settings-nav-item--rich disabled">
             <span>
               <strong>{{ item.label }}</strong>
-              <small>{{ item.description }}</small>
             </span>
             <em>Later</em>
           </div>

@@ -164,9 +164,8 @@ onMounted(async () => {
 <template>
   <section class="utility-section">
     <div class="utility-toolbar">
-      <div>
+      <div title="Inspect and change engine configuration, or compare this database side by side with one other database of the same engine.">
         <h2>Parameters</h2>
-        <p>Inspect and change engine configuration, or compare this database side by side with one other database of the same engine.</p>
       </div>
       <div class="database-inline-actions">
         <label class="parameter-compare-control">

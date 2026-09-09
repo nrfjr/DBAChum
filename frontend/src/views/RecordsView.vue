@@ -397,12 +397,7 @@ onMounted(async () => {
 <template>
   <section class="page-header records-page-header">
     <div>
-      <h1>Records</h1>
-      <p>
-        Human-readable DBA inventory and operational reference data. Records can link to live Connections and Servers without duplicating their machine configuration.
-      </p>
     </div>
-
     <button v-if="canManage" type="button" class="primary-button" @click="openAdd">
       Add record
     </button>
@@ -431,7 +426,6 @@ onMounted(async () => {
     <div class="section-toolbar records-workspace-heading">
       <div>
         <h2>Operational catalog</h2>
-        <p>Search across names, hosts, applications, owners, notes, tags and custom fields.</p>
       </div>
       <span class="records-result-count">{{ filteredRecords.length }} shown</span>
     </div>
@@ -478,7 +472,7 @@ onMounted(async () => {
       <input
         v-model="query"
         type="search"
-        placeholder="Search records..."
+        placeholder="Search names, hosts, applications, owners, notes, tags and custom fields."
         aria-label="Search Records"
       />
 
@@ -609,7 +603,6 @@ onMounted(async () => {
       <div class="modal-header">
         <div>
           <h2>{{ editingId ? 'Edit record' : 'Add record' }}</h2>
-          <p>Store human lookup data here. Machine credentials remain under Settings → Connections.</p>
         </div>
         <button type="button" class="modal-close" aria-label="Close" @click="closeForm">×</button>
       </div>
@@ -617,13 +610,13 @@ onMounted(async () => {
       <form class="connection-form records-form" @submit.prevent="saveRecord">
         <div class="records-form-grid records-form-grid--identity">
           <label>
-            <span>Name</span>
+            <span class="field-label">Name <span class="required-mark" aria-hidden="true">*</span></span>
             <input v-model="form.name" required maxlength="160" placeholder="FINPRD" />
           </label>
 
           <label>
-            <span>Type</span>
-            <select v-model="form.record_type">
+            <span class="field-label">Type <span class="required-mark" aria-hidden="true">*</span></span>
+            <select v-model="form.record_type" required>
               <option v-for="option in recordTypeOptions" :key="option.value" :value="option.value">
                 {{ option.label }}
               </option>
@@ -631,8 +624,8 @@ onMounted(async () => {
           </label>
 
           <label>
-            <span>Status</span>
-            <select v-model="form.status">
+            <span class="field-label">Status <span class="required-mark" aria-hidden="true">*</span></span>
+            <select v-model="form.status" required>
               <option v-for="option in statusOptions" :key="option.value" :value="option.value">
                 {{ option.label }}
               </option>
@@ -652,8 +645,7 @@ onMounted(async () => {
 
         <div class="records-form-section">
           <div>
-            <h3>Link existing DBAChum objects</h3>
-            <p>Optional. Links provide context only and do not duplicate Connection secrets.</p>
+            <h3>Link existing DBAChum objects (Optional)</h3>
           </div>
           <div class="records-form-grid">
             <label>
@@ -720,8 +712,7 @@ onMounted(async () => {
 
         <div class="records-form-section">
           <div>
-            <h3>Lookup credential</h3>
-            <p>Optional manual reference credential. Passwords are encrypted at rest using DBAChum's connection encryption key.</p>
+            <h3>Lookup credential (Optional)</h3>
           </div>
           <div class="records-form-grid">
             <label>
@@ -740,7 +731,7 @@ onMounted(async () => {
             <h3>Notes & custom data</h3>
           </div>
           <label>
-            <span>Tags <small>comma-separated</small></span>
+            <span>Tags  </span>
             <input v-model="form.tags" placeholder="finance, critical, monthly-close" />
           </label>
           <label>

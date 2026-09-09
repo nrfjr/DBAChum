@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, File, Request, UploadFile
 
 from app.core.permissions import Permission
 from app.dependencies.permissions import require_permission
@@ -9,13 +9,16 @@ from app.schemas.system_settings import (
     MonitoringSettingsUpdate,
 )
 from app.schemas.user import UserResponse
+from app.services.image_uploads import read_image_upload
 from app.services.system_settings import (
     data_settings_response,
+    delete_branding_logo,
     export_system_metadata,
     general_settings_response,
     maintenance_diagnostics,
     monitoring_settings_response,
     run_system_cleanup,
+    save_branding_logo,
     update_data_settings,
     update_general_settings,
     update_monitoring_settings,
@@ -124,3 +127,27 @@ async def verify_indexes(
     current_user: UserResponse = Depends(require_permission(Permission.SYSTEM_MANAGE)),
 ):
     return await verify_system_indexes(request.app.state.database)
+
+
+@router.put("/general/logo")
+async def put_general_logo(
+    request: Request,
+    file: UploadFile = File(...),
+    current_user: UserResponse = Depends(require_permission(Permission.SYSTEM_MANAGE)),
+):
+    content_type, data = await read_image_upload(file)
+    return await save_branding_logo(
+        request.app.state.database,
+        content_type=content_type,
+        data=data,
+        username=_username(current_user),
+    )
+
+
+@router.delete("/general/logo")
+async def remove_general_logo(
+    request: Request,
+    current_user: UserResponse = Depends(require_permission(Permission.SYSTEM_MANAGE)),
+):
+    return await delete_branding_logo(request.app.state.database)
+

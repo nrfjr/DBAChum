@@ -91,9 +91,8 @@ onUnmounted(() => {
 <template>
   <section>
     <div class="utility-toolbar">
-      <div>
+      <div title="Current Oracle user sessions.">
         <h2>Sessions</h2>
-        <p>Current Oracle user sessions.</p>
       </div>
       <button type="button" class="secondary-button" :disabled="oracleStore.loadingSessions" @click="oracleStore.loadSessions(connectionId)">
         {{ oracleStore.loadingSessions ? 'Refreshing...' : 'Refresh' }}

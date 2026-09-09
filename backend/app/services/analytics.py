@@ -295,8 +295,7 @@ async def get_database_analytics(database, *, engine: str | None = None, months:
         sample = latest_samples.get(connection_id) or {}
         daily = latest_daily.get(connection_id) or {}
         storage = _storage_from_sample(sample)
-        # Long-term snapshot is the fallback if the current rolling sample has
-        # not yet reached its slower storage collection interval.
+
         for key in (
             "database_size_bytes", "data_size_bytes", "used_size_bytes", "free_size_bytes",
             "temp_size_bytes", "log_size_bytes", "index_size_bytes", "recovery_size_bytes",
@@ -436,9 +435,6 @@ async def get_server_analytics(database, *, os_family: str | None = None, months
         ],
         "items": items,
     }
-
-
-# ---- Historical database growth import -----------------------------------
 
 def _parse_csv(content: bytes) -> tuple[list[str], list[dict[str, Any]]]:
     text = content.decode("utf-8-sig")

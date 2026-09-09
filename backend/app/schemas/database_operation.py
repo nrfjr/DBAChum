@@ -22,11 +22,10 @@ class ParameterOperation(str, Enum):
 
 
 class MaintenanceOperation(str, Enum):
-    # Backup/recovery lifecycle actions kept here for backward compatibility.
     DELETE_ARCHIVELOGS = "delete_archivelogs"
     DELETE_OBSOLETE = "delete_obsolete"
 
-    # General database housekeeping.
+
     GATHER_SCHEMA_STATS = "gather_schema_stats"
     GATHER_TABLE_STATS = "gather_table_stats"
     RECOMPILE_INVALID = "recompile_invalid"
@@ -77,13 +76,10 @@ class StorageOperationRequest(BaseModel):
     action: StorageOperation
     size_mb: int = Field(ge=1, le=16_777_216)
 
-    # Existing file target. Oracle accepts datafile id through file_id and SQL
-    # Server uses logical_name. file_name is retained as a portable fallback.
     file_id: int | None = Field(default=None, ge=1)
     file_name: str | None = Field(default=None, max_length=2048)
     logical_name: str | None = Field(default=None, max_length=128)
 
-    # ADD FILE inputs.
     tablespace_name: str | None = Field(default=None, max_length=128)
     physical_name: str | None = Field(default=None, max_length=2048)
     file_type: str = Field(default="data", pattern="^(data|log)$")

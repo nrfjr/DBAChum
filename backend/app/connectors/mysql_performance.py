@@ -141,8 +141,7 @@ def _plan_sync(connection: dict, data) -> dict:
             code="MYSQL_EXPLAIN_SELECT_REQUIRED",
             status_code=400,
         )
-    # Prevent stacked statements. This is deliberately conservative; users can
-    # explain one statement at a time without DBAChum executing the query.
+
     stripped = sql_text.rstrip().rstrip(";")
     if ";" in stripped:
         raise AppError(

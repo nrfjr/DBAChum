@@ -20,7 +20,7 @@ test('creates a provisioning profile from Oracle metadata mappings', async ({ pa
   await stepName.click()
   await page.keyboard.type('Insert USER_MASTER')
   await expect(step.getByLabel('Step name')).toHaveValue('Insert USER_MASTER')
-  await step.getByLabel('Application provisioning connection for this step').selectOption('conn-oracle')
+  await step.getByLabel('Application provisioning connection').selectOption('conn-oracle')
   await step.getByLabel('Schema').selectOption('ORMS')
   await step.getByLabel('Table').selectOption('USER_MASTER')
 

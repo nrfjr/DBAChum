@@ -42,7 +42,7 @@ onMounted(() => void sqlServerStore.loadActivity(props.connectionId))
 <template>
   <section>
     <div class="utility-toolbar">
-      <div><h2>Current activity</h2><p>Requests currently executing on SQL Server.</p></div>
+      <div title="Requests currently executing on SQL Server."><h2>Current activity</h2></div>
       <button type="button" class="secondary-button" :disabled="sqlServerStore.loadingActivity[connectionId]" @click="sqlServerStore.loadActivity(connectionId)">
         {{ sqlServerStore.loadingActivity[connectionId] ? 'Refreshing...' : 'Refresh' }}
       </button>

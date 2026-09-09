@@ -30,7 +30,6 @@ onMounted(() => {
     <div class="utility-toolbar">
       <div>
         <h2>Storage</h2>
-        <p>Schema and table allocation reported by INFORMATION_SCHEMA.</p>
       </div>
 
       <button

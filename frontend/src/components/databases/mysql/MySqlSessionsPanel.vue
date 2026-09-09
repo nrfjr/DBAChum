@@ -80,7 +80,7 @@ onUnmounted(() => {
 <template>
   <section>
     <div class="utility-toolbar">
-      <div><h2>Sessions</h2><p>Current MySQL/MariaDB client sessions and running statements.</p></div>
+      <div title="Current MySQL/MariaDB client sessions and running statements."><h2>Sessions</h2></div>
       <button type="button" class="secondary-button" :disabled="mysqlStore.loadingSessions[connectionId]" @click="mysqlStore.loadSessions(connectionId)">
         {{ mysqlStore.loadingSessions[connectionId] ? 'Refreshing...' : 'Refresh' }}
       </button>

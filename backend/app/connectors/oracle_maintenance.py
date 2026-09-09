@@ -38,10 +38,7 @@ async def oracle_rman_backup(database, connection: dict, data) -> dict:
         commands.append(f"BACKUP ARCHIVELOG ALL{fmt};")
     elif action == "database_plus_archivelog":
         if data.destination:
-            # Preserve RMAN PLUS ARCHIVELOG semantics while still applying a
-            # caller-supplied FORMAT to every backup piece: archive current,
-            # back up existing logs, back up the database, archive current
-            # again, then capture logs generated during the database backup.
+
             commands.append("SQL 'ALTER SYSTEM ARCHIVE LOG CURRENT';")
             commands.append(f"BACKUP ARCHIVELOG ALL{fmt};")
             commands.append(f"BACKUP DATABASE{fmt};")

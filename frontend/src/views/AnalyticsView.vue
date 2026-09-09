@@ -10,6 +10,7 @@ import { useAnalyticsStore, type DatabaseAnalyticsItem, type ServerAnalyticsItem
 import { useAuthStore } from '@/stores/auth'
 import { useConnectionsStore } from '@/stores/connections'
 import { useSystemSettingsStore } from '@/stores/systemSettings'
+import { useUiStore } from '@/stores/ui'
 import { showToast } from '@/ui/feedback'
 
 const route = useRoute()
@@ -18,6 +19,8 @@ const analyticsStore = useAnalyticsStore()
 const authStore = useAuthStore()
 const connectionsStore = useConnectionsStore()
 const systemSettingsStore = useSystemSettingsStore()
+const uiStore = useUiStore()
+const accentColor = ref('#7557c7')
 
 const engine = ref('')
 const osFamily = ref('')
@@ -123,11 +126,28 @@ function sizeInUnit(value: number | null | undefined, unit: FixedSizeUnit) {
   return `${converted.toFixed(digits)} ${unit}`
 }
 
-function chartBase() {
+function rgbaAccent(alpha: number) {
+  const value = accentColor.value.trim()
+  const match = /^#([0-9a-f]{6})$/i.exec(value)
+  if (!match) return value
+  const hex = match[1]
+  if (!hex) return value
+  const r = Number.parseInt(hex.slice(0, 2), 16)
+  const g = Number.parseInt(hex.slice(2, 4), 16)
+  const b = Number.parseInt(hex.slice(4, 6), 16)
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`
+}
+
+function syncAccentColor() {
+  accentColor.value = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#7557c7'
+}
+
+function chartBase(useAccent = true) {
   return {
     animationDuration: 250,
     grid: { left: 18, right: 18, top: 20, bottom: 34, containLabel: true },
     tooltip: { trigger: 'axis' },
+    ...(useAccent ? { color: [accentColor.value, rgbaAccent(.62), rgbaAccent(.38)] } : {}),
   }
 }
 
@@ -203,7 +223,7 @@ const growthOption = computed(() => {
   const values = points.filter((point) => selectedIds.includes(point.connection_id)).map((point) => point.size_bytes)
   const unit = resolveSizeUnit(sizeUnits.growth, values)
   return {
-    ...chartBase(),
+    ...chartBase(false),
     tooltip: { trigger: 'axis', valueFormatter: (value: number) => sizeInUnit(value, unit) },
     legend: { type: 'scroll', top: 0 },
     grid: { left: 18, right: 18, top: 54, bottom: 34, containLabel: true },
@@ -346,7 +366,7 @@ function closeImport() {
 
 function chooseSuggestedColumn(headers: string[], names: string[]) {
   const lowered = headers.map((header) => ({ header, key: header.toLowerCase().replace(/[^a-z0-9]/g, '') }))
-  return lowered.find((item) => names.some((name) => item.key.includes(name)))?.header ?? headers[0] ?? ''
+  return lowered.find((item) => names.some((name) => item.key.includes(name)))?.header ?? ''
 }
 
 async function handleImportFile(event: Event) {
@@ -406,8 +426,10 @@ async function submitImport() {
 }
 
 watch([mode, engine, osFamily, months], () => { void load() })
+watch([() => uiStore.accent, () => uiStore.resolvedTheme], syncAccentColor, { immediate: true })
 
 onMounted(async () => {
+  syncAccentColor()
   try {
     await systemSettingsStore.loadGeneral()
     months.value = systemSettingsStore.general?.default_analytics_months ?? months.value
@@ -420,24 +442,24 @@ onMounted(async () => {
 <template>
   <section class="analytics-report">
     <div class="analytics-report__toolbar">
-      <div class="analytics-report__identity"><strong>{{ mode === 'databases' ? 'Database analytics' : 'Server analytics' }}</strong><span>Collected estate report</span></div>
+      <div></div>
 
       <div class="analytics-report__filters">
         <label v-if="mode === 'databases'">
           <span>Engine</span>
-          <select v-model="engine">
+          <select class="utility-select-input" v-model="engine">
             <option v-for="option in engineOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
           </select>
         </label>
         <label v-else>
           <span>Operating system</span>
-          <select v-model="osFamily">
+          <select class="utility-select-input" v-model="osFamily">
             <option v-for="option in osOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
           </select>
         </label>
         <label v-if="mode === 'databases'">
           <span>Growth range</span>
-          <select v-model.number="months">
+          <select class="utility-select-input" v-model.number="months">
             <option :value="6">6 months</option>
             <option :value="12">12 months</option>
             <option :value="24">24 months</option>
@@ -445,7 +467,6 @@ onMounted(async () => {
             <option :value="60">60 months</option>
           </select>
         </label>
-        <button v-if="mode === 'databases' && canImport" type="button" class="secondary-button" @click="importOpen = true">Import growth history</button>
         <button type="button" class="secondary-button" :disabled="analyticsStore.loading" @click="load">{{ analyticsStore.loading ? 'Refreshing…' : 'Refresh' }}</button>
       </div>
     </div>
@@ -455,57 +476,57 @@ onMounted(async () => {
     <template v-if="mode === 'databases' && databaseData">
       <div class="analytics-summary-grid">
         <article class="analytics-summary-card"><span>Databases</span><strong>{{ databaseData.summary.database_count }}</strong><small>{{ databaseData.summary.online_count }} online · {{ databaseData.summary.unreachable_count }} unreachable</small></article>
-        <article class="analytics-summary-card"><span>Total database size</span><strong>{{ bytes(databaseData.summary.total_size_bytes) }}</strong><small>Across the current filter</small></article>
-        <article class="analytics-summary-card"><span>Used data space</span><strong>{{ bytes(databaseData.summary.used_size_bytes) }}</strong><small>Where the engine exposes used allocation</small></article>
+        <article class="analytics-summary-card" title="Across the current filter"><span>Total database size</span><strong>{{ bytes(databaseData.summary.total_size_bytes) }}</strong></article>
+        <article class="analytics-summary-card" title="Where the engine exposes used allocation"><span>Used data space</span><strong>{{ bytes(databaseData.summary.used_size_bytes) }}</strong></article>
         <article class="analytics-summary-card"><span>Report generated</span><strong>{{ new Date(databaseData.generated_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }}</strong><small>{{ new Date(databaseData.generated_at).toLocaleDateString() }}</small></article>
       </div>
 
       <div class="analytics-report-grid">
         <article class="analytics-chart-card analytics-chart-card--wide">
-          <header><div><h2>Database size</h2><p>Current allocated database size across monitored targets.</p></div><label class="analytics-unit-select">Unit<select v-model="sizeUnits.databaseSize"><option v-for="option in sizeUnitOptions" :key="option.value" :value="option.value">{{ option.label }}</option></select></label></header>
+          <header><div title="Current allocated database size across monitored targets."><h2>Database size</h2></div><label class="analytics-unit-select">Unit<select class="utility-select-input" v-model="sizeUnits.databaseSize"><option v-for="option in sizeUnitOptions" :key="option.value" :value="option.value">{{ option.label }}</option></select></label></header>
           <VChart v-if="databaseData.items.some((item) => item.database_size_bytes != null)" class="analytics-chart analytics-chart--tall" :option="databaseSizeOption" autoresize @click="openDatabaseFromChart" />
           <p v-else class="empty-state">Size telemetry has not been collected yet.</p>
         </article>
 
         <article class="analytics-chart-card analytics-chart-card--wide">
-          <header><div><h2>Database growth</h2><p>Month-end size from DBAChum daily snapshots and imported history. Up to the 10 largest databases are shown together for readability.</p></div><label class="analytics-unit-select">Unit<select v-model="sizeUnits.growth"><option v-for="option in sizeUnitOptions" :key="option.value" :value="option.value">{{ option.label }}</option></select></label></header>
+          <header><div title="Month-end size from DBAChum daily snapshots and imported history."><h2>Database Growth</h2></div><label class="analytics-unit-select">Unit<select class="utility-select-input" v-model="sizeUnits.growth"><option v-for="option in sizeUnitOptions" :key="option.value" :value="option.value">{{ option.label }}</option></select><button v-if="mode === 'databases' && canImport" type="button" class="secondary-button" @click="importOpen = true">Import</button></label></header>
           <VChart v-if="databaseData.growth.length" class="analytics-chart analytics-chart--tall" :option="growthOption" autoresize @click="openDatabaseFromChart" />
           <p v-else class="empty-state">Growth history begins after snapshots are collected or historical data is imported.</p>
         </article>
 
         <article class="analytics-chart-card">
-          <header><div><h2>Storage utilization</h2><p>Used percentage where the engine exposes allocation and usage.</p></div></header>
+          <header><div title="Used percentage where the engine exposes allocation and usage."><h2>Storage utilization</h2></div></header>
           <VChart v-if="databaseData.items.some((item) => item.storage_used_percent != null)" class="analytics-chart" :option="databaseUtilizationOption" autoresize @click="openDatabaseFromChart" />
           <p v-else class="empty-state">Storage utilization is not available yet.</p>
         </article>
 
         <article class="analytics-chart-card">
-          <header><div><h2>Backup recency</h2><p>Age of the latest backup discovered by the collector.</p></div></header>
+          <header><div title="Age of the latest backup discovered by the collector."><h2>Backup recency</h2></div></header>
           <VChart v-if="databaseData.items.some((item) => item.last_backup_age_days != null)" class="analytics-chart" :option="backupRecencyOption" autoresize @click="openDatabaseFromChart" />
           <p v-else class="empty-state">No backup history has been collected yet.</p>
         </article>
 
         <article class="analytics-chart-card">
-          <header><div><h2>Latest backup size</h2><p>Most recent backup size where the engine/provider reports it.</p></div><label class="analytics-unit-select">Unit<select v-model="sizeUnits.backupSize"><option v-for="option in sizeUnitOptions" :key="option.value" :value="option.value">{{ option.label }}</option></select></label></header>
+          <header><div title="Most recent backup size where the engine/provider reports it."><h2>Latest backup size</h2></div><label class="analytics-unit-select">Unit<select class="utility-select-input" v-model="sizeUnits.backupSize"><option v-for="option in sizeUnitOptions" :key="option.value" :value="option.value">{{ option.label }}</option></select></label></header>
           <VChart v-if="databaseData.items.some((item) => item.last_backup_size_bytes != null)" class="analytics-chart" :option="backupSizeOption" autoresize @click="openDatabaseFromChart" />
           <p v-else class="empty-state">Backup size is unavailable for the current targets.</p>
         </article>
 
         <article class="analytics-chart-card">
-          <header><div><h2>Engine distribution</h2><p>Configured monitored databases by engine.</p></div></header>
+          <header><div title="Configured monitored databases by engine."><h2>Engine distribution</h2></div></header>
           <VChart v-if="databaseData.engine_distribution.length" class="analytics-chart" :option="engineDistributionOption" autoresize />
           <p v-else class="empty-state">No monitored databases match this filter.</p>
         </article>
 
         <article v-if="engine === 'oracle'" class="analytics-chart-card analytics-chart-card--wide">
-          <header><div><h2>Oracle memory footprint</h2><p>SGA plus currently allocated PGA from the latest collected Oracle memory snapshot.</p></div><label class="analytics-unit-select">Unit<select v-model="sizeUnits.oracleMemory"><option v-for="option in sizeUnitOptions" :key="option.value" :value="option.value">{{ option.label }}</option></select></label></header>
+          <header><div title="SGA plus currently allocated PGA from the latest collected Oracle memory snapshot."><h2>Oracle memory footprint</h2></div><label class="analytics-unit-select">Unit<select class="utility-select-input" v-model="sizeUnits.oracleMemory"><option v-for="option in sizeUnitOptions" :key="option.value" :value="option.value">{{ option.label }}</option></select></label></header>
           <VChart v-if="databaseData.items.some((item) => item.sga_bytes || item.pga_allocated_bytes)" class="analytics-chart" :option="oracleMemoryOption" autoresize />
           <p v-else class="empty-state">Oracle memory telemetry has not been collected yet.</p>
         </article>
       </div>
 
       <section class="analytics-ranking-card">
-        <header><div><h2>Database estate</h2><p>Latest collected state behind the report. Select a row to open the database workspace.</p></div></header>
+        <header><div title="Latest collected state behind the report. Select a row to open the database workspace."><h2>Database estate</h2></div></header>
         <div class="analytics-ranking-list">
           <button v-for="item in databaseData.items" :key="item.connection_id" type="button" @click="openDatabase(item)">
             <span class="analytics-status-dot" :class="item.status === 'online' || item.status === 'limited' ? 'online' : item.status === 'unreachable' ? 'offline' : ''" />
@@ -523,45 +544,45 @@ onMounted(async () => {
       <div class="analytics-summary-grid">
         <article class="analytics-summary-card"><span>Servers</span><strong>{{ serverData.summary.server_count }}</strong><small>{{ serverData.summary.online_count }} online · {{ serverData.summary.unreachable_count }} unreachable</small></article>
         <article class="analytics-summary-card"><span>Total storage</span><strong>{{ bytes(serverData.summary.total_disk_bytes) }}</strong><small>{{ bytes(serverData.summary.used_disk_bytes) }} used</small></article>
-        <article class="analytics-summary-card"><span>Total memory</span><strong>{{ bytes(serverData.summary.total_memory_bytes) }}</strong><small>Across servers with telemetry</small></article>
+        <article class="analytics-summary-card" title="Across servers with telemetry"><span>Total memory</span><strong>{{ bytes(serverData.summary.total_memory_bytes) }}</strong></article>
         <article class="analytics-summary-card"><span>Report generated</span><strong>{{ new Date(serverData.generated_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }}</strong><small>{{ new Date(serverData.generated_at).toLocaleDateString() }}</small></article>
       </div>
 
       <div class="analytics-report-grid">
         <article class="analytics-chart-card analytics-chart-card--wide">
-          <header><div><h2>Disk capacity</h2><p>Total mounted filesystem capacity visible to DBAChum.</p></div><label class="analytics-unit-select">Unit<select v-model="sizeUnits.serverDisk"><option v-for="option in sizeUnitOptions" :key="option.value" :value="option.value">{{ option.label }}</option></select></label></header>
+          <header><div title="Total mounted filesystem capacity visible to DBAChum."><h2>Disk capacity</h2></div><label class="analytics-unit-select">Unit<select class="utility-select-input" v-model="sizeUnits.serverDisk"><option v-for="option in sizeUnitOptions" :key="option.value" :value="option.value">{{ option.label }}</option></select></label></header>
           <VChart v-if="serverData.items.some((item) => item.disk_total_bytes != null)" class="analytics-chart analytics-chart--tall" :option="serverDiskCapacityOption" autoresize @click="openServerFromChart" />
           <p v-else class="empty-state">Disk capacity telemetry has not been collected yet.</p>
         </article>
         <article class="analytics-chart-card">
-          <header><div><h2>Disk utilization</h2><p>Aggregate used percentage across collected filesystems.</p></div></header>
+          <header><div title="Aggregate used percentage across collected filesystems."><h2>Disk utilization</h2></div></header>
           <VChart v-if="serverData.items.some((item) => item.disk_used_percent != null)" class="analytics-chart" :option="serverDiskUsageOption" autoresize @click="openServerFromChart" />
           <p v-else class="empty-state">Disk utilization is not available yet.</p>
         </article>
         <article class="analytics-chart-card">
-          <header><div><h2>Memory capacity</h2><p>Total physical memory reported by each monitored server.</p></div><label class="analytics-unit-select">Unit<select v-model="sizeUnits.serverMemory"><option v-for="option in sizeUnitOptions" :key="option.value" :value="option.value">{{ option.label }}</option></select></label></header>
+          <header><div title="Total physical memory reported by each monitored server."><h2>Memory capacity</h2></div><label class="analytics-unit-select">Unit<select class="utility-select-input" v-model="sizeUnits.serverMemory"><option v-for="option in sizeUnitOptions" :key="option.value" :value="option.value">{{ option.label }}</option></select></label></header>
           <VChart v-if="serverData.items.some((item) => item.memory_total_bytes != null)" class="analytics-chart" :option="serverMemoryCapacityOption" autoresize @click="openServerFromChart" />
           <p v-else class="empty-state">Memory capacity telemetry is not available yet.</p>
         </article>
         <article class="analytics-chart-card">
-          <header><div><h2>Memory utilization</h2><p>Latest collected memory usage by server.</p></div></header>
+          <header><div title="Latest collected memory usage by server."><h2>Memory utilization</h2></div></header>
           <VChart v-if="serverData.items.some((item) => item.memory_used_percent != null)" class="analytics-chart" :option="serverMemoryOption" autoresize @click="openServerFromChart" />
           <p v-else class="empty-state">Memory telemetry is not available yet.</p>
         </article>
         <article class="analytics-chart-card">
-          <header><div><h2>CPU utilization</h2><p>Latest collected CPU utilization by server.</p></div></header>
+          <header><div title="Latest collected CPU utilization by server."><h2>CPU utilization</h2></div></header>
           <VChart v-if="serverData.items.some((item) => item.cpu_used_percent != null)" class="analytics-chart" :option="serverCpuOption" autoresize @click="openServerFromChart" />
           <p v-else class="empty-state">CPU telemetry is not available yet.</p>
         </article>
         <article class="analytics-chart-card">
-          <header><div><h2>OS distribution</h2><p>Managed servers by operating-system family.</p></div></header>
+          <header><div title="Managed servers by operating-system family."><h2>OS distribution</h2></div></header>
           <VChart v-if="serverData.os_distribution.length" class="analytics-chart" :option="osDistributionOption" autoresize />
           <p v-else class="empty-state">No server assets match this filter.</p>
         </article>
       </div>
 
       <section class="analytics-ranking-card">
-        <header><div><h2>Server estate</h2><p>Latest collected state behind the report. Select a row to open the server workspace.</p></div></header>
+        <header><div title="Latest collected state behind the report. Select a row to open the server workspace."><h2>Server estate</h2></div></header>
         <div class="analytics-ranking-list">
           <button v-for="item in serverData.items" :key="item.server_id" type="button" @click="openServer(item)">
             <span class="analytics-status-dot" :class="item.status === 'online' || item.status === 'limited' ? 'online' : item.status === 'unreachable' ? 'offline' : ''" />
@@ -580,25 +601,40 @@ onMounted(async () => {
 
   <div v-if="importOpen" class="modal-backdrop" @click.self="closeImport">
     <section class="modal-panel analytics-import-modal" role="dialog" aria-modal="true" aria-label="Import database growth history">
-      <div class="modal-header"><div><h2>Import database growth history</h2><p>Map historical CSV/XLSX database-size rows to existing DBAChum database connections.</p></div><button type="button" class="modal-close" @click="closeImport">×</button></div>
+      <div class="modal-header"><div title="Map historical CSV/XLSX database-size rows to existing DBAChum database connections."><h2>Import database growth history</h2></div><button type="button" class="modal-close" @click="closeImport">×</button></div>
       <div class="analytics-import-body">
-        <label>CSV or XLSX file<input type="file" accept=".csv,.xlsx,.xlsm" @change="handleImportFile" /></label>
+        <label class="analytics-import-file-field">
+          <span class="field-label">CSV or XLSX file <span class="required-mark" aria-hidden="true">*</span></span>
+          <input type="file" accept=".csv,.xlsx,.xlsm" required @change="handleImportFile" />
+        </label>
         <p v-if="importLoading && !importPreview">Reading file…</p>
         <p v-if="importError" class="login-error">{{ importError }}</p>
         <template v-if="importPreview">
-          <p class="notice-card">{{ importPreview.row_count }} data rows detected. Imported dates are normalized to daily snapshots and will join DBAChum's own growth history.</p>
-          <div class="connection-form-row">
-            <label>Database name column<select v-model="databaseColumn"><option v-for="header in importPreview.headers" :key="header" :value="header">{{ header }}</option></select></label>
-            <label>Date/month column<select v-model="dateColumn"><option v-for="header in importPreview.headers" :key="header" :value="header">{{ header }}</option></select></label>
+          <p class="notice-card">{{ importPreview.row_count }} data rows detected. Imported dates are normalized to daily snapshots and will join system growth history.</p>
+          <div class="analytics-import-column-grid">
+            <label>
+              <span class="field-label">Database name column <span class="required-mark" aria-hidden="true">*</span></span>
+              <select v-model="databaseColumn" required><option value="" disabled>Select column</option><option v-for="header in importPreview.headers" :key="header" :value="header">{{ header }}</option></select>
+            </label>
+            <label>
+              <span class="field-label">Date/month column <span class="required-mark" aria-hidden="true">*</span></span>
+              <select v-model="dateColumn" required><option value="" disabled>Select column</option><option v-for="header in importPreview.headers" :key="header" :value="header">{{ header }}</option></select>
+            </label>
+            <label>
+              <span class="field-label">Size column <span class="required-mark" aria-hidden="true">*</span></span>
+              <select v-model="sizeColumn" required><option value="" disabled>Select column</option><option v-for="header in importPreview.headers" :key="header" :value="header">{{ header }}</option></select>
+            </label>
+            <label>
+              <span>Unit column <span class="optional-label">Optional</span></span>
+              <select v-model="unitColumn"><option value="">Use one default unit</option><option v-for="header in importPreview.headers" :key="header" :value="header">{{ header }}</option></select>
+            </label>
           </div>
-          <div class="connection-form-row">
-            <label>Size column<select v-model="sizeColumn"><option v-for="header in importPreview.headers" :key="header" :value="header">{{ header }}</option></select></label>
-            <label>Unit column <span class="optional-label">Optional</span><select v-model="unitColumn"><option value="">Use one default unit</option><option v-for="header in importPreview.headers" :key="header" :value="header">{{ header }}</option></select></label>
-          </div>
-          <label v-if="!unitColumn">Default size unit<select v-model="defaultUnit"><option>MB</option><option>GB</option><option>TB</option><option>Bytes</option></select></label>
-          <div class="analytics-import-mapping">
+          <label v-if="!unitColumn" class="analytics-import-default-unit">
+            <span class="field-label">Default size unit <span class="required-mark" aria-hidden="true">*</span></span>
+            <select v-model="defaultUnit" required><option>MB</option><option>GB</option><option>TB</option><option>Bytes</option></select>
+          </label>
+          <div class="analytics-import-mapping" title="Only mapped source names are imported. Exact connection-name matches are selected automatically.">
             <h3>Database mapping</h3>
-            <p>Only mapped source names are imported. Exact connection-name matches are selected automatically.</p>
             <label v-for="sourceName in importPreview.column_values[databaseColumn] ?? []" :key="sourceName">
               <span>{{ sourceName }}</span>
               <select v-model="databaseMap[sourceName]"><option value="">Skip this database</option><option v-for="connection in connectionsStore.connections" :key="connection.id" :value="connection.id">{{ connection.name }} · {{ engineLabel(connection.engine) }}</option></select>
@@ -606,7 +642,7 @@ onMounted(async () => {
           </div>
         </template>
       </div>
-      <div class="connection-form-actions"><button type="button" class="primary-button" :disabled="!importPreview || importLoading" @click="submitImport">{{ importLoading ? 'Importing…' : 'Import history' }}</button><button type="button" class="secondary-button" @click="closeImport">Cancel</button></div>
+      <div class="connection-form-actions"><button type="button" class="primary-button" :disabled="!importPreview || !databaseColumn || !dateColumn || !sizeColumn || importLoading" @click="submitImport">{{ importLoading ? 'Importing…' : 'Import history' }}</button><button type="button" class="secondary-button" @click="closeImport">Cancel</button></div>
     </section>
   </div>
 </template>

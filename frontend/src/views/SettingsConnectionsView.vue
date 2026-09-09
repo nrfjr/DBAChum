@@ -27,7 +27,6 @@ type ConnectionSection = 'all' | 'databases' | 'servers' | 'ldap' | 'provisionin
 interface ConnectionSectionOption {
   key: ConnectionSection
   label: string
-  description: string
   available: boolean
 }
 
@@ -40,31 +39,26 @@ const sectionOptions = computed<ConnectionSectionOption[]>(() => [
   {
     key: 'all',
     label: 'All',
-    description: 'Overview of connection definitions DBAChum can use',
     available: true,
   },
   {
     key: 'databases',
     label: 'Databases',
-    description: 'Oracle, SQL Server and MySQL / MariaDB endpoints',
     available: canAccessDatabases.value,
   },
   {
     key: 'servers',
     label: 'Servers / SSH',
-    description: 'Server assets, reusable SSH access and terminal shortcuts',
     available: canAccessServers.value,
   },
   {
     key: 'ldap',
     label: 'LDAP',
-    description: 'Reusable directory endpoints used by provisioning',
     available: canAccessLdap.value,
   },
   {
     key: 'provisioning',
     label: 'Provisioning',
-    description: 'Reusable application/database provisioning definitions',
     available: canAccessProvisioning.value,
   },
 ])
@@ -238,14 +232,6 @@ onMounted(() => {
 
 <template>
   <div class="unified-connections">
-    <section class="connections-intro">
-      <div>
-        <h3>Unified connections</h3>
-        <p>
-          Machine-readable endpoints and reusable connection definitions DBAChum actively uses. Human reference data belongs in Records.
-        </p>
-      </div>
-    </section>
 
     <div class="connection-type-tabs" role="tablist" aria-label="Connection type">
       <button
@@ -253,7 +239,6 @@ onMounted(() => {
         :key="option.key"
         type="button"
         :class="{ active: activeType === option.key }"
-        :title="option.description"
         @click="selectType(option.key)"
       >
         {{ option.label }}
@@ -277,16 +262,15 @@ onMounted(() => {
 
       <section class="panel connection-overview-list">
         <div class="panel-header">
-          <div>
+          <div title="One searchable index across the connection types you are allowed to administer.">
             <h3>All connection definitions</h3>
-            <p>One searchable index across the connection types you are allowed to administer.</p>
           </div>
           <button class="secondary-button" type="button" @click="loadOverview">Refresh</button>
         </div>
 
         <input
           v-model="overviewSearch"
-          class="table-filter-input"
+          class="table-filter-input utility-select-input"
           type="search"
           placeholder="Search name, type, endpoint or status..."
         />
@@ -316,11 +300,6 @@ onMounted(() => {
     </section>
 
     <section v-else class="connection-section-host">
-      <header class="connection-section-context">
-        <h3>{{ activeOption?.label }}</h3>
-        <p>{{ activeOption?.description }}</p>
-      </header>
-
       <DatabaseConnectionsPanel v-if="activeType === 'databases' && canAccessDatabases" />
       <SettingsInfrastructureView v-else-if="activeType === 'servers' && canAccessServers" />
       <SettingsLdapView v-else-if="activeType === 'ldap' && canAccessLdap" />

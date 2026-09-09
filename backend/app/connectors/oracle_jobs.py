@@ -58,11 +58,10 @@ async def get_oracle_jobs(connection: dict) -> dict:
                     })
             except oracledb.Error as exc:
                 warnings.append(
-                    "Oracle Scheduler metadata is unavailable; DBAChum is using legacy DBMS_JOB visibility where possible. "
+                    "Oracle Scheduler metadata is unavailable; system is using legacy DBMS_JOB visibility where possible. "
                     f"({oracle_error_message(exc)})"
                 )
 
-            # Preserve visibility for old DBMS_JOB workloads even when Scheduler exists.
             try:
                 rows = await db.fetchall(
                     """

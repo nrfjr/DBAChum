@@ -57,7 +57,6 @@ def _jobs_sync(connection: dict) -> dict:
     except AppError:
         raise
     except Exception as exc:
-        # SQL Server Express and restricted accounts commonly have no usable Agent surface.
         return {
             "available": False,
             "items": [],

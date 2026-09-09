@@ -33,19 +33,19 @@ onMounted(load)
 <template>
   <div class="settings-stack">
     <section class="panel">
-      <div class="panel-header"><div><h3>Retention</h3><p>Raw monitoring remains a short 24-hour feed. Long-term Analytics and operational histories use these retention horizons.</p></div></div>
+      <div class="panel-header" title="Raw monitoring remains a short 24-hour feed. Long-term Analytics and operational histories use these retention horizons."><div><h3>Retention</h3></div></div>
       <p v-if="error" class="login-error">{{ error }}</p>
       <div class="settings-form-grid">
-        <label><span>Analytics snapshots (days)</span><input v-model.number="form.analytics_retention_days" type="number" min="30" max="3650" /></label>
-        <label><span>DBA action audit (days)</span><input v-model.number="form.action_audit_retention_days" type="number" min="30" max="3650" /></label>
-        <label><span>SSH terminal audit (days)</span><input v-model.number="form.terminal_audit_retention_days" type="number" min="30" max="3650" /></label>
-        <label><span>Provisioning history (days)</span><input v-model.number="form.provisioning_history_retention_days" type="number" min="30" max="3650" /></label>
+        <label><span class="field-label">Analytics snapshots (days) <span class="required-mark" aria-hidden="true">*</span></span><input required class="utility-search-input" v-model.number="form.analytics_retention_days" type="number" min="30" max="3650" /></label>
+        <label><span class="field-label">DBA action audit (days) <span class="required-mark" aria-hidden="true">*</span></span><input required class="utility-search-input" v-model.number="form.action_audit_retention_days" type="number" min="30" max="3650" /></label>
+        <label><span class="field-label">SSH terminal audit (days) <span class="required-mark" aria-hidden="true">*</span></span><input required class="utility-search-input" v-model.number="form.terminal_audit_retention_days" type="number" min="30" max="3650" /></label>
+        <label><span class="field-label">Provisioning history (days) <span class="required-mark" aria-hidden="true">*</span></span><input required class="utility-search-input" v-model.number="form.provisioning_history_retention_days" type="number" min="30" max="3650" /></label>
       </div>
       <div class="connection-form-actions"><button type="button" class="primary-button" :disabled="saving" @click="save">{{ saving ? 'Saving…' : 'Save retention' }}</button><button type="button" class="secondary-button" @click="exportMetadata">Export metadata</button><button type="button" class="secondary-button" @click="load">Refresh storage</button></div>
     </section>
 
     <section class="panel">
-      <div class="panel-header"><div><h3>Stored data</h3><p>Approximate MongoDB collection usage. Secrets are never included in metadata exports.</p></div></div>
+      <div class="panel-header"><div title="Approximate MongoDB collection usage. Secrets are never included in metadata exports."><h3>Stored data</h3></div></div>
       <ScrollableDataTable :empty="!(store.data?.collections.length)" empty-message="No DBAChum collections are available yet.">
         <template #header><tr><th>Collection</th><th>Documents</th><th>Logical size</th><th>Storage</th><th>Indexes</th></tr></template>
         <tr v-for="item in store.data?.collections ?? []" :key="item.name"><td><strong>{{ item.name }}</strong></td><td>{{ item.count.toLocaleString() }}</td><td>{{ bytes(item.size_bytes) }}</td><td>{{ bytes(item.storage_bytes) }}</td><td>{{ bytes(item.index_bytes) }}</td></tr>

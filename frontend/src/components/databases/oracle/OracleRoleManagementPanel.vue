@@ -332,9 +332,8 @@ watch(
 <template>
   <div class="role-management-workspace">
     <section class="role-management-toolbar">
-      <div>
+      <div title="Create and manage custom roles. Oracle-maintained/protected roles remain inspect-only.">
         <h3>Oracle roles</h3>
-        <p>Create and manage custom roles. Oracle-maintained/protected roles remain inspect-only.</p>
       </div>
       <div class="role-toolbar-actions">
         <button type="button" class="secondary-button" :disabled="loading" @click="loadRoles(true)">
@@ -350,7 +349,7 @@ watch(
     <div class="role-layout">
       <section class="role-list-card">
         <div class="role-filter-row">
-          <input v-model="filter" type="search" placeholder="Filter role name or status" />
+          <input class="utility-search-input" v-model="filter" type="search" placeholder="Filter role name or status" />
           <span>{{ filteredRoles.length }} role(s)</span>
         </div>
 
@@ -388,7 +387,6 @@ watch(
       <section class="role-detail-card">
         <div v-if="!selectedRoleName && !detailLoading" class="role-empty-state">
           <strong>Select a role to inspect it.</strong>
-          <span>Members, nested roles, system privileges and object privileges will appear here.</span>
         </div>
 
         <div v-if="detailLoading" class="role-empty-state">Loading role details...</div>
@@ -500,9 +498,9 @@ watch(
 
     <div v-if="showCreate" class="role-modal-backdrop" @click.self="closeCreateRole">
       <section class="role-modal" role="dialog" aria-modal="true" aria-label="Create Oracle role">
-        <header><div><h3>Create Oracle role</h3><p>DBAChum creates a normal role with no password. Preview is required before execution.</p></div><button type="button" @click="closeCreateRole">×</button></header>
-        <label>Role name<input v-model="createName" maxlength="30" placeholder="APP_CUSTOM_ROLE" :disabled="Boolean(createPreview)" /></label>
-        <label>Request / ticket reference <small>optional</small><input v-model="createReference" maxlength="100" placeholder="REQ-12345" /></label>
+        <header><div><h3>Create Oracle role</h3></div><button type="button" @click="closeCreateRole">×</button></header>
+        <label>Role name<input class="utility-search-input" v-model="createName" maxlength="30" placeholder="APP_CUSTOM_ROLE" :disabled="Boolean(createPreview)" /></label>
+        <label>Request / ticket reference <small>optional</small><input class="utility-search-input" v-model="createReference" maxlength="100" placeholder="REQ-12345" /></label>
         <div v-if="createError" class="utility-warning">{{ createError }}</div>
         <template v-if="createPreview">
           <div v-for="warning in createPreview.warnings" :key="warning" class="utility-warning">{{ warning }}</div>

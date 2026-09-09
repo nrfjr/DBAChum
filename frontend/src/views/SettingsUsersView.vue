@@ -197,15 +197,9 @@ onMounted(() => {
 </script>
 
 <template>
-    <section class="page-header">
+    <section class="page-header alert-header-list">
         <div>
-            <h2>Users</h2>
-
-            <p>
-                Local DBAChum accounts and roles.
-            </p>
         </div>
-
         <button type="button" class="primary-button" @click="createOpen = true">
             Add user
         </button>
@@ -244,7 +238,7 @@ onMounted(() => {
                     </td>
 
                     <td>
-                        <select :value="user.role" @change="
+                        <select class="secondary-button" :value="user.role" @change="
                             changeRole(
                                 user.id,
                                 ($event.target as HTMLSelectElement)
@@ -328,9 +322,8 @@ onMounted(() => {
 
             <form class="connection-form" @submit.prevent="createUser">
                 <label>
-                    Username
-
-                    <input v-model="form.username" required minlength="3" autocomplete="off" />
+                    <span class="field-label">Username <span class="required-mark" aria-hidden="true">*</span></span>
+                    <input v-model="form.username" required minlength="3" maxlength="64" autocomplete="off" />
                 </label>
 
                 <label>
@@ -346,15 +339,13 @@ onMounted(() => {
                 </label>
 
                 <label>
-                    Password
-
-                    <input v-model="form.password" required minlength="12" type="password" autocomplete="new-password" />
+                    <span class="field-label">Password <span class="required-mark" aria-hidden="true">*</span></span>
+                    <input v-model="form.password" required minlength="12" maxlength="128" type="password" autocomplete="new-password" />
                 </label>
 
                 <label>
-                    Role
-
-                    <select v-model="form.role">
+                    <span class="field-label">Role <span class="required-mark" aria-hidden="true">*</span></span>
+                    <select v-model="form.role" required>
                         <option value="viewer">
                             Viewer
                         </option>
@@ -430,13 +421,13 @@ onMounted(() => {
       @submit.prevent="resetPassword"
     >
       <label>
-        New password
-
+        <span class="field-label">New password <span class="required-mark" aria-hidden="true">*</span></span>
         <input
           v-model="newPassword"
           type="password"
           required
           minlength="12"
+          maxlength="128"
           autocomplete="new-password"
         />
       </label>

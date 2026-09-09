@@ -346,13 +346,6 @@ onMounted(() => load('today'))
     <div class="utility-toolbar backup-toolbar">
       <div>
         <h2>Backups</h2>
-        <p v-if="result">
-          {{ result.source }}
-          <template v-if="result.generation"> · {{ result.generation }}</template>
-        </p>
-        <p v-else>
-          Recent backup history reported by the database or configured provider.
-        </p>
       </div>
 
       <div class="database-inline-actions">
@@ -502,11 +495,6 @@ onMounted(() => load('today'))
 
       <div v-if="!result.available" class="database-empty-state">
         <h3>No backup provider configured</h3>
-        <p>
-          DBAChum cannot infer backup history when this engine has no native
-          repository or configured provider. Nothing is reported as healthy or
-          failed until a real provider supplies records.
-        </p>
       </div>
 
       <template v-else>

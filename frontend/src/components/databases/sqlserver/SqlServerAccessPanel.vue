@@ -113,9 +113,8 @@ onMounted(() => {
 <template>
   <section>
     <div class="utility-toolbar">
-      <div>
+      <div title="Role membership and direct permissions reported by SQL Server for this database and instance.">
         <h2>Access &amp; Privileges</h2>
-        <p>Role membership and direct permissions reported by SQL Server for this database and instance.</p>
       </div>
 
       <div class="database-inline-actions">
@@ -148,7 +147,6 @@ onMounted(() => {
         <button type="button" class="sqlserver-elevated-toggle" @click="elevatedOpen = !elevatedOpen">
           <span>
             <strong>Elevated Access</strong>
-            <small>Heuristic findings from powerful SQL Server roles and direct permissions.</small>
           </span>
           <span class="sqlserver-elevated-count">{{ security.elevated_findings.length }}</span>
           <span>{{ elevatedOpen ? 'Hide' : 'Show' }}</span>

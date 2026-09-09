@@ -59,10 +59,6 @@ $UvicornArgs = @(
     '--no-server-header'
 )
 
-# Windows PowerShell 5.1 can surface a native program's normal stderr
-# logging as NativeCommandError when ErrorActionPreference is Stop.
-# Uvicorn legitimately writes log records to stderr, so temporarily allow
-# native stderr while still failing on a non-zero process exit code.
 $PreviousErrorActionPreference = $ErrorActionPreference
 $ErrorActionPreference = 'Continue'
 

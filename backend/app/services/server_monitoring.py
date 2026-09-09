@@ -601,7 +601,7 @@ async def collect_server_health(database, server_id: str) -> ServerHealthSnapsho
     os_family = target.server.get("os_family")
     if os_family == ServerOsFamily.WINDOWS.value:
         raise AppError(
-            "Windows SSH connectivity can be tested, but host metrics are not enabled in this first Phase 5C collector.",
+            "Windows SSH connectivity can be tested, but host metrics are not enabled in this first collector.",
             code="SSH_WINDOWS_METRICS_NOT_SUPPORTED",
             status_code=501,
         )

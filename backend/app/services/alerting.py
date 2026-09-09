@@ -649,8 +649,7 @@ def transition_alert(existing: dict | None, condition: AlertCondition, now: date
     good_count = int(existing.get("good_count") or 0) + 1
     if status == "cleared":
         if good_count >= condition.recovery_samples:
-            # A cleared active condition stays suppressed until it genuinely
-            # recovers. Deleting here rearms the alert for a future incident.
+
             return "delete", None
         return "update", {"good_count": good_count}
 
@@ -683,9 +682,6 @@ async def _evaluate_source(
     existing_by_rule = {str(item["rule_key"]): item for item in existing_items}
     conditions_by_rule = {condition.rule_key: condition for condition in conditions}
 
-    # Dynamic rule families (tablespaces/filesystems) can disappear after a
-    # recovery or mount change. When the current snapshot fully evaluated that
-    # family, synthesize a healthy result so stale alerts can resolve/rearm.
     for rule_key in existing_by_rule:
         if rule_key in conditions_by_rule:
             continue
@@ -731,17 +727,13 @@ async def _evaluate_source(
             upsert=True,
         )
 
-        # Email delivery is event-driven, not sample-driven. Queue only when
-        # an incident first becomes active or when its severity escalates.
         if action == "update":
             updated_alert = await collection.find_one({"alert_key": alert_key})
             if updated_alert and should_enqueue_alert_email(existing, updated_alert):
                 try:
                     await enqueue_alert_email_deliveries(database, updated_alert)
                 except Exception:
-                    # Alert persistence is more important than notification
-                    # transport. A mail configuration/provider issue must never
-                    # break the collector's monitoring state machine.
+
                     logger.exception(
                         "Failed to queue email notification alert_key=%s",
                         alert_key,

@@ -44,7 +44,7 @@ onMounted(() => void mysqlStore.loadActivity(props.connectionId))
 <template>
   <section>
     <div class="utility-toolbar">
-      <div><h2>Activity</h2><p>Active statements, InnoDB transactions, lock blockers, and wait context when available.</p></div>
+      <div><h2>Activity</h2></div>
       <button type="button" class="secondary-button" :disabled="mysqlStore.loadingActivity[connectionId]" @click="mysqlStore.loadActivity(connectionId)">
         {{ mysqlStore.loadingActivity[connectionId] ? 'Refreshing...' : 'Refresh' }}
       </button>

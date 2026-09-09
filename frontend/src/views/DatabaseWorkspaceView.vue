@@ -42,7 +42,7 @@ const groupedConnections = computed(() =>
 )
 
 const pageHeading = computed(() =>
-  selectedEngine.value ? `${engineLabel(selectedEngine.value)} databases` : 'Databases',
+  selectedEngine.value ? `${engineLabel(selectedEngine.value)} databases` : '',
 )
 
 function databaseIdentity(connection: DatabaseConnection) {
@@ -73,9 +73,8 @@ onMounted(() => {
 
 <template>
   <section class="page-header database-list-page-header">
-    <div>
+    <div v-if="pageHeading !== ''">
       <h1>{{ pageHeading }}</h1>
-      <p>{{ selectedEngine ? `Monitored ${engineLabel(selectedEngine)} database connections.` : 'Monitor and work with configured databases from one place.' }}</p>
     </div>
 
     <button type="button" class="secondary-button" :disabled="databasesStore.loading" @click="refresh">
@@ -93,13 +92,11 @@ onMounted(() => {
 
   <div v-else-if="monitoredConnections.length === 0" class="database-empty-state">
     <h2>No monitored databases</h2>
-    <p>Enable monitoring for a database connection from Settings.</p>
     <RouterLink to="/settings/connections" class="primary-button">Open connection settings</RouterLink>
   </div>
 
   <div v-else-if="groupedConnections.length === 0" class="database-empty-state">
     <h2>No {{ selectedEngine ? engineLabel(selectedEngine) : '' }} databases found</h2>
-    <p>No monitored database connection matches this category.</p>
   </div>
 
   <div v-else class="database-engine-groups" :class="{ 'database-engine-groups--single': selectedEngine }">

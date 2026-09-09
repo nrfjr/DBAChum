@@ -38,7 +38,7 @@ onMounted(load)
 <template>
   <div class="settings-stack">
     <section class="panel">
-      <div class="panel-header"><div><h3>Collector status</h3><p>The dedicated background collector owns database/server monitoring and Analytics snapshots.</p></div><button type="button" class="secondary-button" @click="load">Refresh</button></div>
+      <div class="panel-header"><div title="The dedicated background collector owns database/server monitoring and Analytics snapshots."><h3>Collector status</h3></div><button type="button" class="secondary-button" @click="load">Refresh</button></div>
       <div class="overview-facts-grid">
         <div><span>State</span><strong>{{ collectorState }}</strong></div>
         <div><span>Last heartbeat</span><strong>{{ collectorHeartbeat }}</strong></div>
@@ -47,17 +47,17 @@ onMounted(load)
     </section>
 
     <section class="panel">
-      <div class="panel-header"><div><h3>Collection cadence</h3><p>Changes are stored in MongoDB and picked up by the running collector without restarting the web application.</p></div></div>
+      <div class="panel-header"><div title="Changes are stored in MongoDB and picked up by the running collector without restarting the web application."><h3>Collection cadence</h3></div></div>
       <p v-if="error" class="login-error">{{ error }}</p>
-      <label class="settings-toggle-row"><input v-model="form.enabled" type="checkbox" /><span><strong>Monitoring enabled</strong><small>Pause collection without stopping the collector process.</small></span></label>
+      <label class="settings-toggle-row"><input v-model="form.enabled" type="checkbox" title="Pause collection without stopping the collector process." /><span><strong>Monitoring enabled</strong></span></label>
       <div class="settings-form-grid">
-        <label><span>Database interval (seconds)</span><input v-model.number="form.database_interval_seconds" type="number" min="10" max="300" /></label>
-        <label><span>Server interval (seconds)</span><input v-model.number="form.server_interval_seconds" type="number" min="30" max="600" /></label>
-        <label><span>Storage refresh interval (seconds)</span><input v-model.number="form.storage_interval_seconds" type="number" min="60" max="3600" /></label>
-        <label><span>Analytics snapshot interval (seconds)</span><input v-model.number="form.analytics_snapshot_interval_seconds" type="number" min="900" max="86400" /></label>
-        <label><span>Target timeout (seconds)</span><input v-model.number="form.target_timeout_seconds" type="number" min="10" max="300" /></label>
-        <label><span>Collector concurrency</span><input v-model.number="form.concurrency" type="number" min="1" max="20" /></label>
-        <label><span>Heartbeat stale threshold (seconds)</span><input v-model.number="form.stale_threshold_seconds" type="number" min="20" max="300" /></label>
+        <label><span class="field-label">Database interval (seconds) <span class="required-mark" aria-hidden="true">*</span></span><input required class="utility-select-input" v-model.number="form.database_interval_seconds" type="number" min="10" max="300" /></label>
+        <label><span class="field-label">Server interval (seconds) <span class="required-mark" aria-hidden="true">*</span></span><input required class="utility-select-input" v-model.number="form.server_interval_seconds" type="number" min="30" max="600" /></label>
+        <label><span class="field-label">Storage refresh interval (seconds) <span class="required-mark" aria-hidden="true">*</span></span><input required class="utility-select-input" v-model.number="form.storage_interval_seconds" type="number" min="60" max="3600" /></label>
+        <label><span class="field-label">Analytics snapshot interval (seconds) <span class="required-mark" aria-hidden="true">*</span></span><input required class="utility-select-input" v-model.number="form.analytics_snapshot_interval_seconds" type="number" min="900" max="86400" /></label>
+        <label><span class="field-label">Target timeout (seconds) <span class="required-mark" aria-hidden="true">*</span></span><input required class="utility-select-input" v-model.number="form.target_timeout_seconds" type="number" min="10" max="300" /></label>
+        <label><span class="field-label">Collector concurrency <span class="required-mark" aria-hidden="true">*</span></span><input required class="utility-select-input" v-model.number="form.concurrency" type="number" min="1" max="20" /></label>
+        <label><span class="field-label">Heartbeat stale threshold (seconds) <span class="required-mark" aria-hidden="true">*</span></span><input required class="utility-select-input" v-model.number="form.stale_threshold_seconds" type="number" min="20" max="300" /></label>
       </div>
       <div class="connection-form-actions"><button type="button" class="primary-button" :disabled="saving" @click="save">{{ saving ? 'Saving…' : 'Save monitoring settings' }}</button></div>
     </section>

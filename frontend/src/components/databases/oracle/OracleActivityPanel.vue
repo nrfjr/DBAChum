@@ -41,7 +41,7 @@ onMounted(() => void oracleStore.loadActivity(props.connectionId))
 <template>
   <section>
     <div class="utility-toolbar">
-      <div><h2>Current activity</h2><p>SQL currently associated with active Oracle sessions.</p></div>
+      <div title="SQL currently associated with active Oracle sessions."><h2>Current activity</h2></div>
       <button type="button" class="secondary-button" :disabled="oracleStore.loadingActivity" @click="oracleStore.loadActivity(connectionId)">
         {{ oracleStore.loadingActivity ? 'Refreshing...' : 'Refresh' }}
       </button>

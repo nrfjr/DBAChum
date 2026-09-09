@@ -64,9 +64,6 @@ function Write-StackLog([string]$Message) {
     "[$(Get-Date -Format o)] $Message" | Out-File -FilePath $LogFile -Append -Encoding utf8
 }
 
-# A Windows Job Object gives the Scheduled Task one real lifecycle boundary.
-# JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE guarantees that when Task Scheduler stops
-# this supervisor, both child launchers and their Python descendants are killed.
 if (-not ('DBAChum.WindowsJob' -as [type])) {
     Add-Type -TypeDefinition @'
 using System;
@@ -261,7 +258,6 @@ finally {
                 }
             }
             catch {
-                # The Job Object cleanup below is the final safety net.
             }
         }
     }

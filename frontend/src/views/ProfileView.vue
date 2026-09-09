@@ -40,6 +40,9 @@ const notificationsError = ref<string | null>(null)
 const preferenceDataMessage = ref<string | null>(null)
 const preferenceDataError = ref<string | null>(null)
 const preferenceImportInput = ref<HTMLInputElement | null>(null)
+const avatarInput = ref<HTMLInputElement | null>(null)
+const avatarSaving = ref(false)
+const avatarError = ref<string | null>(null)
 
 type ProfileSection =
   | 'profile'
@@ -51,23 +54,19 @@ const activeSection = ref<ProfileSection>('profile')
 
 const profileSectionMeta: Record<
   ProfileSection,
-  { title: string; description: string }
+  { title: string; }
 > = {
   profile: {
-    title: 'My profile',
-    description: 'Your DBAChum identity and account contact information.',
+    title: 'Profile',
   },
   customization: {
     title: 'Customization',
-    description: 'Personalize how DBAChum looks and behaves for your account.',
   },
   alerts: {
     title: 'Alert subscriptions',
-    description: 'Choose which centrally-defined alerts are delivered to you.',
   },
   transfer: {
     title: 'Import / Export',
-    description: 'Back up, restore or reset your personal DBAChum preferences.',
   },
 }
 
@@ -133,39 +132,41 @@ const severityOptions: Array<{
   label: string
   description: string
 }> = [
-  {
-    value: 'critical',
-    label: 'Critical',
-    description: 'Outages and conditions requiring immediate attention.',
-  },
-  {
-    value: 'warning',
-    label: 'Warning',
-    description: 'Degradation, pressure or conditions that should be reviewed.',
-  },
-]
+    {
+      value: 'critical',
+      label: 'Critical',
+      description: 'Outages and conditions requiring immediate attention.',
+    },
+    {
+      value: 'warning',
+      label: 'Warning',
+      description: 'Degradation, pressure or conditions that should be reviewed.',
+    },
+  ]
 
 const categoryOptions: Array<{
   value: NotificationCategory
   label: string
 }> = [
-  { value: 'availability', label: 'Availability' },
-  { value: 'blocking', label: 'Blocking' },
-  { value: 'storage', label: 'Storage / capacity' },
-  { value: 'performance', label: 'Performance' },
-  { value: 'jobs', label: 'Jobs / automation' },
-  { value: 'backup', label: 'Backup' },
-  { value: 'system', label: 'DBAChum system' },
-]
+    { value: 'availability', label: 'Availability' },
+    { value: 'blocking', label: 'Blocking' },
+    { value: 'storage', label: 'Storage / capacity' },
+    { value: 'performance', label: 'Performance' },
+    { value: 'jobs', label: 'Jobs / automation' },
+    { value: 'backup', label: 'Backup' },
+    { value: 'system', label: 'DBAChum system' },
+  ]
 
 const engineOptions: Array<{
   value: NotificationEngine
   label: string
 }> = [
-  { value: 'oracle', label: 'Oracle' },
-  { value: 'sqlserver', label: 'SQL Server' },
-  { value: 'mysql', label: 'MySQL / MariaDB' },
-]
+    { value: 'oracle', label: 'Oracle' },
+    { value: 'sqlserver', label: 'SQL Server' },
+    { value: 'mysql', label: 'MySQL / MariaDB' },
+  ]
+
+const avatarUrl = computed(() => authStore.avatarUrl)
 
 const roleLabel = computed(() => {
   const role = authStore.user?.role ?? 'viewer'
@@ -250,6 +251,49 @@ async function saveIdentity() {
     identityError.value = cause instanceof Error
       ? cause.message
       : 'Unable to update profile.'
+  }
+}
+
+function chooseAvatar() {
+  avatarInput.value?.click()
+}
+
+async function uploadAvatar(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = ''
+  if (!file) return
+
+  avatarSaving.value = true
+  avatarError.value = null
+  try {
+    await authStore.uploadAvatar(file)
+    showToast({ title: 'Profile photo updated', tone: 'success' })
+  } catch (cause) {
+    avatarError.value = cause instanceof Error ? cause.message : 'Unable to update profile photo.'
+  } finally {
+    avatarSaving.value = false
+  }
+}
+
+async function removeAvatar() {
+  const confirmed = await confirmDialog({
+    title: 'Remove profile photo?',
+    message: 'Your initials will be shown instead.',
+    confirmLabel: 'Remove photo',
+    tone: 'warning',
+  })
+  if (!confirmed) return
+
+  avatarSaving.value = true
+  avatarError.value = null
+  try {
+    await authStore.removeAvatar()
+    showToast({ title: 'Profile photo removed', tone: 'success' })
+  } catch (cause) {
+    avatarError.value = cause instanceof Error ? cause.message : 'Unable to remove profile photo.'
+  } finally {
+    avatarSaving.value = false
   }
 }
 
@@ -472,46 +516,27 @@ function engineLabel(engine: NotificationEngine) {
 
 <template>
   <section class="page-header">
-    <div>
-      <h2>My profile</h2>
-      <p>
-        Manage your DBAChum identity, customization, alert subscriptions and preference data.
-      </p>
+    <div title="Manage your DBAChum identity, customization, alert subscriptions and preference data.">
+      <h2>Profile & Preferences</h2>
     </div>
   </section>
 
   <div class="settings-layout profile-settings-layout">
     <aside class="settings-nav profile-settings-nav" aria-label="Profile sections">
-      <button
-        type="button"
-        class="settings-nav-item profile-section-button"
-        :class="{ active: activeSection === 'profile' }"
-        @click="selectProfileSection('profile')"
-      >
-        My Profile
+      <button type="button" class="settings-nav-item profile-section-button"
+        :class="{ active: activeSection === 'profile' }" @click="selectProfileSection('profile')">
+        Profile
       </button>
-      <button
-        type="button"
-        class="settings-nav-item profile-section-button"
-        :class="{ active: activeSection === 'customization' }"
-        @click="selectProfileSection('customization')"
-      >
+      <button type="button" class="settings-nav-item profile-section-button"
+        :class="{ active: activeSection === 'customization' }" @click="selectProfileSection('customization')">
         Customization
       </button>
-      <button
-        type="button"
-        class="settings-nav-item profile-section-button"
-        :class="{ active: activeSection === 'alerts' }"
-        @click="selectProfileSection('alerts')"
-      >
+      <button type="button" class="settings-nav-item profile-section-button"
+        :class="{ active: activeSection === 'alerts' }" @click="selectProfileSection('alerts')">
         Alert subscriptions
       </button>
-      <button
-        type="button"
-        class="settings-nav-item profile-section-button"
-        :class="{ active: activeSection === 'transfer' }"
-        @click="selectProfileSection('transfer')"
-      >
+      <button type="button" class="settings-nav-item profile-section-button"
+        :class="{ active: activeSection === 'transfer' }" @click="selectProfileSection('transfer')">
         Import / Export
       </button>
     </aside>
@@ -519,485 +544,348 @@ function engineLabel(engine: NotificationEngine) {
     <section class="settings-content profile-settings-content">
       <header class="settings-section-header">
         <h2>{{ activeSectionMeta.title }}</h2>
-        <p>{{ activeSectionMeta.description }}</p>
       </header>
 
       <div class="profile-section-stack">
         <section v-if="activeSection === 'profile'" class="panel profile-card">
-      <div class="profile-identity-heading">
-        <div class="profile-avatar-large">
-          {{ authStore.user?.avatar_initials || 'DB' }}
-        </div>
+          <div class="profile-identity-heading profile-identity-heading--editable">
+            <div class="profile-avatar-large" :class="{ 'profile-avatar-large--image': avatarUrl }">
+              <img v-if="avatarUrl" :src="avatarUrl" alt="Profile photo" />
+              <span v-else>{{ authStore.user?.avatar_initials || 'DB' }}</span>
+            </div>
 
-        <div>
-          <h3>{{ authStore.user?.display_name }}</h3>
-          <p>@{{ authStore.user?.username }}</p>
-        </div>
-      </div>
+            <div>
+              <h3>{{ authStore.user?.display_name }}</h3>
+              <p>@{{ authStore.user?.username }}</p>
+              <input
+                ref="avatarInput"
+                class="hidden-file-input"
+                type="file"
+                accept="image/png,image/jpeg,image/webp"
+                @change="uploadAvatar"
+              />
+              <div class="profile-avatar-actions">
+                <button type="button" class="secondary-button" :disabled="avatarSaving" @click="chooseAvatar">
+                  {{ avatarSaving ? 'Updating…' : avatarUrl ? 'Change photo' : 'Add photo' }}
+                </button>
+                <button v-if="avatarUrl" type="button" class="secondary-button" :disabled="avatarSaving" @click="removeAvatar">
+                  Remove
+                </button>
+              </div>
+              <small>PNG, JPEG or WebP, up to 2 MB.</small>
+              <p v-if="avatarError" class="login-error">{{ avatarError }}</p>
+            </div>
+          </div>
 
-      <form class="connection-form" @submit.prevent="saveIdentity">
-        <label>
-          Display name
-          <input
-            v-model="identity.display_name"
-            required
-            maxlength="120"
-            autocomplete="name"
-          />
-        </label>
+          <form class="connection-form" @submit.prevent="saveIdentity">
+            <label>
+              <span class="field-label">Display name <span class="required-mark" aria-hidden="true">*</span></span>
+              <input v-model="identity.display_name" required maxlength="120" autocomplete="name" />
+            </label>
 
-        <label>
-          Username
-          <input
-            :value="authStore.user?.username"
-            disabled
-            autocomplete="username"
-          />
-          <small>
-            Username remains the sign-in identity and is managed separately.
-          </small>
-        </label>
+            <label>
+              Username
+              <input :value="authStore.user?.username" disabled autocomplete="username"
+                title="Username remains the sign-in identity and is managed separately." />
+            </label>
 
-        <label>
-          Email
-          <input
-            v-model="identity.email"
-            type="email"
-            maxlength="254"
-            autocomplete="email"
-            placeholder="dba@company.com"
-          />
-          <small>
-            This address is used when you opt into email alert delivery.
-          </small>
-        </label>
+            <label>
+              Email
+              <input v-model="identity.email" type="email" maxlength="254" autocomplete="email"
+                placeholder="dba@company.com" title="This address is used when you opt into email alert delivery." />
+            </label>
 
-        <label>
-          Role
-          <input :value="roleLabel" disabled />
-        </label>
+            <label>
+              Role
+              <input :value="roleLabel" disabled />
+            </label>
 
-        <p v-if="identityError" class="login-error">
-          {{ identityError }}
-        </p>
-        <p v-if="identityMessage" class="profile-success">
-          {{ identityMessage }}
-        </p>
+            <p v-if="identityError" class="login-error">
+              {{ identityError }}
+            </p>
+            <p v-if="identityMessage" class="profile-success">
+              {{ identityMessage }}
+            </p>
 
-        <div class="connection-form-actions">
-          <button
-            type="submit"
-            class="primary-button"
-            :disabled="authStore.profileSaving"
-          >
-            {{ authStore.profileSaving ? 'Saving...' : 'Save profile' }}
-          </button>
-        </div>
-      </form>
-    </section>
+            <div class="connection-form-actions">
+              <button type="submit" class="primary-button" :disabled="authStore.profileSaving">
+                {{ authStore.profileSaving ? 'Saving...' : 'Save profile' }}
+              </button>
+            </div>
+          </form>
+        </section>
 
         <section v-if="activeSection === 'customization'" class="panel profile-card">
-      <div class="panel-header">
-        <div>
-          <h3>Personal preferences</h3>
-          <p>
-            These belong to your account, not the DBAChum installation.
-          </p>
-        </div>
-      </div>
 
-      <form class="connection-form" @submit.prevent="savePreferences">
-        <label>
-          Timezone
-          <div class="profile-inline-control">
-            <input
-              v-model="preferences.timezone"
-              maxlength="80"
-              placeholder="system"
-            />
-            <button
-              type="button"
-              class="secondary-button"
-              @click="useBrowserTimezone"
-            >
-              Use browser
-            </button>
-          </div>
-          <small>
-            Browser timezone: {{ browserTimezone }}
-          </small>
-        </label>
-
-        <label>
-          Date / time format
-          <select v-model="preferences.date_time_format">
-            <option value="system">System / browser</option>
-            <option value="12h">12-hour</option>
-            <option value="24h">24-hour</option>
-          </select>
-        </label>
-
-        <label>
-          Default landing page
-          <select v-model="preferences.default_landing_page">
-            <option value="dashboard">Dashboard</option>
-            <option value="databases">Databases</option>
-            <option value="servers">Servers</option>
-            <option value="alerts">Alerts</option>
-          </select>
-        </label>
-
-        <label>
-          Default History range
-          <select v-model="preferences.default_history_range">
-            <option value="1h">Last 1 hour</option>
-            <option value="6h">Last 6 hours</option>
-            <option value="12h">Last 12 hours</option>
-            <option value="24h">Last 24 hours</option>
-          </select>
-        </label>
-
-        <label>
-          Theme
-          <select v-model="preferences.theme">
-            <option value="system">System</option>
-            <option value="light">Light</option>
-            <option value="dark">Dark</option>
-          </select>
-        </label>
-
-        <fieldset class="profile-fieldset">
-          <legend>Accent</legend>
-          <div class="accent-options">
-            <label
-              v-for="accent in accentOptions"
-              :key="accent"
-              class="accent-option"
-            >
-              <input
-                v-model="preferences.accent"
-                type="radio"
-                name="accent"
-                :value="accent"
-                class="profile-radio-accent"
-              />
-              <span class="accent-dot" :data-accent-preview="accent" />
-              <span>{{ accent }}</span>
+          <form class="connection-form" @submit.prevent="savePreferences">
+            <label>
+              Timezone
+              <div class="profile-inline-control">
+                <input v-model="preferences.timezone" maxlength="80" placeholder="system" />
+                <button type="button" class="secondary-button" @click="useBrowserTimezone">
+                  Use browser
+                </button>
+              </div>
+              <small>
+                Browser timezone: {{ browserTimezone }}
+              </small>
             </label>
-          </div>
-        </fieldset>
 
-        <label>
-          Interface density
-          <select v-model="preferences.density">
-            <option value="comfortable">Comfortable</option>
-            <option value="compact">Compact</option>
-          </select>
-          <small>
-            Compact/comfortable density is stored with your account and is available to the Phase 8 polish.
-          </small>
-        </label>
+            <label>
+              Date / time format
+              <select v-model="preferences.date_time_format">
+                <option value="system">System / browser</option>
+                <option value="12h">12-hour</option>
+                <option value="24h">24-hour</option>
+              </select>
+            </label>
 
-        <p v-if="preferencesError" class="login-error">
-          {{ preferencesError }}
-        </p>
-        <p v-if="preferencesMessage" class="profile-success">
-          {{ preferencesMessage }}
-        </p>
+            <label>
+              Default landing page
+              <select v-model="preferences.default_landing_page">
+                <option value="dashboard">Dashboard</option>
+                <option value="databases">Databases</option>
+                <option value="servers">Servers</option>
+                <option value="alerts">Alerts</option>
+              </select>
+            </label>
 
-        <div class="connection-form-actions">
-          <button
-            type="submit"
-            class="primary-button"
-            :disabled="authStore.preferencesSaving"
-          >
-            {{ authStore.preferencesSaving ? 'Saving...' : 'Save preferences' }}
-          </button>
-        </div>
-      </form>
-    </section>
+            <label>
+              Default History range
+              <select v-model="preferences.default_history_range">
+                <option value="1h">Last 1 hour</option>
+                <option value="6h">Last 6 hours</option>
+                <option value="12h">Last 12 hours</option>
+                <option value="24h">Last 24 hours</option>
+              </select>
+            </label>
+
+            <label>
+              Theme
+              <select v-model="preferences.theme">
+                <option value="system">System</option>
+                <option value="light">Light</option>
+                <option value="dark">Dark</option>
+              </select>
+            </label>
+
+            <fieldset class="profile-fieldset">
+              <legend>Accent</legend>
+              <div class="accent-options">
+                <label v-for="accent in accentOptions" :key="accent" class="accent-option">
+                  <input v-model="preferences.accent" type="radio" name="accent" :value="accent"
+                    class="profile-radio-accent" />
+                  <span class="accent-dot" :data-accent-preview="accent" />
+                  <span>{{ accent }}</span>
+                </label>
+              </div>
+            </fieldset>
+
+            <label>
+              Interface density
+              <select v-model="preferences.density">
+                <option value="comfortable">Comfortable</option>
+                <option value="compact">Compact</option>
+              </select>
+            </label>
+
+            <p v-if="preferencesError" class="login-error">
+              {{ preferencesError }}
+            </p>
+            <p v-if="preferencesMessage" class="profile-success">
+              {{ preferencesMessage }}
+            </p>
+
+            <div class="connection-form-actions">
+              <button type="submit" class="primary-button" :disabled="authStore.preferencesSaving">
+                {{ authStore.preferencesSaving ? 'Saving...' : 'Save preferences' }}
+              </button>
+            </div>
+          </form>
+        </section>
 
         <section v-if="activeSection === 'transfer'" class="panel profile-card preference-data-card">
-      <div class="panel-header">
-        <div>
-          <h3>Preference data</h3>
-          <p>Move your personal DBAChum setup between browsers or restore it later. Profile identity and credentials are never included.</p>
-        </div>
-      </div>
 
-      <input
-        ref="preferenceImportInput"
-        type="file"
-        accept="application/json,.json"
-        class="preference-file-input"
-        @change="importPreferences"
-      >
+          <input ref="preferenceImportInput" type="file" accept="application/json,.json" class="preference-file-input"
+            @change="importPreferences">
 
-      <div class="preference-data-actions">
-        <button type="button" class="secondary-button" @click="exportPreferences">
-          Export preferences
-        </button>
-        <button type="button" class="secondary-button" @click="choosePreferenceImport">
-          Import preferences
-        </button>
-        <button type="button" class="danger-button" @click="resetPreferences">
-          Reset to defaults
-        </button>
-      </div>
+          <div class="preference-data-actions">
+            <button type="button" class="secondary-button" @click="exportPreferences"
+              title="Export includes personal appearance, timezone, landing/history defaults and alert subscriptions. It does not include username, email, passwords, connection credentials or installation settings.">
+              Export preferences
+            </button>
+            <button type="button" class="secondary-button" @click="choosePreferenceImport">
+              Import preferences
+            </button>
+            <button type="button" class="danger-button" @click="resetPreferences">
+              Reset to defaults
+            </button>
+          </div>
 
-      <p class="profile-muted-note">
-        Export includes personal appearance, timezone, landing/history defaults and alert subscriptions. It does not include username, email, passwords, connection credentials or installation settings.
-      </p>
-      <p v-if="preferenceDataError" class="login-error">{{ preferenceDataError }}</p>
-      <p v-if="preferenceDataMessage" class="profile-success">{{ preferenceDataMessage }}</p>
-    </section>
+          <p v-if="preferenceDataError" class="login-error">{{ preferenceDataError }}</p>
+          <p v-if="preferenceDataMessage" class="profile-success">{{ preferenceDataMessage }}</p>
+        </section>
 
         <section v-if="activeSection === 'alerts'" class="panel profile-card">
-      <div class="panel-header">
-        <div>
-          <h3>Alert subscriptions</h3>
-          <p>
-            Choose which centrally-defined DBAChum alerts you want delivered to you.
-            The Alert Center itself remains complete for every user.
-          </p>
-        </div>
-      </div>
 
-      <form class="notification-form" @submit.prevent="saveNotifications">
-        <div class="notification-delivery-card">
-          <label class="notification-toggle-row">
-            <span>
-              <strong>Email alerts</strong>
-              <small>
-                Use the email address saved in your profile.
-              </small>
-            </span>
-            <input
-              v-model="notifications.email_enabled"
-              type="checkbox"
-            />
-          </label>
-
-          <p
-            v-if="notifications.email_enabled && !authStore.user?.email"
-            class="notification-warning"
-          >
-            Add an email address to your profile before email delivery can work.
-          </p>
-
-          <p class="notification-foundation-note">
-            These subscriptions are used by the active Brevo/SMTP delivery service. In-app Alert Center visibility is unchanged.
-          </p>
-        </div>
-
-        <div class="notification-grid">
-          <fieldset class="profile-fieldset notification-section">
-            <legend>Severity</legend>
-            <label
-              v-for="option in severityOptions"
-              :key="option.value"
-              class="notification-check-row"
-            >
-              <input
-                v-model="notifications.severities"
-                type="checkbox"
-                :value="option.value"
-              />
-              <span>
-                <strong>{{ option.label }}</strong>
-                <small>{{ option.description }}</small>
-              </span>
-            </label>
-          </fieldset>
-
-          <fieldset class="profile-fieldset notification-section">
-            <legend>Database engines</legend>
-            <label
-              v-for="option in engineOptions"
-              :key="option.value"
-              class="notification-check-row"
-            >
-              <input
-                v-model="notifications.engines"
-                type="checkbox"
-                :value="option.value"
-              />
-              <span>{{ option.label }}</span>
-            </label>
-
-            <label class="notification-check-row">
-              <input
-                v-model="notifications.include_servers"
-                type="checkbox"
-              />
-              <span>Server / infrastructure alerts</span>
-            </label>
-
-            <label class="notification-check-row">
-              <input
-                v-model="notifications.include_system"
-                type="checkbox"
-              />
-              <span>DBAChum collector / system alerts</span>
-            </label>
-          </fieldset>
-        </div>
-
-        <fieldset class="profile-fieldset notification-section">
-          <legend>Alert categories</legend>
-          <div class="notification-chip-grid">
-            <label
-              v-for="option in categoryOptions"
-              :key="option.value"
-              class="notification-chip"
-            >
-              <input
-                v-model="notifications.categories"
-                type="checkbox"
-                :value="option.value"
-              />
-              <span>{{ option.label }}</span>
-            </label>
-          </div>
-        </fieldset>
-
-        <fieldset class="profile-fieldset notification-section">
-          <legend>Source scope</legend>
-          <div class="notification-scope-options">
-            <label class="notification-check-row">
-              <input
-                v-model="notifications.scope"
-                type="radio"
-                value="all"
-              />
-              <span>
-                <strong>All monitored sources</strong>
-                <small>
-                  New monitored databases and servers are automatically included if they match your filters above.
-                </small>
-              </span>
-            </label>
-
-            <label class="notification-check-row">
-              <input
-                v-model="notifications.scope"
-                type="radio"
-                value="selected"
-              />
-              <span>
-                <strong>Selected databases and servers</strong>
-                <small>
-                  Useful when you only support a specific application or environment.
-                </small>
-              </span>
-            </label>
-          </div>
-        </fieldset>
-
-        <div
-          v-if="notifications.scope === 'selected'"
-          class="notification-source-picker"
-        >
-          <div class="notification-source-column">
-            <div class="notification-source-heading">
-              <strong>Databases</strong>
-              <small>{{ notifications.database_connection_ids.length }} selected</small>
-            </div>
-
-            <p v-if="connectionsStore.loading" class="empty-state">
-              Loading database connections...
-            </p>
-
-            <div v-else class="notification-source-list">
-              <label
-                v-for="connection in monitoredConnections"
-                :key="connection.id"
-                class="notification-source-row"
-              >
-                <input
-                  v-model="notifications.database_connection_ids"
-                  type="checkbox"
-                  :value="connection.id"
-                />
+          <form class="notification-form" @submit.prevent="saveNotifications">
+            <div class="notification-delivery-card">
+              <label class="notification-toggle-row">
                 <span>
-                  <strong>{{ connection.name }}</strong>
-                  <small>
-                    {{ engineLabel(connection.engine) }} · {{ connection.host }}:{{ connection.port }}
-                  </small>
+                  <strong>Email alerts</strong>
                 </span>
+                <input v-model="notifications.email_enabled" type="checkbox"
+                  title="Use the email address saved in your profile. " />
               </label>
 
-              <p v-if="!monitoredConnections.length" class="empty-state">
-                No monitored database connections are available.
+              <p v-if="notifications.email_enabled && !authStore.user?.email" class="notification-warning">
+                Add an email address to your profile before email delivery can work.
               </p>
             </div>
-          </div>
 
-          <div class="notification-source-column">
-            <div class="notification-source-heading">
-              <strong>Servers</strong>
-              <small>{{ notifications.server_ids.length }} selected</small>
+            <div class="notification-grid">
+              <fieldset class="profile-fieldset notification-section">
+                <legend>Severity</legend>
+                <label v-for="option in severityOptions" :key="option.value" class="notification-check-row">
+                  <input v-model="notifications.severities" type="checkbox" :value="option.value"
+                    title="{{ option.description }}" />
+                  <span>
+                    <strong>{{ option.label }}</strong>
+                  </span>
+                </label>
+              </fieldset>
+
+              <fieldset class="profile-fieldset notification-section">
+                <legend>Database engines</legend>
+                <label v-for="option in engineOptions" :key="option.value" class="notification-check-row">
+                  <input v-model="notifications.engines" type="checkbox" :value="option.value" />
+                  <span>{{ option.label }}</span>
+                </label>
+
+                <label class="notification-check-row">
+                  <input v-model="notifications.include_servers" type="checkbox" />
+                  <span>Server / infrastructure alerts</span>
+                </label>
+
+                <label class="notification-check-row">
+                  <input v-model="notifications.include_system" type="checkbox" />
+                  <span>DBAChum collector / system alerts</span>
+                </label>
+              </fieldset>
             </div>
 
-            <p v-if="serversStore.loading" class="empty-state">
-              Loading servers...
+            <fieldset class="profile-fieldset notification-section">
+              <legend>Alert categories</legend>
+              <div class="notification-chip-grid">
+                <label v-for="option in categoryOptions" :key="option.value" class="notification-chip">
+                  <input v-model="notifications.categories" type="checkbox" :value="option.value" />
+                  <span>{{ option.label }}</span>
+                </label>
+              </div>
+            </fieldset>
+
+            <fieldset class="profile-fieldset notification-section">
+              <legend>Source scope</legend>
+              <div class="notification-scope-options">
+                <label class="notification-check-row">
+                  <input v-model="notifications.scope" type="radio" value="all"
+                    title="New monitored databases and servers are automatically included if they match your filters above." />
+                  <span>
+                    <strong>All monitored sources</strong>
+                  </span>
+                </label>
+
+                <label class="notification-check-row">
+                  <input v-model="notifications.scope" type="radio" value="selected"
+                    title="Useful when you only support a specific application or environment." />
+                  <span>
+                    <strong>Selected databases and servers</strong>
+                  </span>
+                </label>
+              </div>
+            </fieldset>
+
+            <div v-if="notifications.scope === 'selected'" class="notification-source-picker">
+              <div class="notification-source-column">
+                <div class="notification-source-heading">
+                  <strong>Databases</strong>
+                  <small>{{ notifications.database_connection_ids.length }} selected</small>
+                </div>
+
+                <p v-if="connectionsStore.loading" class="empty-state">
+                  Loading database connections...
+                </p>
+
+                <div v-else class="notification-source-list">
+                  <label v-for="connection in monitoredConnections" :key="connection.id"
+                    class="notification-source-row">
+                    <input v-model="notifications.database_connection_ids" type="checkbox" :value="connection.id" />
+                    <span>
+                      <strong>{{ connection.name }}</strong>
+                      <small>
+                        {{ engineLabel(connection.engine) }} · {{ connection.host }}:{{ connection.port }}
+                      </small>
+                    </span>
+                  </label>
+
+                  <p v-if="!monitoredConnections.length" class="empty-state">
+                    No monitored database connections are available.
+                  </p>
+                </div>
+              </div>
+
+              <div class="notification-source-column">
+                <div class="notification-source-heading">
+                  <strong>Servers</strong>
+                  <small>{{ notifications.server_ids.length }} selected</small>
+                </div>
+
+                <p v-if="serversStore.loading" class="empty-state">
+                  Loading servers...
+                </p>
+
+                <div v-else class="notification-source-list">
+                  <label v-for="server in monitoredServers" :key="server.id" class="notification-source-row">
+                    <input v-model="notifications.server_ids" type="checkbox" :value="server.id" />
+                    <span>
+                      <strong>{{ server.name }}</strong>
+                      <small>
+                        {{ server.hostname }}{{ server.environment ? ` · ${server.environment}` : '' }}
+                      </small>
+                    </span>
+                  </label>
+
+                  <p v-if="!monitoredServers.length" class="empty-state">
+                    No enabled servers are available.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <p v-if="notificationSourceError" class="notification-warning">
+              Some source choices could not be loaded: {{ notificationSourceError }}
             </p>
 
-            <div v-else class="notification-source-list">
-              <label
-                v-for="server in monitoredServers"
-                :key="server.id"
-                class="notification-source-row"
-              >
-                <input
-                  v-model="notifications.server_ids"
-                  type="checkbox"
-                  :value="server.id"
-                />
-                <span>
-                  <strong>{{ server.name }}</strong>
-                  <small>
-                    {{ server.hostname }}{{ server.environment ? ` · ${server.environment}` : '' }}
-                  </small>
-                </span>
-              </label>
+            <p v-if="notifications.scope === 'selected' && selectedSourceCount === 0 && !notifications.include_system"
+              class="notification-warning">
+              Selected-source mode currently has no selected database/server and system alerts are disabled, so nothing
+              will match.
+            </p>
 
-              <p v-if="!monitoredServers.length" class="empty-state">
-                No enabled servers are available.
-              </p>
+            <p v-if="notificationsError" class="login-error">
+              {{ notificationsError }}
+            </p>
+            <p v-if="notificationsMessage" class="profile-success">
+              {{ notificationsMessage }}
+            </p>
+
+            <div class="connection-form-actions">
+              <button type="submit" class="primary-button" :disabled="authStore.notificationsSaving">
+                {{ authStore.notificationsSaving ? 'Saving...' : 'Save alert subscription' }}
+              </button>
             </div>
-          </div>
-        </div>
-
-        <p v-if="notificationSourceError" class="notification-warning">
-          Some source choices could not be loaded: {{ notificationSourceError }}
-        </p>
-
-        <p
-          v-if="notifications.scope === 'selected' && selectedSourceCount === 0 && !notifications.include_system"
-          class="notification-warning"
-        >
-          Selected-source mode currently has no selected database/server and system alerts are disabled, so nothing will match.
-        </p>
-
-        <p v-if="notificationsError" class="login-error">
-          {{ notificationsError }}
-        </p>
-        <p v-if="notificationsMessage" class="profile-success">
-          {{ notificationsMessage }}
-        </p>
-
-        <div class="connection-form-actions">
-          <button
-            type="submit"
-            class="primary-button"
-            :disabled="authStore.notificationsSaving"
-          >
-            {{ authStore.notificationsSaving ? 'Saving...' : 'Save alert subscription' }}
-          </button>
-        </div>
-      </form>
-    </section>
+          </form>
+        </section>
       </div>
     </section>
   </div>

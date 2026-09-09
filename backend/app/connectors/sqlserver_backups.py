@@ -470,16 +470,6 @@ def _get_sqlserver_backups_sync(connection: dict, history_filter: dict) -> dict:
                     "No SQL Server backup sets were recorded for this database in the selected range."
                 )
 
-            notes = [
-                "SQL Server msdb backupset contains completed backup sets; it is not a "
-                "universal record of every failed backup attempt."
-            ]
-            if truncated:
-                notes.append(
-                    f"The selected range returned more than {BACKUP_HISTORY_LIMIT} backup sets; "
-                    "only the newest records are shown. Narrow the custom date range for the full list."
-                )
-
             return {
                 "available": True,
                 "source": "msdb backup history",
@@ -491,7 +481,6 @@ def _get_sqlserver_backups_sync(connection: dict, history_filter: dict) -> dict:
                 "items": items,
                 "truncated": truncated,
                 "warnings": warnings,
-                "notes": notes,
                 "checked_at": checked_at,
             }
 

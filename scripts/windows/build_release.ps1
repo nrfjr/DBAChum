@@ -335,7 +335,6 @@ if (Test-Path $ZipPath) {
 }
 New-Item -ItemType Directory -Force -Path $StagingDir | Out-Null
 
-# Backend runtime only.
 Copy-RequiredItem 'backend\app' 'backend\app'
 Copy-RequiredItem 'backend\scripts' 'backend\scripts'
 Copy-RequiredItem 'backend\requirements.txt' 'backend\requirements.txt'
@@ -343,13 +342,10 @@ if (Test-Path (Join-Path $ProjectRoot 'backend\main.py')) {
     Copy-RequiredItem 'backend\main.py' 'backend\main.py'
 }
 
-# Compiled frontend only. No Vue source, npm dependencies, or E2E files.
 Copy-RequiredItem 'frontend\dist' 'frontend\dist'
 
-# Safe production configuration template.
 Copy-RequiredItem 'deployment\windows\backend.env.example' 'deployment\windows\backend.env.example'
 
-# Runtime/operations scripts only. build_release.ps1 intentionally stays in source.
 $runtimeScripts = @(
     'install_release.ps1',
     'configure_production.ps1',

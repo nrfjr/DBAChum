@@ -160,7 +160,9 @@ function onKeydown(event: KeyboardEvent) {
 
         <form class="app-dialog__body" @submit.prevent="submit">
           <div v-for="field in fields" :key="field.name" class="app-dialog-field">
-            <label :for="`dialog-${dialogState.requestId}-${field.name}`">{{ field.label }}</label>
+            <label :for="`dialog-${dialogState.requestId}-${field.name}`">
+              <span>{{ field.label }}</span><span v-if="field.required" class="required-mark" aria-hidden="true">*</span>
+            </label>
 
             <template v-if="field.type === 'checkbox'">
               <label class="app-dialog-checkbox">
@@ -170,7 +172,7 @@ function onKeydown(event: KeyboardEvent) {
             </template>
 
             <template v-else-if="field.type === 'select'">
-              <select :id="`dialog-${dialogState.requestId}-${field.name}`" :value="controlValue(values[field.name])" @change="setControlValue(field.name, $event)">
+              <select :id="`dialog-${dialogState.requestId}-${field.name}`" :value="controlValue(values[field.name])" :required="field.required" @change="setControlValue(field.name, $event)">
                 <option v-for="option in field.options ?? []" :key="option.value" :value="option.value">
                   {{ option.label }}
                 </option>
@@ -184,6 +186,7 @@ function onKeydown(event: KeyboardEvent) {
                 @input="values[field.name] = ($event.target as HTMLTextAreaElement).value"
                 rows="5"
                 :placeholder="field.placeholder"
+                :required="field.required"
               />
             </template>
 
@@ -209,6 +212,7 @@ function onKeydown(event: KeyboardEvent) {
                 :max="field.max"
                 :step="field.step"
                 :placeholder="field.placeholder"
+                :required="field.required"
                 autocomplete="off"
                 @input="values[field.name] = ($event.target as HTMLTextAreaElement).value"
               />

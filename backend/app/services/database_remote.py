@@ -28,9 +28,6 @@ def _run_script_sync(target, script: str, timeout: float):
         stderr = bytearray()
         deadline = time.monotonic() + timeout
 
-        # Drain stdout and stderr together. Long-running backup tools can emit
-        # substantial output on either stream; reading them sequentially can
-        # eventually fill the SSH channel window and stall the operation.
         while True:
             progressed = False
             while channel.recv_ready():

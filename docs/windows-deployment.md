@@ -94,7 +94,7 @@ If clients on other machines must connect directly to TCP 8080 and Windows Firew
 
 The task runs as Local System at server startup, allows only one instance, and Task Scheduler is configured to restart it after failure. Its stack supervisor launches both the web server and telemetry collector. If either child process exits unexpectedly, the supervisor stops the other child and exits so Task Scheduler restarts both together. Stopping the `DBAChum` task also terminates both child process trees. The execution time limit is explicitly disabled because the default Task Scheduler limit is unsuitable for a long-running application stack.
 
-If an older Phase 6 installation still has a separate `DBAChum Collector` Scheduled Task, the installer stops and removes it automatically before installing the unified task. This prevents two collectors from running at once.
+If an older installation still has a separate `DBAChum Collector` Scheduled Task, the installer stops and removes it automatically before installing the unified task. This prevents two collectors from running at once.
 
 ## 5. Verify
 
