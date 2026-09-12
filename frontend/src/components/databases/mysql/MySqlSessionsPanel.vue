@@ -49,7 +49,6 @@ function scopeLabel() {
 
 
 async function runAction(session: MySqlSession, action: 'terminate' | 'cancel_query') {
-  const label = action === 'cancel_query' ? 'cancel the current query for' : 'terminate'
   const confirmed = await confirmDialog({ title: action === 'cancel_query' ? 'Cancel query' : 'Kill connection', message: `MySQL/MariaDB connection ${session.connection_id}`, confirmLabel: action === 'cancel_query' ? 'Cancel query' : 'Kill connection', destructive: action === 'terminate', tone: action === 'terminate' ? 'danger' : 'warning' })
   if (!confirmed) return
   try {

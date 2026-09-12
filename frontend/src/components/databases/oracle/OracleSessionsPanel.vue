@@ -48,11 +48,6 @@ function clientLabel(session: OracleSession) {
   return session.module || session.program || session.machine || '—'
 }
 
-function sessionKey(session: OracleSession) {
-  return `${session.sid}-${session.serial_number}`
-}
-
-
 async function runSessionAction(session: OracleSession, action: 'terminate' | 'disconnect') {
   const label = action === 'terminate' ? 'KILL' : 'DISCONNECT'
   const confirmed = await confirmDialog({ title: `${label} Oracle session`, message: `SID ${session.sid}, serial ${session.serial_number}`, confirmLabel: action === 'terminate' ? 'Kill session' : 'Disconnect session', destructive: true, tone: 'danger' })

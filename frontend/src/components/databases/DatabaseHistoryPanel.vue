@@ -124,7 +124,7 @@ function preferredHistoryRange(): HistoryRange {
 const hours = ref<HistoryRange>(preferredHistoryRange())
 const metric = ref<HistoryMetric>('active')
 const selectedWindow = ref<[number, number] | null>(null)
-const historyChart = ref<any>(null)
+const historyChart = ref<InstanceType<typeof VChart> | null>(null)
 const showAllSql = ref(false)
 const showAllSessions = ref(false)
 const showAllWaits = ref(false)
@@ -469,11 +469,21 @@ const chartOption = computed(() => {
   }
 })
 
-function handleDataZoom(event: any) {
+type DataZoomPayload = {
+  start?: number
+  end?: number
+}
+
+type DataZoomEvent = DataZoomPayload & {
+  batch?: DataZoomPayload[]
+}
+
+function handleDataZoom(event: unknown){
+  const typedEvent = event as DataZoomEvent | undefined
   const extent = chartExtent.value
   if (!extent) return
 
-  const payload = event?.batch?.[0] ?? event ?? {}
+  const payload = typedEvent?.batch?.[0] ?? typedEvent ?? {}
   const startPercent = Number(payload.start ?? 0)
   const endPercent = Number(payload.end ?? 100)
 

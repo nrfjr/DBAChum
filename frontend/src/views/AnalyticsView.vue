@@ -12,6 +12,7 @@ import { useConnectionsStore } from '@/stores/connections'
 import { useSystemSettingsStore } from '@/stores/systemSettings'
 import { useUiStore } from '@/stores/ui'
 import { showToast } from '@/ui/feedback'
+import type { ECElementEvent } from 'echarts'
 
 const route = useRoute()
 const router = useRouter()
@@ -74,6 +75,20 @@ const osOptions = [
   { value: 'unix', label: 'Unix' },
   { value: 'other', label: 'Other' },
 ]
+
+type DatabaseChartClick = {
+  data?: {
+    connectionId?: string
+    engine?: string
+  }
+}
+
+type ServerChartClick = {
+  data?: {
+    serverId?: string
+    osFamily?: string
+  }
+}
 
 function bytes(value: number | null | undefined) {
   if (value == null || !Number.isFinite(value)) return '—'
@@ -330,16 +345,34 @@ const osDistributionOption = computed(() => ({
   series: [{ type: 'bar', data: (serverData.value?.os_distribution ?? []).map((item) => item.count) }],
 }))
 
-function openDatabaseFromChart(params: any) {
-  const data = params?.data
-  if (!data?.connectionId) return
-  void router.push({ path: `/databases/${data.connectionId}`, query: data.engine ? { engine: data.engine } : {} })
+function openDatabaseFromChart(params: ECElementEvent) {
+  const data = params.data as DatabaseChartClick['data']
+
+  if (!data?.connectionId) {
+    return
+  }
+
+  router.push({
+    name: 'database-detail',
+    params: {
+      connectionId: data.connectionId,
+    },
+  })
 }
 
-function openServerFromChart(params: any) {
-  const data = params?.data
-  if (!data?.serverId) return
-  void router.push({ path: `/servers/${data.serverId}`, query: data.osFamily ? { os: data.osFamily } : {} })
+function openServerFromChart(params: ECElementEvent) {
+  const data = params.data as ServerChartClick['data']
+
+  if (!data?.serverId) {
+    return
+  }
+
+  router.push({
+    name: 'server-detail',
+    params: {
+      serverId: data.serverId,
+    },
+  })
 }
 
 function openDatabase(item: DatabaseAnalyticsItem) {

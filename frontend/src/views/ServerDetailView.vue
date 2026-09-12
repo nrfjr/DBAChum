@@ -241,9 +241,10 @@ onUnmounted(() => {
   <div class="server-workspace">
     <p v-if="terminalError" class="login-error">{{ terminalError }}</p>
     <p v-if="error" class="login-error">{{ error }}</p>
-    <p v-else-if="loading && !server" class="empty-state">Loading server
-    <p class="loading"></p>
-    </p>
+    <div v-else-if="loading && !server" class="empty-state">
+      Loading server
+      <p class="loading"></p>
+    </div>
 
     <template v-else-if="server">
       <section class="resource-context resource-context--sticky server-resource-context">
@@ -253,7 +254,7 @@ onUnmounted(() => {
           <strong>{{ server.name }}</strong>
           <span>/</span>
           <strong>{{ activeTab === 'overview' ? 'Overview' : activeTab === 'metrics' ? 'Metrics' : 'Databases'
-            }}</strong>
+          }}</strong>
         </div>
 
         <div class="resource-context__main">
@@ -262,17 +263,18 @@ onUnmounted(() => {
               <h1>{{ server.name }}</h1>
               <span class="server-overview-reachability-dot"
                 :class="`server-overview-reachability-dot--${serverReachabilityTone}`" :title="serverReachabilityTone === 'reachable'
-                    ? 'Online'
-                    : serverReachabilityTone === 'unreachable'
-                      ? 'Unreachable'
-                      : 'Unknown'
+                  ? 'Online'
+                  : serverReachabilityTone === 'unreachable'
+                    ? 'Unreachable'
+                    : 'Unknown'
                   " />
             </div>
             <p>{{ server.hostname }}<template v-if="server.ip_address"> · {{ server.ip_address }}</template></p>
           </div>
 
           <div class="resource-context__actions" @click.stop>
-            <button type="button" class="secondary-button refresh-button" :disabled="loading || healthLoading" @click="refreshAll">
+            <button type="button" class="secondary-button refresh-button" :disabled="loading || healthLoading"
+              @click="refreshAll">
               {{ loading || healthLoading ? 'Refreshing' : 'Refresh' }}
               <p v-if="loading || healthLoading" class="loading"></p>
             </button>
@@ -316,14 +318,14 @@ onUnmounted(() => {
             <span>Memory</span>
             <strong>{{ health ? formatPercent(health.memory.used_percent) : '—' }}</strong>
             <small v-if="health">{{ formatBytes(health.memory.used_bytes) }} / {{ formatBytes(health.memory.total_bytes)
-              }}</small>
+            }}</small>
             <small v-else>No current host sample</small>
           </button>
           <button type="button" class="database-overview-summary-card" @click="selectTab('metrics')">
             <span>Filesystem</span>
             <strong>{{ highestFilesystem ? formatPercent(highestFilesystem.used_percent) : '—' }}</strong>
             <small>{{ highestFilesystem ? `${highestFilesystem.mount_point} · highest usage` : 'No filesystem sample'
-              }}</small>
+            }}</small>
           </button>
           <article class="database-overview-summary-card database-overview-summary-card--static">
             <span>Uptime</span>
@@ -473,7 +475,7 @@ onUnmounted(() => {
                   formatBytes(health.memory.swap_total_bytes) }}</small></article>
             <article class="metric-card"><span class="metric-card__label">SSH</span><strong
                 class="metric-card__value">{{ health.ssh_latency_ms != null ? `${health.ssh_latency_ms} ms` :
-                'Connected' }}</strong><small class="metric-card__hint">{{ health.target }}:{{ health.port }}</small>
+                  'Connected' }}</strong><small class="metric-card__hint">{{ health.target }}:{{ health.port }}</small>
             </article>
           </div>
 
@@ -521,7 +523,7 @@ onUnmounted(() => {
                   <p>{{ health.services.manager === 'systemd' ? 'systemd status' : 'Detected service-manager summary' }}
                   </p>
                 </div><span class="service-state-pill" :data-state="health.services.state">{{ health.services.state
-                  }}</span>
+                }}</span>
               </div>
               <p v-if="health.services.note">{{ health.services.note }}</p>
               <div v-if="health.services.failed_services.length" class="failed-service-list"><code
@@ -603,23 +605,20 @@ onUnmounted(() => {
   background: var(--text-muted);
 
   box-shadow:
-    0 0 0 3px
-    color-mix(in srgb, var(--text-muted) 12%, transparent);
+    0 0 0 3px color-mix(in srgb, var(--text-muted) 12%, transparent);
 }
 
 .server-overview-reachability-dot--reachable {
   background: var(--success);
 
   box-shadow:
-    0 0 0 3px
-    color-mix(in srgb, var(--success) 13%, transparent);
+    0 0 0 3px color-mix(in srgb, var(--success) 13%, transparent);
 }
 
 .server-overview-reachability-dot--unreachable {
   background: var(--danger);
 
   box-shadow:
-    0 0 0 3px
-    color-mix(in srgb, var(--danger) 13%, transparent);
+    0 0 0 3px color-mix(in srgb, var(--danger) 13%, transparent);
 }
 </style>

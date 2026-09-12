@@ -212,9 +212,11 @@ onMounted(() => {
         </button>
       </div>
 
-      <p v-if="provisioningStore.loading" class="empty-state">Loading LDAP profiles
-      <p class="loading"></p>
-      </p>
+      <div v-if="provisioningStore.loading" class="empty-state">
+        Loading LDAP profiles
+        <p class="loading"></p>
+      </div>
+
       <p v-else-if="provisioningStore.error" class="login-error">{{ provisioningStore.error }}</p>
 
       <div v-else-if="provisioningStore.ldapProfiles.length === 0" class="empty-state">
@@ -246,7 +248,8 @@ onMounted(() => {
               <FontAwesomeIcon icon="pen" />
               Edit
             </button>
-            <button v-if="canManageConnections" type="button" role="menuitem" class="danger-menu-item" @click="remove(profile)">
+            <button v-if="canManageConnections" type="button" role="menuitem" class="danger-menu-item"
+              @click="remove(profile)">
               <FontAwesomeIcon icon="trash-can" />
               Delete
             </button>
@@ -277,7 +280,7 @@ onMounted(() => {
           </label>
 
           <label class="connection-checkbox">
-            <input v-model="form.enabled" type="checkbox" class="toggle-switch"/>
+            <input v-model="form.enabled" type="checkbox" class="toggle-switch" />
             Enable this LDAP profile
           </label>
 
@@ -295,7 +298,7 @@ onMounted(() => {
           </div>
 
           <label class="connection-checkbox">
-            <input v-model="form.use_ssl" type="checkbox" class="toggle-switch"/>
+            <input v-model="form.use_ssl" type="checkbox" class="toggle-switch" />
             Use TLS / SSL (LDAPS)
           </label>
 
@@ -341,5 +344,5 @@ onMounted(() => {
       </section>
     </div>
   </div>
-  
+
 </template>

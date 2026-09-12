@@ -66,9 +66,6 @@ const filteredRoles = computed(() => {
   )
 })
 
-const selectedSummary = computed(() =>
-  catalog.value?.roles.find((item) => item.name === selectedRoleName.value) ?? null,
-)
 
 const actionNeedsUser = computed(() => ['grant_to_user', 'revoke_from_user'].includes(actionOperation.value))
 const actionNeedsRole = computed(() => ['grant_child_role', 'revoke_child_role'].includes(actionOperation.value))

@@ -367,10 +367,10 @@ onMounted(() => {
         </button>
       </div>
 
-      <p v-if="connectionsStore.loading" class="empty-state">
-        Loading connections...
-      <p v-if="connectionsStore.loading" class="loading"></p>
-      </p>
+      <div v-if="connectionsStore.loading" class="empty-state">
+          Loading connections...
+        <p class="loading"></p>
+      </div>
 
       <p v-else-if="connectionsStore.error" class="login-error">
         {{ connectionsStore.error }}
@@ -415,7 +415,8 @@ onMounted(() => {
             </small>
           </div>
 
-          <FloatingActionMenu v-if="canTestConnections || canManageConnections" :label="`Actions for ${connection.name}`">
+          <FloatingActionMenu v-if="canTestConnections || canManageConnections"
+            :label="`Actions for ${connection.name}`">
             <button v-if="canTestConnections" type="button" role="menuitem" @click="testConnection(connection)">
               <FontAwesomeIcon icon="plug" />
               Test connection
@@ -424,7 +425,8 @@ onMounted(() => {
               <FontAwesomeIcon icon="pen" />
               Edit
             </button>
-            <button v-if="canManageConnections" type="button" role="menuitem" class="danger-menu-item" @click="removeConnection(connection)">
+            <button v-if="canManageConnections" type="button" role="menuitem" class="danger-menu-item"
+              @click="removeConnection(connection)">
               <FontAwesomeIcon icon="trash-can" />
               Delete
             </button>
@@ -614,8 +616,8 @@ onMounted(() => {
 
             <input v-model="form.password" :required="!isEditing" maxlength="512" type="password"
               autocomplete="new-password" :placeholder="isEditing
-                  ? 'Leave blank to keep current password'
-                  : 'Database password'
+                ? 'Leave blank to keep current password'
+                : 'Database password'
                 " />
           </label>
 
@@ -655,10 +657,8 @@ onMounted(() => {
       </section>
     </div>
   </div>
-  
 </template>
 <style>
-
 .database-connection-form {
   --database-connection-gap: 0.75rem;
 }
@@ -672,11 +672,10 @@ onMounted(() => {
 
 .database-connection-form__row--host {
   grid-template-columns:
-    minmax(0, 1fr)
-    120px;
+    minmax(0, 1fr) 120px;
 }
 
-.database-connection-form__row > label,
+.database-connection-form__row>label,
 .database-connection-form input,
 .database-connection-form select,
 .database-connection-form textarea {
@@ -692,12 +691,11 @@ onMounted(() => {
 }
 
 .database-connection-form__half {
-  width: calc(
-    50% - var(--database-connection-gap) / 2
-  );
+  width: calc(50% - var(--database-connection-gap) / 2);
 }
 
 @media (max-width: 720px) {
+
   .database-connection-form__row,
   .database-connection-form__row--host {
     grid-template-columns: 1fr;

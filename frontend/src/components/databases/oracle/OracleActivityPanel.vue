@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted } from 'vue'
 
 import ScrollableDataTable from '@/components/common/ScrollableDataTable.vue'
 import FloatingActionMenu from '@/components/common/FloatingActionMenu.vue'
@@ -15,11 +15,6 @@ const operations = useDatabaseOperationsStore()
 const authStore = useAuthStore()
 const activity = computed(() => oracleStore.activity[props.connectionId])
 const canOperate = computed(() => hasPermission(authStore.user, 'database:operate'))
-
-function sessionKey(item: OracleActiveSql) {
-  return `${item.sid}-${item.serial_number}`
-}
-
 
 function formatDuration(seconds: number) {
   const minutes = Math.floor(seconds / 60)

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted } from 'vue'
 
 import ScrollableDataTable from '@/components/common/ScrollableDataTable.vue'
 import FloatingActionMenu from '@/components/common/FloatingActionMenu.vue'

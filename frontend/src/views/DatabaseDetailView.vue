@@ -19,7 +19,6 @@ import {
   engineProductLabel,
   formatMetric,
   formatUptime,
-  overviewMetricLabel,
   statusLabel,
 } from '@/core/databasePresentation'
 import { useAuthStore } from '@/stores/auth'

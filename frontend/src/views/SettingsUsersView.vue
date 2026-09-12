@@ -208,10 +208,10 @@ onMounted(() => {
         </button>
     </section>
 
-    <p v-if="usersStore.loading">
+    <div v-if="usersStore.loading">
         Loading users
-    <p class="loading"></p>
-    </p>
+        <p class="loading"></p>
+    </div>
 
     <p v-else-if="usersStore.error" class="login-error">
         {{ usersStore.error }}
@@ -289,7 +289,8 @@ onMounted(() => {
                         <FontAwesomeIcon icon="key" />
                         Reset password
                     </button>
-                    <button type="button" role="menuitem" class="danger-menu-item" @click="removeUser(user.id, user.username)">
+                    <button type="button" role="menuitem" class="danger-menu-item"
+                        @click="removeUser(user.id, user.username)">
                         <FontAwesomeIcon icon="trash-can" />
                         Delete
                     </button>
@@ -362,7 +363,7 @@ onMounted(() => {
                 </label>
 
                 <label class="connection-checkbox">
-                    <input v-model="form.is_active" type="checkbox" class="toggle-switch"/>
+                    <input v-model="form.is_active" type="checkbox" class="toggle-switch" />
 
                     Enabled
                 </label>
@@ -430,5 +431,5 @@ onMounted(() => {
             </form>
         </section>
     </div>
-    
+
 </template>

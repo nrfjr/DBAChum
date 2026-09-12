@@ -21,7 +21,6 @@ const form = reactive({
 })
 
 const logoUrl = computed(() => pendingLogoPreview.value ?? (pendingLogoRemoval.value ? null : store.brandingLogoUrl))
-const logoChanged = computed(() => pendingLogoFile.value !== null || pendingLogoRemoval.value)
 const installationInitial = computed(() => form.installation_name.trim().charAt(0).toUpperCase() || 'D')
 
 function sync() {

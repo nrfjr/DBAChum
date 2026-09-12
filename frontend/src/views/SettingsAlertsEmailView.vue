@@ -43,10 +43,6 @@ const form = reactive({
   smtp_password: '',
 })
 
-const providerLabel = computed(() => (
-  form.provider === 'brevo' ? 'Brevo API' : 'SMTP'
-))
-
 const clearableDeliveries = computed(() =>
   emailStore.deliveries.filter((delivery) =>
     delivery.status === 'sent' || delivery.status === 'failed',

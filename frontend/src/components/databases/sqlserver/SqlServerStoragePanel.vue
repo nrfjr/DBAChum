@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted } from 'vue'
 
 import ScrollableDataTable from '@/components/common/ScrollableDataTable.vue'
 import FloatingActionMenu from '@/components/common/FloatingActionMenu.vue'
@@ -15,10 +15,6 @@ const operations = useDatabaseOperationsStore()
 const authStore = useAuthStore()
 const storage = computed(() => sqlServerStore.storage[props.connectionId])
 const canOperate = computed(() => hasPermission(authStore.user, 'database:operate'))
-
-function fileKey(file: SqlServerFile) {
-  return `${file.file_type}-${file.name}`
-}
 
 
 function formatBytes(bytes: number | null) {

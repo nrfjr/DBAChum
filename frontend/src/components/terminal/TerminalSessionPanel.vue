@@ -132,7 +132,7 @@ async function connect() {
 
   ws.onmessage = (event) => {
     if (generation !== reconnectGeneration) return
-    let payload: Record<string, any>
+    let payload: Record<string, unknown>
     try {
       payload = JSON.parse(String(event.data))
     } catch {

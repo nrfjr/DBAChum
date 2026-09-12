@@ -270,7 +270,7 @@ async function runBackup() {
               { label: 'Transaction log', value: 'log' },
             ],
           },
-          { name: 'destination', label: 'Backup destination', type: 'text', required: true, placeholder: '\\backup\sql\ or D:\Backup\database.bak' },
+          { name: 'destination', label: 'Backup destination', type: 'text', required: true, placeholder: '\\backupsql or D:Backupdatabase.bak' },
         ],
       })
       if (!result) return

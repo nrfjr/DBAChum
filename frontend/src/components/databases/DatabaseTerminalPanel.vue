@@ -8,7 +8,7 @@ import type { Server } from '@/stores/servers'
 import { useTerminalSessionsStore } from '@/stores/terminalSessions'
 import { showToast } from '@/ui/feedback'
 
-const props = defineProps<{
+defineProps<{
   connectionName: string
   servers: Server[]
 }>()

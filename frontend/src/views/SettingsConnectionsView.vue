@@ -70,10 +70,6 @@ const activeType = computed<ConnectionSection>(() => {
   return availableSections.value.some((item) => item.key === requested) ? requested : 'all'
 })
 
-const activeOption = computed(() =>
-  availableSections.value.find((item) => item.key === activeType.value) ?? availableSections.value[0],
-)
-
 async function selectType(type: ConnectionSection) {
   await router.replace({
     name: 'settings-connections',
