@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 
 import ScrollableDataTable from '@/components/common/ScrollableDataTable.vue'
+import FloatingActionMenu from '@/components/common/FloatingActionMenu.vue'
 import { hasPermission } from '@/core/permissions'
 import { useAuthStore } from '@/stores/auth'
 import { useDatabaseOperationsStore } from '@/stores/databaseOperations'
@@ -21,6 +22,7 @@ const selectedTablespace = computed(() =>
 const selectedDatafiles = computed(() =>
   (storage.value?.datafiles ?? []).filter((file) => file.tablespace_name === selectedTablespaceName.value),
 )
+
 
 function formatBytes(bytes: number | null) {
   if (bytes == null) return '—'
@@ -44,7 +46,7 @@ async function resizeDatafile(file: OracleDatafile) {
         value: currentMb,
         presetsGb: [10, 20, 30],
         minMb: currentMb,
-        hint: 'Shrinking is intentionally blocked here. Choose a larger preset or Custom.',
+        hint: '',
       },
     ],
   })
@@ -57,13 +59,15 @@ async function resizeDatafile(file: OracleDatafile) {
     })
     await oracleStore.loadStorage(props.connectionId)
     showToast({ title: 'Datafile resized', message: file.file_name, tone: 'success' })
-  } catch {}
+  } catch (cause) {
+    showToast({ title: 'Unable to resize datafile', message: cause instanceof Error ? cause.message : operations.error ?? undefined, tone: 'danger' })
+  }
 }
 
 async function createTablespace() {
   const result = await formDialog({
     title: 'Create Oracle tablespace',
-    message: 'Create the tablespace and its initial datafile. Leave the path blank only when Oracle Managed Files is configured.',
+    message: '',
     confirmLabel: 'Create tablespace',
     fields: [
       { name: 'tablespace', label: 'Tablespace name', type: 'text', required: true, placeholder: 'USERS_DATA' },
@@ -110,14 +114,16 @@ async function createTablespace() {
     })
     await oracleStore.loadStorage(props.connectionId)
     showToast({ title: 'Tablespace created', message: String(result.tablespace), tone: 'success' })
-  } catch {}
+  } catch (cause) {
+    showToast({ title: 'Unable to create tablespace', message: cause instanceof Error ? cause.message : operations.error ?? undefined, tone: 'danger' })
+  }
 }
 
 async function addDatafile(tablespace: string) {
   if (!tablespace) return
   const result = await formDialog({
     title: `Add datafile to ${tablespace}`,
-    message: 'Choose a controlled initial size. Leave the path blank only when Oracle Managed Files is configured.',
+    message: '',
     confirmLabel: 'Add datafile',
     fields: [
       { name: 'physical_name', label: 'Datafile path', type: 'text', placeholder: '/u02/oradata/DB/users_data02.dbf' },
@@ -146,14 +152,19 @@ async function addDatafile(tablespace: string) {
     })
     await oracleStore.loadStorage(props.connectionId)
     showToast({ title: 'Datafile added', message: tablespace, tone: 'success' })
-  } catch {}
+  } catch (cause) {
+    showToast({ title: 'Unable to add datafile', message: cause instanceof Error ? cause.message : operations.error ?? undefined, tone: 'danger' })
+  }
 }
 
 function inspectTablespace(name: string) {
   selectedTablespaceName.value = selectedTablespaceName.value === name ? null : name
 }
 
-onMounted(() => void oracleStore.loadStorage(props.connectionId))
+onMounted(() => {
+  void oracleStore.loadStorage(props.connectionId)
+})
+
 </script>
 
 <template>
@@ -161,8 +172,7 @@ onMounted(() => void oracleStore.loadStorage(props.connectionId))
     <div class="utility-toolbar">
       <div title="Oracle tablespaces, datafiles, and recovery area usage."><h2>Fast Recovery Area</h2></div>
       <div class="database-inline-actions">
-        <button v-if="canOperate" type="button" class="primary-button" :disabled="operations.busy" @click="createTablespace">Create tablespace</button>
-        <button type="button" class="secondary-button" :disabled="oracleStore.loadingStorage" @click="oracleStore.loadStorage(connectionId)">{{ oracleStore.loadingStorage ? 'Refreshing...' : 'Refresh' }}</button>
+        <button type="button" class="secondary-button refresh-button" :disabled="oracleStore.loadingStorage" @click="oracleStore.loadStorage(connectionId)">{{ oracleStore.loadingStorage ? 'Refreshing' : 'Refresh' }}<p v-if="oracleStore.loadingStorage" class="loading"></p></button>
       </div>
     </div>
 
@@ -182,7 +192,7 @@ onMounted(() => void oracleStore.loadStorage(props.connectionId))
       </section>
 
       <section class="utility-section">
-        <h3>Tablespaces</h3>
+        <div class="utility-toolbar"><h3>Tablespaces</h3><button v-if="canOperate" type="button" class="primary-button" :disabled="operations.busy" @click="createTablespace">Create tablespace</button></div>
         <ScrollableDataTable v-if="storage.tablespaces_available" :empty="storage.tablespaces.length === 0" empty-message="No tablespaces returned." max-height="26rem">
           <template #header><tr><th>Tablespace</th><th>Type</th><th>Status</th><th>Used</th><th>Capacity</th><th>Usage</th><th>Details</th></tr></template>
           <tr v-for="tablespace in storage.tablespaces" :key="tablespace.name">
@@ -194,7 +204,8 @@ onMounted(() => void oracleStore.loadStorage(props.connectionId))
             <td>{{ tablespace.used_percent }}%</td>
             <td>
               <button type="button" class="secondary-button" @click="inspectTablespace(tablespace.name)">
-                {{ selectedTablespaceName === tablespace.name ? 'Close' : 'Inspect' }}
+                <FontAwesomeIcon icon="magnifying-glass" />
+                {{ selectedTablespaceName === tablespace.name ? ' Close' : ' Inspect' }}
               </button>
             </td>
           </tr>
@@ -234,15 +245,20 @@ onMounted(() => void oracleStore.loadStorage(props.connectionId))
           empty-message="No datafiles returned for this tablespace."
           max-height="28rem"
         >
-          <template #header><tr><th>ID</th><th>Size</th><th>Autoextend</th><th>Max</th><th>Path</th><th v-if="canOperate">Actions</th></tr></template>
+          <template #header><tr><th>ID</th><th>Size</th><th>Autoextend</th><th>Max</th><th>Path</th><th v-if="canOperate" class="user-actions-column">Actions</th></tr></template>
           <tr v-for="file in selectedDatafiles" :key="file.file_id">
             <td>{{ file.file_id }}</td>
             <td>{{ formatBytes(file.size_bytes) }}</td>
             <td>{{ file.autoextensible ? 'Yes' : 'No' }}</td>
             <td>{{ formatBytes(file.max_bytes) }}</td>
             <td class="utility-sql-text" :title="file.file_name">{{ file.file_name }}</td>
-            <td v-if="canOperate">
-              <button type="button" class="secondary-button" :disabled="operations.busy" @click="resizeDatafile(file)">Resize</button>
+            <td v-if="canOperate" class="user-actions-cell">
+              <FloatingActionMenu :label="`Actions for datafile ${file.file_id}`" :disabled="operations.busy">
+                <button type="button" role="menuitem" @click="resizeDatafile(file)">
+                  <FontAwesomeIcon icon="expand" />
+                  Resize
+                </button>
+              </FloatingActionMenu>
             </td>
           </tr>
         </ScrollableDataTable>

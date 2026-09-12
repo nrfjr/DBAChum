@@ -21,7 +21,6 @@ export interface DatabaseConnection {
   sqlserver_encrypt: SqlServerEncrypt | null
   active: boolean
   monitor_enabled: boolean
-  /** Legacy monitoring alias returned for rollback compatibility. */
   enabled: boolean
   has_password: boolean
   created_at: string

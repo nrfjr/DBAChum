@@ -1,12 +1,5 @@
 :root {
-  font-family:
-    Inter,
-    ui-sans-serif,
-    system-ui,
-    -apple-system,
-    BlinkMacSystemFont,
-    "Segoe UI",
-    sans-serif;
+  font-family: "Google Sans Mono", sans-serif;
 
   color-scheme: light;
 
@@ -27,11 +20,6 @@
   --color-warning: #ad7d2b;
   --color-danger: #bc5963;
 
-  /*
-   * Compatibility aliases for reusable/feature-scoped components.
-   * Keep these mapped to the canonical theme tokens so modals, cards,
-   * tables, and controls inherit both light and dark themes correctly.
-   */
   --surface: var(--color-surface);
   --surface-muted: var(--color-surface-secondary);
   --text: var(--color-text);
@@ -74,7 +62,6 @@
   --color-danger: #dc777f;
 }
 
-/* user accent foundation. Severity colors stay independent. */
 :root[data-accent='blue'] {
   --color-purple: #4777d4;
   --color-purple-hover: #3868c4;
@@ -447,12 +434,10 @@ button {
 .theme-button,
 .secondary-button {
   min-height: 38px;
-
   padding: 8px;
-
   border-radius: 10px;
-
   text-decoration: none;
+  display:flex;
 }
 
 .theme-button:hover,
@@ -1002,8 +987,10 @@ button {
 }
 
 .login-submit {
+  display: flex;
   width: 100%;
   min-height: 42px;
+  justify-content: center;
 }
 
 .login-submit:disabled {
@@ -1036,6 +1023,10 @@ button {
   padding: 1.25rem;
 }
 
+.custom-monitoring-panel{
+  width: 500px;
+}
+
 .panel-header {
   display: flex;
   align-items: center;
@@ -1055,7 +1046,12 @@ button {
 
 .connection-list {
   display: grid;
-  gap: 0.75rem;
+  gap: 8px;
+
+  max-height: calc((108px * 6) + (8px * 5));
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 4px;
 }
 
 .connection-item {
@@ -1291,6 +1287,34 @@ button {
   .settings-nav {
     display: flex;
     flex-wrap: wrap;
+  }
+}
+
+.general-settings-layout {
+  display: grid;
+  grid-template-columns: 500px minmax(0, 1fr);
+  gap: 1rem;
+  align-items: stretch;
+}
+
+.monitoring-settings-layout {
+  display: grid;
+  grid-template-columns: 500px minmax(0, 1fr);
+  gap: 1rem;
+  align-items: stretch;
+}
+.installation-defaults-card {
+  width: 100%;
+}
+
+.runtime-card {
+  width: 100%;
+  min-width: 0;
+}
+
+@media (max-width: 1000px) {
+  .general-settings-layout {
+    grid-template-columns: 1fr;
   }
 }
 
@@ -2001,7 +2025,7 @@ button {
 }
 
 .oracle-user-modal {
-  width: min(100%, 760px);
+  --modal-width: 760px;
 }
 
 .oracle-user-form .connection-form-row {
@@ -2159,7 +2183,7 @@ button {
 }
 
 .provisioning-modal {
-  width: min(1100px, calc(100vw - 2rem));
+  --modal-width: 1100px;
   max-height: calc(100vh - 2rem);
   overflow-y: auto;
 }
@@ -2244,7 +2268,7 @@ button {
 
 @media (max-width: 760px) {
   .provisioning-modal {
-    width: calc(100vw - 1rem);
+    --modal-width: calc(100vw - 1rem);
   }
 }
 
@@ -2345,7 +2369,7 @@ button {
 }
 
 .deprovision-preview-modal {
-  width: min(100%, 760px);
+  --modal-width: 760px;
 }
 
 .deprovision-preview-footer {
@@ -2529,16 +2553,18 @@ button {
   position: relative;
   display: inline-block;
 }
+.settings-action-menu-wrap {
+  position: relative;
+  display: inline-block;
+}
 
 .user-menu-button[aria-expanded="true"] {
   background: var(--color-surface-secondary);
 }
 
 .user-action-dropdown {
-  position: absolute;
+  position: fixed !important;
   z-index: 40;
-  top: calc(100% + 0.35rem);
-  right: 0;
   width: 190px;
   padding: 0.35rem;
   border: 1px solid var(--color-border);
@@ -2550,8 +2576,10 @@ button {
 }
 
 .user-action-dropdown button {
-  display: block;
+  display: flex;
   width: 100%;
+  align-items: center;
+  gap: 0.55rem;
   padding: 0.6rem 0.7rem;
   border: 0;
   border-radius: 0.5rem;
@@ -2568,6 +2596,11 @@ button {
 .user-action-dropdown button:disabled {
   cursor: not-allowed;
   opacity: 0.45;
+}
+
+.user-action-dropdown button svg {
+  width: 0.9rem;
+  flex: 0 0 0.9rem;
 }
 
 .user-action-dropdown .danger-menu-item {
@@ -2589,7 +2622,7 @@ button {
 }
 
 .user-edit-modal {
-  width: min(100%, 820px);
+  --modal-width: 820px;
 }
 
 .user-edit-fields {
@@ -2682,7 +2715,7 @@ button {
 }
 
 .compact-user-action-modal {
-  width: min(100%, 560px);
+  --modal-width: 560px;
 }
 
 .password-reset-form {
@@ -2755,7 +2788,7 @@ button {
 }
 
 .infrastructure-modal {
-  width: min(760px, calc(100vw - 2rem));
+  --modal-width: 760px;
   max-height: calc(100vh - 2rem);
   overflow: auto;
 }
@@ -2810,6 +2843,7 @@ button {
   border: 1px solid var(--border);
   border-radius: .85rem;
   background: var(--surface);
+  height: -webkit-fill-available;
 }
 
 .detail-card h2 {
@@ -3961,7 +3995,7 @@ button {
 }
 
 .backup-detail-modal {
-  width: min(100%, 780px);
+  --modal-width: 780px;
 }
 
 .backup-detail-grid {
@@ -4534,8 +4568,9 @@ button {
 }
 
 .profile-section-stack {
-  display: grid;
-  gap: 1rem;
+    display: flex;
+    align-content: center;
+    justify-content: center;
 }
 
 .profile-section-stack > .profile-card {
@@ -4586,9 +4621,9 @@ button {
 .profile-avatar-large {
   display: grid;
   place-items: center;
-  width: 58px;
-  height: 58px;
-  flex: 0 0 58px;
+  width: 100px;
+  height: 100px;
+  flex: 0 0 100px;
   border-radius: 50%;
   background: var(--color-purple-soft);
   color: var(--color-purple);
@@ -4613,6 +4648,10 @@ button {
 .profile-fieldset legend {
   margin-bottom: 0.35rem;
   font-weight: 600;
+}
+
+.profile-custom-panel{
+  width: 600px;
 }
 
 .accent-options {
@@ -5156,7 +5195,7 @@ button {
   padding-top: 12px;
 }
 
-.settings-layout--phase8 {
+.settings-layout--app {
   grid-template-columns: minmax(260px, 310px) minmax(0, 1fr);
   align-items: start;
 }
@@ -5339,9 +5378,47 @@ button {
   gap: 1rem;
 }
 
+.connection-action-menu {
+  width: 150px;
+  padding: 0.35rem;
+
+  border: 1px solid var(--border);
+  border-radius: 0.65rem;
+
+  background: var(--surface);
+  box-shadow: var(--app-shadow-strong);
+}
+
+.connection-action-menu button {
+  display: block;
+  width: 100%;
+  padding: 0.55rem 0.65rem;
+
+  border: 0;
+  border-radius: 0.45rem;
+
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.connection-action-menu button:hover {
+  background: var(--surface-muted);
+}
+
+.connection-action-menu__danger {
+  color: var(--danger) !important;
+}
+
 .unified-connection-list {
   display: grid;
-  gap: .45rem;
+  gap: 8px;
+
+  max-height: calc((66px * 6) + (8px * 5));
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 4px;
 }
 
 .unified-connection-row {
@@ -5648,7 +5725,7 @@ button {
 }
 
 .records-modal {
-  width: min(980px, calc(100vw - 2rem));
+  --modal-width: 980px;
   max-height: calc(100vh - 2rem);
   border-color: var(--border);
   background: var(--surface);
@@ -6349,16 +6426,10 @@ button {
   background: var(--surface-muted);
 }
 
-/* ============================================================
-   application-wide UI consolidation
-   Shared interaction language for database/server workspaces,
-   profile actions, dialogs, notifications and dense DBA tables.
-   ============================================================ */
-
 :root {
   --topbar-height: 68px;
-  --phase9-shadow: 0 16px 42px rgb(0 0 0 / 12%);
-  --phase9-shadow-strong: 0 24px 70px rgb(0 0 0 / 22%);
+  --app-shadow: 0 16px 42px rgb(0 0 0 / 12%);
+  --app-shadow-strong: 0 24px 70px rgb(0 0 0 / 22%);
 }
 
 .content {
@@ -6405,7 +6476,8 @@ button {
 
 .profile-menu__trigger:hover,
 .profile-menu__trigger[aria-expanded='true'] {
-  background: #222229
+  background: var(--color-surface-secondary);
+  color: var(--color-text);
 }
 
 .profile-menu__trigger > svg {
@@ -6429,7 +6501,7 @@ button {
   border: 1px solid var(--border);
   border-radius: 0.95rem;
   background: var(--surface);
-  box-shadow: var(--phase9-shadow);
+  box-shadow: var(--app-shadow);
 }
 
 .profile-menu__identity {
@@ -6462,6 +6534,7 @@ button {
   display: flex;
   width: 100%;
   align-items: center;
+  gap: 0.55rem;
   min-height: 38px;
   margin-top: 0.25rem;
   padding: 0.55rem 0.7rem;
@@ -6510,6 +6583,10 @@ button {
 }
 
 .profile-menu__theme-grid button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3rem;
   padding: 0.5rem 0.35rem;
   border: 1px solid var(--border);
   border-radius: 0.6rem;
@@ -6668,7 +6745,7 @@ button {
   gap: 0.3rem;
   font-size: 0.72rem;
   font-weight: 650;
-  animation: phase9-notice-in 0.18s ease-out;
+  animation: notice-in 0.18s ease-out;
 }
 
 .connection-test-notice--success {
@@ -6679,7 +6756,8 @@ button {
   color: var(--danger);
 }
 
-@keyframes phase9-notice-in {
+
+@keyframes notice-in {
   from { opacity: 0; transform: translateY(-2px); }
   to { opacity: 1; transform: translateY(0); }
 }
@@ -6703,7 +6781,7 @@ button {
   border: 1px solid var(--border);
   border-radius: 0.8rem;
   background: var(--surface);
-  box-shadow: var(--phase9-shadow);
+  box-shadow: var(--app-shadow);
 }
 
 .context-action-menu__popover button,
@@ -6735,7 +6813,7 @@ button {
 }
 
 .database-more-menu__popover {
-  box-shadow: var(--phase9-shadow);
+  box-shadow: var(--app-shadow);
 }
 
 .database-tab-panel,
@@ -6777,14 +6855,14 @@ button {
 }
 
 .app-dialog {
-  width: min(34rem, 100%);
+  width: min(var(--app-dialog-width, 34rem), 100%);
   max-height: calc(100vh - 2rem);
   overflow: auto;
   border: 1px solid var(--border);
   border-radius: 1rem;
   outline: none;
   background: var(--surface);
-  box-shadow: var(--phase9-shadow-strong);
+  box-shadow: var(--app-shadow-strong);
 }
 
 .app-dialog--destructive {
@@ -6949,9 +7027,9 @@ button {
   border-left-width: 4px;
   border-radius: 0.75rem;
   background: var(--surface);
-  box-shadow: var(--phase9-shadow);
+  box-shadow: var(--app-shadow);
   pointer-events: auto;
-  animation: phase9-toast-in 0.2s ease-out;
+  animation: app-toast-in 0.2s ease-out;
 }
 
 .app-toast--success { border-left-color: var(--success); }
@@ -6982,7 +7060,7 @@ button {
   cursor: pointer;
 }
 
-@keyframes phase9-toast-in {
+@keyframes app-toast-in {
   from { opacity: 0; transform: translateX(8px); }
   to { opacity: 1; transform: translateX(0); }
 }
@@ -7162,13 +7240,13 @@ button {
 }
 
 .modal-panel {
-  width: min(100%, 850px);
+  width: min(100%, var(--modal-width, 850px));
   max-height: calc(100vh - 2rem);
   padding: 1.1rem;
   border-color: var(--border);
   background: var(--surface);
   color: var(--text);
-  box-shadow: var(--phase9-shadow-strong);
+  box-shadow: var(--app-shadow-strong);
 }
 
 .modal-header {
@@ -7243,7 +7321,7 @@ button {
 
 .connection-form select:not([multiple]),
 .settings-form-grid select {
-  width: min(100%, 28rem);
+  width: min(100%, 40rem);
 }
 
 .connection-form input[type='password'] {
@@ -7266,13 +7344,13 @@ button {
 .connection-form input[maxlength='100'],
 .connection-form input[maxlength='120'],
 .connection-form input[maxlength='128'] {
-  width: min(100%, 26rem);
+  width: min(100%, 25.5rem);
 }
 
 .connection-form input[maxlength='160'],
 .connection-form input[maxlength='254'],
 .connection-form input[maxlength='255'] {
-  width: min(100%, 32rem);
+  width: min(100%, 40rem);
 }
 
 .records-form select,
@@ -7367,6 +7445,7 @@ button {
   border: 1px solid var(--border);
   border-radius: .8rem;
   background: var(--surface-muted);
+  margin-bottom: 1rem;
 }
 
 .branding-setting__preview {
@@ -7489,3 +7568,132 @@ button {
   }
 }
 
+.loading {
+  width: 15px;
+  height: 15px;
+
+  border: 3px solid color-mix(
+    in srgb,
+    var(--color-text) 30%,
+    transparent
+  );
+
+  border-top-color: var(--color-text);
+  border-radius: 100%;
+
+  animation: spin 1s ease-in-out infinite;
+
+  margin-top: auto;
+  margin-bottom: auto;
+  margin-left: 5px;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.login-wave-footer {
+  width: 100vw;
+  position: fixed;
+  bottom: 0;
+  height: 300px;
+  pointer-events: none;
+}
+
+.login-wave-footer > div {
+  background-color: var(--color-purple);
+  margin: -5px 0 0;
+  padding: 0;
+  color: #fff;
+  text-align: center;
+}
+
+.login-wave-svg {
+  width: 100%;
+  overflow: visible;
+}
+
+.login-wave {
+  animation: login-wave-animation 3s linear infinite;
+  fill: var(--color-purple);
+}
+
+.login-wave-footer #wave2 {
+  animation-duration: 5s;
+  animation-direction: reverse;
+  opacity: 0.6;
+}
+
+.login-wave-footer #wave3 {
+  animation-duration: 7s;
+  opacity: 0.3;
+}
+
+@keyframes login-wave-animation {
+  to {
+    transform: translateX(-100%);
+  }
+}
+
+.toggle-switch {
+  appearance: none;
+  -webkit-appearance: none;
+
+  position: relative;
+  width: 36px !important;
+  height: 20px;
+  min-width: 36px;
+  flex: 0 0 36px;
+
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+
+  background: var(--surface-muted);
+  cursor: pointer;
+
+  transition: background 0.18s ease;
+}
+
+.toggle-switch::after {
+  content: "";
+
+  position: absolute;
+  top: 2px;
+  left: 2px;
+
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+
+  background: #fff;
+
+  transition: transform 0.18s ease;
+}
+
+.toggle-switch:checked {
+  background: var(--accent);
+}
+
+.toggle-switch:checked::after {
+  transform: translateX(16px);
+}
+
+.toggle-switch:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.toggle-switch:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.refresh-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+}

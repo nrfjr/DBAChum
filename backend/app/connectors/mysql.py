@@ -144,7 +144,7 @@ def probe_mysql_capabilities(
     cursor,
     version_info,
 ) -> dict[str, bool]:
-    """Refine version hints with what the connected server really exposes."""
+
     capabilities = mysql_capabilities(version_info)
 
     performance_schema_value = None

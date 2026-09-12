@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import ScrollableDataTable from '@/components/common/ScrollableDataTable.vue'
+import FloatingActionMenu from '@/components/common/FloatingActionMenu.vue'
 import {
   useOracleDbaStore,
   type OracleRoleChangeInput,
@@ -10,6 +11,7 @@ import {
   type OracleRoleOperation,
   type OracleRoleSummary,
 } from '@/stores/oracleDba'
+import { showToast } from '@/ui/feedback'
 
 const props = defineProps<{ connectionId: string; active: boolean }>()
 const oracleStore = useOracleDbaStore()
@@ -182,6 +184,7 @@ async function previewCreateRole() {
     createName.value = createPreview.value.role_name
   } catch (caught) {
     createError.value = caught instanceof Error ? caught.message : 'Unable to preview role creation.'
+    showToast({ title: 'Unable to preview role creation', message: createError.value, tone: 'danger' })
   } finally {
     createLoading.value = false
   }
@@ -201,8 +204,10 @@ async function executeCreateRole() {
     await loadRoles(true)
     selectedRoleName.value = result.role.name
     detail.value = result.role
+    showToast({ title: 'Oracle role created', message: result.role.name, tone: 'success' })
   } catch (caught) {
     createError.value = caught instanceof Error ? caught.message : 'Unable to create Oracle role.'
+    showToast({ title: 'Unable to create Oracle role', message: createError.value, tone: 'danger' })
   } finally {
     createLoading.value = false
   }
@@ -251,6 +256,7 @@ async function previewRoleAction() {
     )
   } catch (caught) {
     actionError.value = caught instanceof Error ? caught.message : 'Unable to preview role change.'
+    showToast({ title: 'Unable to preview role change', message: actionError.value, tone: 'danger' })
   } finally {
     actionLoading.value = false
   }
@@ -269,8 +275,10 @@ async function executeRoleAction() {
     detail.value = result.role
     showAction.value = false
     await loadRoles(true)
+    showToast({ title: `${operationLabel(actionOperation.value)} completed`, message: result.role.name, tone: 'success' })
   } catch (caught) {
     actionError.value = caught instanceof Error ? caught.message : 'Unable to apply role change.'
+    showToast({ title: 'Unable to apply role change', message: actionError.value, tone: 'danger' })
   } finally {
     actionLoading.value = false
   }
@@ -288,6 +296,7 @@ async function openDropRole() {
     dropPreview.value = await oracleStore.previewRoleDrop(props.connectionId, detail.value.name)
   } catch (caught) {
     dropError.value = caught instanceof Error ? caught.message : 'Unable to preview role deletion.'
+    showToast({ title: 'Unable to preview role deletion', message: dropError.value, tone: 'danger' })
   } finally {
     dropLoading.value = false
   }
@@ -303,9 +312,10 @@ async function executeDropRole() {
   dropLoading.value = true
   dropError.value = null
   try {
+    const roleName = detail.value.name
     await oracleStore.dropRole(
       props.connectionId,
-      detail.value.name,
+      roleName,
       dropConfirmation.value.trim().toUpperCase(),
       dropReference.value.trim() || null,
     )
@@ -313,12 +323,15 @@ async function executeDropRole() {
     selectedRoleName.value = null
     detail.value = null
     await loadRoles(true)
+    showToast({ title: 'Oracle role deleted', message: roleName, tone: 'success' })
   } catch (caught) {
     dropError.value = caught instanceof Error ? caught.message : 'Unable to drop Oracle role.'
+    showToast({ title: 'Unable to drop Oracle role', message: dropError.value, tone: 'danger' })
   } finally {
     dropLoading.value = false
   }
 }
+
 
 watch(
   () => props.active,
@@ -336,8 +349,9 @@ watch(
         <h3>Oracle roles</h3>
       </div>
       <div class="role-toolbar-actions">
-        <button type="button" class="secondary-button" :disabled="loading" @click="loadRoles(true)">
-          {{ loading ? 'Refreshing...' : 'Refresh' }}
+        <button type="button" class="secondary-button refresh-button" :disabled="loading" @click="loadRoles(true)">
+          {{ loading ? 'Refreshing' : 'Refresh' }}
+          <p v-if="loading" class="loading"></p>
         </button>
         <button type="button" class="primary-button" @click="openCreateRole">Create role</button>
       </div>
@@ -432,14 +446,22 @@ watch(
           <details class="role-detail-section" open>
             <summary>Users with this role · {{ detail.members.length }}</summary>
             <ScrollableDataTable :empty="detail.members.length === 0" empty-message="No normal users are directly granted this role." max-height="18rem">
-              <template #header><tr><th>User</th><th>Status</th><th>Default</th><th>Admin option</th><th>Flag</th><th v-if="detail.manageable">Action</th></tr></template>
+              <template #header><tr><th>User</th><th>Status</th><th>Default</th><th>Admin option</th><th>Flag</th><th v-if="detail.manageable" class="user-actions-column">Action</th></tr></template>
               <tr v-for="member in detail.members" :key="member.username">
                 <td><strong>{{ member.username }}</strong></td>
                 <td>{{ member.status }}</td>
                 <td>{{ member.default_role ? 'YES' : 'NO' }}</td>
                 <td>{{ member.admin_option ? 'YES' : 'NO' }}</td>
                 <td>{{ member.protected ? 'Protected account' : '—' }}</td>
-                <td v-if="detail.manageable"><button v-if="!member.protected" type="button" class="link-action" @click="openRoleAction('revoke_from_user', { username: member.username })">Revoke</button><span v-else>Inspect only</span></td>
+                <td v-if="detail.manageable" class="user-actions-cell">
+                  <FloatingActionMenu v-if="!member.protected" :label="`Actions for ${member.username}`">
+                    <button type="button" role="menuitem" class="danger-menu-item" @click="openRoleAction('revoke_from_user', { username: member.username })">
+                      <FontAwesomeIcon icon="minus" />
+                      Revoke role
+                    </button>
+                  </FloatingActionMenu>
+                  <span v-else>Inspect only</span>
+                </td>
               </tr>
             </ScrollableDataTable>
           </details>
@@ -454,12 +476,19 @@ watch(
           <details class="role-detail-section" open>
             <summary>Child roles · {{ detail.child_roles.length }}</summary>
             <ScrollableDataTable :empty="detail.child_roles.length === 0" empty-message="No nested roles." max-height="18rem">
-              <template #header><tr><th>Role</th><th>Admin option</th><th>Flag</th><th v-if="detail.manageable">Action</th></tr></template>
+              <template #header><tr><th>Role</th><th>Admin option</th><th>Flag</th><th v-if="detail.manageable" class="user-actions-column">Action</th></tr></template>
               <tr v-for="child in detail.child_roles" :key="child.name">
                 <td><strong>{{ child.name }}</strong></td>
                 <td>{{ child.admin_option ? 'YES' : 'NO' }}</td>
                 <td>{{ child.powerful || child.protected ? '⚠ Elevated / protected' : '—' }}</td>
-                <td v-if="detail.manageable"><button type="button" class="link-action" @click="openRoleAction('revoke_child_role', { value: child.name })">Revoke</button></td>
+                <td v-if="detail.manageable" class="user-actions-cell">
+                  <FloatingActionMenu :label="`Actions for ${child.name}`">
+                    <button type="button" role="menuitem" class="danger-menu-item" @click="openRoleAction('revoke_child_role', { value: child.name })">
+                      <FontAwesomeIcon icon="minus" />
+                      Revoke child role
+                    </button>
+                  </FloatingActionMenu>
+                </td>
               </tr>
             </ScrollableDataTable>
           </details>
@@ -467,12 +496,19 @@ watch(
           <details class="role-detail-section" open>
             <summary>System privileges · {{ detail.system_privileges.length }}</summary>
             <ScrollableDataTable :empty="detail.system_privileges.length === 0" empty-message="No direct system privileges on this role." max-height="20rem">
-              <template #header><tr><th>Privilege</th><th>Admin option</th><th>Flag</th><th v-if="detail.manageable">Action</th></tr></template>
+              <template #header><tr><th>Privilege</th><th>Admin option</th><th>Flag</th><th v-if="detail.manageable" class="user-actions-column">Action</th></tr></template>
               <tr v-for="privilege in detail.system_privileges" :key="privilege.name">
                 <td><strong>{{ privilege.name }}</strong></td>
                 <td>{{ privilege.admin_option ? 'YES' : 'NO' }}</td>
                 <td>{{ privilege.powerful ? '⚠ Elevated' : '—' }}</td>
-                <td v-if="detail.manageable"><button type="button" class="link-action" @click="openRoleAction('revoke_system_privilege', { privilege: privilege.name })">Revoke</button></td>
+                <td v-if="detail.manageable" class="user-actions-cell">
+                  <FloatingActionMenu :label="`Actions for ${privilege.name}`">
+                    <button type="button" role="menuitem" class="danger-menu-item" @click="openRoleAction('revoke_system_privilege', { privilege: privilege.name })">
+                      <FontAwesomeIcon icon="minus" />
+                      Revoke privilege
+                    </button>
+                  </FloatingActionMenu>
+                </td>
               </tr>
             </ScrollableDataTable>
           </details>
@@ -480,14 +516,21 @@ watch(
           <details class="role-detail-section">
             <summary>Object privileges · {{ detail.object_privileges.length }}</summary>
             <ScrollableDataTable :empty="detail.object_privileges.length === 0" empty-message="No direct object privileges on this role." max-height="24rem">
-              <template #header><tr><th>Owner</th><th>Object</th><th>Privilege</th><th>Column</th><th>Grantable</th><th v-if="detail.manageable">Action</th></tr></template>
+              <template #header><tr><th>Owner</th><th>Object</th><th>Privilege</th><th>Column</th><th>Grantable</th><th v-if="detail.manageable" class="user-actions-column">Action</th></tr></template>
               <tr v-for="item in detail.object_privileges" :key="`${item.owner}.${item.object_name}.${item.column_name || ''}.${item.privilege}`">
                 <td>{{ item.owner }}</td>
                 <td><strong>{{ item.object_name }}</strong></td>
                 <td>{{ item.privilege }}</td>
                 <td>{{ item.column_name || '—' }}</td>
                 <td>{{ item.grantable ? 'YES' : 'NO' }}</td>
-                <td v-if="detail.manageable && !item.column_name"><button type="button" class="link-action" @click="openRoleAction('revoke_object_privilege', { owner: item.owner, object_name: item.object_name, privilege: item.privilege })">Revoke</button></td>
+                <td v-if="detail.manageable && !item.column_name" class="user-actions-cell">
+                  <FloatingActionMenu :label="`Actions for ${item.owner}.${item.object_name}`">
+                    <button type="button" role="menuitem" class="danger-menu-item" @click="openRoleAction('revoke_object_privilege', { owner: item.owner, object_name: item.object_name, privilege: item.privilege })">
+                      <FontAwesomeIcon icon="minus" />
+                      Revoke privilege
+                    </button>
+                  </FloatingActionMenu>
+                </td>
                 <td v-else-if="detail.manageable">Review only</td>
               </tr>
             </ScrollableDataTable>

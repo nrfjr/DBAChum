@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 
 import ScrollableDataTable from '@/components/common/ScrollableDataTable.vue'
+import FloatingActionMenu from '@/components/common/FloatingActionMenu.vue'
 import { hasPermission } from '@/core/permissions'
 import { useAuthStore } from '@/stores/auth'
 import { useDatabaseOperationsStore } from '@/stores/databaseOperations'
@@ -44,7 +45,9 @@ async function setLoginState(login: SqlServerLogin) {
     await operations.runAccount(props.connectionId, { action, account_name: login.name })
     await store.loadSecurity(props.connectionId, true)
     showToast({ title: `Login ${action === 'enable' ? 'enabled' : 'disabled'}`, message: login.name, tone: 'success' })
-  } catch {}
+  } catch (cause) {
+    showToast({ title: 'Unable to update login', message: cause instanceof Error ? cause.message : operations.error ?? undefined, tone: 'danger' })
+  }
 }
 
 async function resetPassword(login: SqlServerLogin) {
@@ -60,18 +63,26 @@ async function resetPassword(login: SqlServerLogin) {
     await operations.runAccount(props.connectionId, { action: 'reset_password', account_name: login.name, password: String(result.password) })
     await store.loadSecurity(props.connectionId, true)
     showToast({ title: 'Password reset', message: login.name, tone: 'success' })
-  } catch {}
+  } catch (cause) {
+    showToast({ title: 'Unable to reset password', message: cause instanceof Error ? cause.message : operations.error ?? undefined, tone: 'danger' })
+  }
 }
 
 
-onMounted(() => void store.loadSecurity(props.connectionId))
+onMounted(() => {
+  void store.loadSecurity(props.connectionId)
+})
 </script>
 
 <template>
   <section class="sqlserver-user-section">
     <div class="utility-toolbar">
-      <div title="Database users and server logins visible to the connected SQL Server account."><h2>Users &amp; Principals</h2></div>
-      <button type="button" class="secondary-button" :disabled="store.loadingSecurity[connectionId]" @click="store.loadSecurity(connectionId, true)">{{ store.loadingSecurity[connectionId] ? 'Refreshing...' : 'Refresh' }}</button>
+      <div title="Database users and server logins visible to the connected SQL Server account.">
+        <h2>Users &amp; Principals</h2>
+      </div>
+      <button type="button" class="secondary-button refresh-button" :disabled="store.loadingSecurity[connectionId]"
+        @click="store.loadSecurity(connectionId, true)">{{ store.loadingSecurity[connectionId] ? 'Refreshing' :
+          'Refresh' }}<p v-if="store.loadingSecurity[connectionId]" class="loading"></p></button>
     </div>
     <p v-if="operations.error" class="login-error">{{ operations.error }}</p>
     <p v-if="store.securityError[connectionId]" class="login-error">{{ store.securityError[connectionId] }}</p>
@@ -79,25 +90,95 @@ onMounted(() => void store.loadSecurity(props.connectionId))
     <template v-else-if="security">
       <div v-for="warning in security.warnings" :key="warning" class="utility-warning">{{ warning }}</div>
       <div class="utility-summary">
-        <button type="button" :class="{ active: view === 'users' && issueFilter === 'all' }" @click="view = 'users'; issueFilter = 'all'"><span>Database users</span><strong>{{ security.database_user_count }}</strong></button>
-        <button type="button" :class="{ active: view === 'logins' && issueFilter === 'all' }" @click="view = 'logins'; issueFilter = 'all'"><span>Server logins</span><strong>{{ security.login_count }}</strong></button>
-        <button type="button" :class="{ active: view === 'users' && issueFilter === 'orphaned' }" @click="view = 'users'; issueFilter = 'orphaned'"><span>Orphaned users</span><strong>{{ security.orphaned_user_count }}</strong></button>
-        <button type="button" :class="{ active: view === 'logins' && issueFilter === 'disabled' }" @click="view = 'logins'; issueFilter = 'disabled'"><span>Disabled logins</span><strong>{{ security.disabled_login_count }}</strong></button>
+        <button type="button" :class="{ active: view === 'users' && issueFilter === 'all' }"
+          @click="view = 'users'; issueFilter = 'all'"><span>Database users</span><strong>{{
+            security.database_user_count }}</strong></button>
+        <button type="button" :class="{ active: view === 'logins' && issueFilter === 'all' }"
+          @click="view = 'logins'; issueFilter = 'all'"><span>Server logins</span><strong>{{ security.login_count
+          }}</strong></button>
+        <button type="button" :class="{ active: view === 'users' && issueFilter === 'orphaned' }"
+          @click="view = 'users'; issueFilter = 'orphaned'"><span>Orphaned users</span><strong>{{
+            security.orphaned_user_count }}</strong></button>
+        <button type="button" :class="{ active: view === 'logins' && issueFilter === 'disabled' }"
+          @click="view = 'logins'; issueFilter = 'disabled'"><span>Disabled logins</span><strong>{{
+            security.disabled_login_count }}</strong></button>
       </div>
-      <div class="sqlserver-security-toolbar"><div class="sqlserver-security-switch"><button type="button" :class="{ active: view === 'users' }" @click="view = 'users'; issueFilter = 'all'">Database users</button><button type="button" :class="{ active: view === 'logins' }" @click="view = 'logins'; issueFilter = 'all'">Server logins</button></div><input v-model="search" type="search" placeholder="Search users, logins, roles..." /></div>
+      <div class="sqlserver-security-toolbar">
+        <div class="sqlserver-security-switch"><button type="button" :class="{ active: view === 'users' }"
+            @click="view = 'users'; issueFilter = 'all'">Database users</button><button type="button"
+            :class="{ active: view === 'logins' }" @click="view = 'logins'; issueFilter = 'all'">Server logins</button>
+        </div><input v-model="search" type="search" class="utility-search-input"
+          placeholder="Search users, logins, roles..." />
+      </div>
 
-      <ScrollableDataTable v-if="view === 'users'" :empty="users.length === 0" empty-message="No matching database users." max-height="34rem">
-        <template #header><tr><th>User</th><th>Type</th><th>Mapped login</th><th>Default schema</th><th>Authentication</th><th>Database roles</th><th>State</th><th>Created</th></tr></template>
-        <tr v-for="user in users" :key="user.name"><td><strong>{{ user.name }}</strong></td><td>{{ user.principal_type }}</td><td>{{ user.login_name ?? '—' }}</td><td>{{ user.default_schema ?? '—' }}</td><td>{{ user.authentication_type ?? '—' }}</td><td class="sqlserver-security-roles" :title="roleList(user)">{{ roleList(user) }}</td><td><span :class="['sqlserver-security-state', { danger: user.orphaned }]">{{ user.orphaned ? 'Orphaned' : 'Mapped' }}</span></td><td>{{ formatDate(user.created_at) }}</td></tr>
+      <ScrollableDataTable v-if="view === 'users'" :empty="users.length === 0"
+        empty-message="No matching database users." max-height="34rem">
+        <template #header>
+          <tr>
+            <th>User</th>
+            <th>Type</th>
+            <th>Mapped login</th>
+            <th>Default schema</th>
+            <th>Authentication</th>
+            <th>Database roles</th>
+            <th>State</th>
+            <th>Created</th>
+          </tr>
+        </template>
+        <tr v-for="user in users" :key="user.name">
+          <td><strong>{{ user.name }}</strong></td>
+          <td>{{ user.principal_type }}</td>
+          <td>{{ user.login_name ?? '—' }}</td>
+          <td>{{ user.default_schema ?? '—' }}</td>
+          <td>{{ user.authentication_type ?? '—' }}</td>
+          <td class="sqlserver-security-roles" :title="roleList(user)">{{ roleList(user) }}</td>
+          <td><span :class="['sqlserver-security-state', { danger: user.orphaned }]">{{ user.orphaned ? 'Orphaned' :
+            'Mapped'
+              }}</span></td>
+          <td>{{ formatDate(user.created_at) }}</td>
+        </tr>
       </ScrollableDataTable>
 
-      <ScrollableDataTable v-else :empty="logins.length === 0" empty-message="No matching server logins." max-height="34rem">
-        <template #header><tr><th>Login</th><th>Type</th><th>Default database</th><th>Server roles</th><th>State</th><th>Created</th><th>Modified</th><th v-if="canOperate">Actions</th></tr></template>
+      <ScrollableDataTable v-else :empty="logins.length === 0" empty-message="No matching server logins."
+        max-height="34rem">
+        <template #header>
+          <tr>
+            <th>Login</th>
+            <th>Type</th>
+            <th>Default database</th>
+            <th>Server roles</th>
+            <th>State</th>
+            <th>Created</th>
+            <th>Modified</th>
+            <th v-if="canOperate" class="user-actions-column">
+              Actions
+            </th>
+          </tr>
+        </template>
         <tr v-for="login in logins" :key="login.name">
-          <td><strong>{{ login.name }}</strong></td><td>{{ login.principal_type }}</td><td>{{ login.default_database ?? '—' }}</td><td class="sqlserver-security-roles" :title="roleList(login)">{{ roleList(login) }}</td><td><span :class="['sqlserver-security-state', { danger: login.disabled }]">{{ login.disabled ? 'Disabled' : 'Enabled' }}</span></td><td>{{ formatDate(login.created_at) }}</td><td>{{ formatDate(login.modified_at) }}</td>
-          <td v-if="canOperate"><div class="database-inline-actions"><button type="button" class="secondary-button" :disabled="operations.busy" @click="setLoginState(login)">{{ login.disabled ? 'Enable' : 'Disable' }}</button><button v-if="isSqlLogin(login)" type="button" class="secondary-button" :disabled="operations.busy" @click="resetPassword(login)">Reset password</button></div></td>
+          <td><strong>{{ login.name }}</strong></td>
+          <td>{{ login.principal_type }}</td>
+          <td>{{ login.default_database ?? '—' }}</td>
+          <td class="sqlserver-security-roles" :title="roleList(login)">{{ roleList(login) }}</td>
+          <td><span :class="['sqlserver-security-state', { danger: login.disabled }]">{{ login.disabled ? 'Disabled' :
+            'Enabled' }}</span></td>
+          <td>{{ formatDate(login.created_at) }}</td>
+          <td>{{ formatDate(login.modified_at) }}</td>
+          <td v-if="canOperate" class="user-actions-cell">
+            <FloatingActionMenu :label="`Actions for ${login.name}`" :disabled="operations.busy">
+              <button type="button" role="menuitem" :disabled="operations.busy" @click="setLoginState(login)">
+                <FontAwesomeIcon :icon="login.disabled ? 'circle-check' : 'ban'" />
+                {{ login.disabled ? 'Enable' : 'Disable' }}
+              </button>
+              <button v-if="isSqlLogin(login)" type="button" role="menuitem" :disabled="operations.busy" @click="resetPassword(login)">
+                <FontAwesomeIcon icon="key" />
+                Reset password
+              </button>
+            </FloatingActionMenu>
+          </td>
         </tr>
       </ScrollableDataTable>
     </template>
   </section>
+  
 </template>

@@ -47,6 +47,10 @@ async function clearAlert(id: string) {
   clearingId.value = id
   try {
     await alertsStore.clear(id)
+    showToast({ title: 'Alert cleared', tone: 'success' })
+  } catch (cause) {
+    const message = cause instanceof Error ? cause.message : 'Unable to clear alert.'
+    showToast({ title: 'Unable to clear alert', message, tone: 'danger' })
   } finally {
     clearingId.value = null
   }
@@ -55,9 +59,14 @@ async function clearAlert(id: string) {
 async function clearResolved() {
   const confirmed = await confirmDialog({ title: 'Clear resolved alerts', message: 'Remove all resolved alerts from the Alert Center?', confirmLabel: 'Clear resolved', destructive: true, tone: 'danger' })
   if (!confirmed) return
-  await alertsStore.clearResolved()
-  await refresh()
-  showToast({ title: 'Resolved alerts cleared', tone: 'success' })
+  try {
+    await alertsStore.clearResolved()
+    await refresh()
+    showToast({ title: 'Resolved alerts cleared', tone: 'success' })
+  } catch (cause) {
+    const message = cause instanceof Error ? cause.message : 'Unable to clear resolved alerts.'
+    showToast({ title: 'Unable to clear resolved alerts', message, tone: 'danger' })
+  }
 }
 
 function openSource(sourceType: string, sourceId: string, history = false) {
@@ -89,7 +98,8 @@ onUnmounted(() => {
     <div class="page-header alert-header-list">
       <div></div>
       <button type="button" class="secondary-button alert-refresh-button" :disabled="alertsStore.loading" @click="refresh">
-        {{ alertsStore.loading ? 'Refreshing...' : 'Refresh' }}
+        {{ alertsStore.loading ? 'Refreshing' : 'Refresh' }}
+        <p v-if="alertsStore.loading" class="loading"></p>
       </button>
     </div>
 
@@ -138,7 +148,8 @@ onUnmounted(() => {
     <p v-if="alertsStore.error" class="login-error">{{ alertsStore.error }}</p>
 
     <div v-if="alertsStore.loading && alertsStore.items.length === 0" class="database-empty-state">
-      <h2>Loading alerts...</h2>
+      <h2>Loading alerts</h2>
+      <p class="loading"></p>
     </div>
 
     <div v-else-if="alertsStore.items.length === 0" class="database-empty-state">

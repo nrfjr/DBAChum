@@ -9,6 +9,7 @@ import {
   type OracleAccessGrantSource,
   type OracleAccessLookupResult,
 } from '@/stores/oracleDba'
+import { showToast } from '@/ui/feedback'
 
 const props = defineProps<{
   connectionId: string
@@ -130,6 +131,7 @@ async function runLookup() {
     error.value = caught instanceof Error
       ? caught.message
       : 'Unable to search Oracle access.'
+    showToast({ title: 'Unable to search Oracle access', message: error.value, tone: 'danger' })
   } finally {
     loading.value = false
   }
@@ -158,6 +160,7 @@ async function runCompare() {
     compareError.value = caught instanceof Error
       ? caught.message
       : 'Unable to compare Oracle user access.'
+    showToast({ title: 'Unable to compare Oracle user access', message: compareError.value, tone: 'danger' })
   } finally {
     compareLoading.value = false
   }
@@ -434,7 +437,8 @@ async function runCompare() {
             :disabled="!canCompare || compareLoading"
             @click="runCompare"
           >
-            {{ compareLoading ? 'Comparing...' : 'Compare access' }}
+            {{ compareLoading ? 'Comparing' : 'Compare access' }}
+            <p v-if="compareLoading" class="loading"></p>
           </button>
         </div>
       </div>

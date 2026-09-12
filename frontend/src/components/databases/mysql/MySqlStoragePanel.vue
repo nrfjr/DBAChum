@@ -34,11 +34,12 @@ onMounted(() => {
 
       <button
         type="button"
-        class="secondary-button"
+        class="secondary-button refresh-button"
         :disabled="mysqlStore.loadingStorage[connectionId]"
         @click="mysqlStore.loadStorage(connectionId)"
       >
-        {{ mysqlStore.loadingStorage[connectionId] ? 'Refreshing...' : 'Refresh' }}
+        {{ mysqlStore.loadingStorage[connectionId] ? 'Refreshing' : 'Refresh' }}
+        <p v-if="mysqlStore.loadingStorage[connectionId]" class="loading"></p>
       </button>
     </div>
 

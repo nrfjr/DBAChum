@@ -24,11 +24,6 @@ export interface PermissionSubject {
   permissions?: readonly string[] | null
 }
 
-/*
- * Fallback role map keeps the frontend compatible during a rolling update.
- * Once /auth/me is served by 7B.2, the backend-supplied permissions array is
- * authoritative and this map is only used for older responses.
- */
 const rolePermissions:
   Record<UserRole, ReadonlySet<Permission>> = {
     viewer: new Set([

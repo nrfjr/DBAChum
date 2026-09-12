@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 
 import ScrollableDataTable from '@/components/common/ScrollableDataTable.vue'
+import FloatingActionMenu from '@/components/common/FloatingActionMenu.vue'
 import { hasPermission } from '@/core/permissions'
 import { useAuthStore } from '@/stores/auth'
 import { useDatabaseOperationsStore } from '@/stores/databaseOperations'
@@ -17,7 +18,6 @@ type SessionFilter = 'all' | 'active' | 'blocked' | 'long'
 const filter = ref<SessionFilter>('all')
 const sessions = computed(() => oracleStore.sessions[props.connectionId])
 const canOperate = computed(() => hasPermission(authStore.user, 'database:operate'))
-const actionMenuKey = ref<string | null>(null)
 
 const filteredSessions = computed(() => {
   const items = sessions.value?.items ?? []
@@ -52,15 +52,6 @@ function sessionKey(session: OracleSession) {
   return `${session.sid}-${session.serial_number}`
 }
 
-function toggleActionMenu(session: OracleSession, event: Event) {
-  event.stopPropagation()
-  const key = sessionKey(session)
-  actionMenuKey.value = actionMenuKey.value === key ? null : key
-}
-
-function closeActionMenu() {
-  actionMenuKey.value = null
-}
 
 async function runSessionAction(session: OracleSession, action: 'terminate' | 'disconnect') {
   const label = action === 'terminate' ? 'KILL' : 'DISCONNECT'
@@ -74,18 +65,15 @@ async function runSessionAction(session: OracleSession, action: 'terminate' | 'd
     })
     await oracleStore.loadSessions(props.connectionId)
     showToast({ title: action === 'terminate' ? 'Session killed' : 'Session disconnected', tone: 'success' })
-  } catch {
+  } catch (cause) {
+    showToast({ title: action === 'terminate' ? 'Unable to kill session' : 'Unable to disconnect session', message: cause instanceof Error ? cause.message : operations.error ?? undefined, tone: 'danger' })
   }
 }
 
 onMounted(() => {
-  document.addEventListener('click', closeActionMenu)
   void oracleStore.loadSessions(props.connectionId)
 })
 
-onUnmounted(() => {
-  document.removeEventListener('click', closeActionMenu)
-})
 </script>
 
 <template>
@@ -94,8 +82,9 @@ onUnmounted(() => {
       <div title="Current Oracle user sessions.">
         <h2>Sessions</h2>
       </div>
-      <button type="button" class="secondary-button" :disabled="oracleStore.loadingSessions" @click="oracleStore.loadSessions(connectionId)">
-        {{ oracleStore.loadingSessions ? 'Refreshing...' : 'Refresh' }}
+      <button type="button" class="secondary-button refresh-button" :disabled="oracleStore.loadingSessions" @click="oracleStore.loadSessions(connectionId)">
+        {{ oracleStore.loadingSessions ? 'Refreshing' : 'Refresh' }}
+        <p v-if="oracleStore.loadingSessions" class="loading"></p>
       </button>
     </div>
 
@@ -132,23 +121,17 @@ onUnmounted(() => {
             <td>{{ formatDuration(session.state_seconds) }}</td>
             <td>{{ session.blocking_session ?? '—' }}</td>
             <td v-if="canOperate">
-              <div class="user-action-menu-wrap" @click.stop>
-                <button
-                  type="button"
-                  class="user-action-button user-menu-button"
-                  :aria-expanded="actionMenuKey === sessionKey(session)"
-                  :aria-label="`Actions for session ${session.sid}`"
-                  :disabled="operations.busy"
-                  @click="toggleActionMenu(session, $event)"
-                >
-                  <FontAwesomeIcon icon="ellipsis-vertical" />
+              <FloatingActionMenu :label="`Actions for session ${session.sid}`" :disabled="operations.busy">
+                <button type="button" role="menuitem" @click="runSessionAction(session, 'disconnect')">
+                  <FontAwesomeIcon icon="link-slash" />
+                  Disconnect
                 </button>
-                <div v-if="actionMenuKey === sessionKey(session)" class="user-action-dropdown" role="menu">
-                  <button type="button" role="menuitem" @click="closeActionMenu(); runSessionAction(session, 'disconnect')">Disconnect</button>
-                  <div class="user-action-divider" />
-                  <button type="button" role="menuitem" class="danger-menu-item" @click="closeActionMenu(); runSessionAction(session, 'terminate')">Kill session</button>
-                </div>
-              </div>
+                <div class="user-action-divider" />
+                <button type="button" role="menuitem" class="danger-menu-item" @click="runSessionAction(session, 'terminate')">
+                  <FontAwesomeIcon icon="plug-circle-xmark" />
+                  Kill session
+                </button>
+              </FloatingActionMenu>
             </td>
           </tr>
         </ScrollableDataTable>

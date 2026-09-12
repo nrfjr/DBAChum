@@ -12,6 +12,7 @@ import {
   type BulkProvisionRequest,
   type BulkProvisionRowInput,
 } from '@/stores/provisioning'
+import { showToast } from '@/ui/feedback'
 
 const props = defineProps<{ connectionId: string }>()
 const emit = defineEmits<{ close: []; completed: [] }>()
@@ -68,8 +69,11 @@ async function downloadTemplateXlsx() {
   try {
     const blob = await provisioningStore.downloadBulkTemplateXlsx(props.connectionId)
     saveBlob(blob, 'dbachum-bulk-user-template.xlsx')
+    showToast({ title: 'XLSX template downloaded', tone: 'success' })
   } catch (caught) {
-    error.value = caught instanceof Error ? caught.message : 'Unable to download XLSX template.'
+    const message = caught instanceof Error ? caught.message : 'Unable to download XLSX template.'
+    error.value = message
+    showToast({ title: 'Unable to download XLSX template', message, tone: 'danger' })
   }
 }
 
@@ -111,9 +115,16 @@ async function handleFile(event: Event) {
   execution.value = null
   try {
     importResult.value = await provisioningStore.importBulkFile(props.connectionId, file)
+    showToast({
+      title: importResult.value.invalid_count ? 'Spreadsheet imported with validation issues' : 'Spreadsheet imported',
+      message: `${importResult.value.valid_count} valid · ${importResult.value.invalid_count} invalid`,
+      tone: importResult.value.invalid_count ? 'warning' : 'success',
+    })
   } catch (caught) {
     importResult.value = null
-    error.value = caught instanceof Error ? caught.message : 'Unable to import spreadsheet.'
+    const message = caught instanceof Error ? caught.message : 'Unable to import spreadsheet.'
+    error.value = message
+    showToast({ title: 'Unable to import spreadsheet', message, tone: 'danger' })
   } finally {
     loading.value = false
     input.value = ''
@@ -124,6 +135,7 @@ function goAccess() {
   error.value = null
   if (!canContinueImport.value) {
     error.value = 'Fix the invalid spreadsheet rows before continuing.'
+    showToast({ title: 'Spreadsheet has invalid rows', message: error.value, tone: 'warning' })
     return
   }
   step.value = 'access'
@@ -133,14 +145,22 @@ async function buildPreview() {
   error.value = null
   if (useCommonReference.value && !commonReferenceUser.value.trim()) {
     error.value = 'Enter the common reference user or turn the option off.'
+    showToast({ title: 'Common reference user required', message: error.value, tone: 'warning' })
     return
   }
   loading.value = true
   try {
     preview.value = await provisioningStore.previewBulk(props.connectionId, requestPayload())
     step.value = 'review'
+    showToast({
+      title: preview.value.ready_to_execute ? 'Bulk provisioning preview ready' : 'Bulk provisioning preview has warnings',
+      message: `${preview.value.valid_count} valid · ${preview.value.invalid_count} invalid`,
+      tone: preview.value.ready_to_execute ? 'success' : 'warning',
+    })
   } catch (caught) {
-    error.value = caught instanceof Error ? caught.message : 'Unable to build bulk provisioning preview.'
+    const message = caught instanceof Error ? caught.message : 'Unable to build bulk provisioning preview.'
+    error.value = message
+    showToast({ title: 'Unable to build bulk provisioning preview', message, tone: 'danger' })
   } finally {
     loading.value = false
   }
@@ -154,8 +174,15 @@ async function executeBatch() {
     execution.value = await provisioningStore.executeBulk(props.connectionId, requestPayload())
     step.value = 'result'
     emit('completed')
+    showToast({
+      title: execution.value.status === 'succeeded' ? 'Bulk provisioning completed' : 'Bulk provisioning completed with issues',
+      message: `${execution.value.succeeded_count} succeeded · ${execution.value.partial_count} partial · ${execution.value.failed_count} failed`,
+      tone: execution.value.status === 'succeeded' ? 'success' : 'warning',
+    })
   } catch (caught) {
-    error.value = caught instanceof Error ? caught.message : 'Unable to execute bulk provisioning.'
+    const message = caught instanceof Error ? caught.message : 'Unable to execute bulk provisioning.'
+    error.value = message
+    showToast({ title: 'Bulk provisioning failed', message, tone: 'danger' })
   } finally {
     loading.value = false
   }
@@ -225,6 +252,11 @@ async function retryFailed() {
         ? 'failed'
         : 'partial'
     emit('completed')
+    showToast({
+      title: currentExecution.status === 'succeeded' ? 'Bulk retry completed' : 'Bulk retry completed with issues',
+      message: `${succeeded} succeeded · ${partial} partial · ${failed} failed`,
+      tone: currentExecution.status === 'succeeded' ? 'success' : 'warning',
+    })
   } finally {
     loading.value = false
   }
@@ -279,8 +311,11 @@ async function downloadResultsXlsx() {
     const blob = await provisioningStore.exportBulkResultsXlsx(props.connectionId, exportRows())
     const filename = `dbachum-bulk-provision-results-${new Date().toISOString().slice(0, 10)}.xlsx`
     saveBlob(blob, filename)
+    showToast({ title: 'XLSX results exported', tone: 'success' })
   } catch (caught) {
-    error.value = caught instanceof Error ? caught.message : 'Unable to export XLSX results.'
+    const message = caught instanceof Error ? caught.message : 'Unable to export XLSX results.'
+    error.value = message
+    showToast({ title: 'Unable to export XLSX results', message, tone: 'danger' })
   }
 }
 </script>
@@ -367,7 +402,7 @@ async function downloadResultsXlsx() {
           </label>
 
           <label class="bulk-common-reference">
-            <span class="checkbox-row"><input v-model="useCommonReference" type="checkbox" /> Use the same reference user for all rows</span>
+            <span class="checkbox-row"><input v-model="useCommonReference" type="checkbox" class="toggle-switch"/> Use the same reference user for all rows</span>
           </label>
           <label v-if="useCommonReference" :class="{ 'field-invalid': useCommonReference && !commonReferenceUser.trim() }">
             Common reference user

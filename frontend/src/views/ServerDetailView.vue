@@ -53,11 +53,14 @@ const highestFilesystem = computed(() => {
   return [...filesystems].sort((left, right) => right.used_percent - left.used_percent)[0] ?? null
 })
 
-const serverStateLabel = computed(() => {
-  if (!server.value?.enabled) return 'Disabled'
-  if (health.value) return 'Online'
-  if (sshConfigured.value && sshTrusted.value) return 'Ready'
-  return 'Configured'
+const serverReachabilityTone = computed<'reachable' | 'unreachable' | 'unknown'>(() => {
+  if (!server.value?.enabled) return 'unknown'
+
+  if (health.value) return 'reachable'
+
+  if (monitoringError.value) return 'unreachable'
+
+  return 'unknown'
 })
 
 function selectTab(tab: 'overview' | 'metrics' | 'databases') {
@@ -156,8 +159,15 @@ async function initializeMonitoring() {
 
 async function testSsh() {
   try {
-    await monitoringStore.testSsh(serverId.value)
-  } catch {
+    const result = await monitoringStore.testSsh(serverId.value)
+    showToast({
+      title: result.state === 'connected' ? 'SSH connection test passed' : 'SSH host key verification required',
+      message: result.message,
+      tone: result.state === 'connected' ? 'success' : 'warning',
+    })
+  } catch (cause) {
+    const message = cause instanceof Error ? cause.message : monitoringError.value ?? 'Unable to test SSH connection.'
+    showToast({ title: 'SSH connection test failed', message, tone: 'danger' })
   }
 }
 
@@ -177,14 +187,20 @@ async function trustHostKey() {
     await monitoringStore.trustHostKey(serverId.value, candidate.fingerprint)
     server.value = await serversStore.loadOne(serverId.value)
     if (canCollectHostMetrics.value) await monitoringStore.loadHealth(serverId.value)
-  } catch {
+    showToast({ title: 'SSH host key trusted', message: candidate.fingerprint, tone: 'success' })
+  } catch (cause) {
+    const message = cause instanceof Error ? cause.message : monitoringError.value ?? 'Unable to trust SSH host key.'
+    showToast({ title: 'Unable to trust SSH host key', message, tone: 'danger' })
   }
 }
 
 async function refreshHost() {
   try {
     await monitoringStore.loadHealth(serverId.value)
-  } catch {
+    showToast({ title: 'Server metrics refreshed', tone: 'success' })
+  } catch (cause) {
+    const message = cause instanceof Error ? cause.message : monitoringError.value ?? 'Unable to refresh server metrics.'
+    showToast({ title: 'Unable to refresh server metrics', message, tone: 'danger' })
   }
 }
 
@@ -199,6 +215,7 @@ function openTerminal() {
   if (!server.value) return
   if (!server.value.ssh_profile_id || !server.value.ssh_host_key_fingerprint) {
     terminalError.value = 'Test SSH and trust the server host key before opening a terminal.'
+    showToast({ title: 'SSH trust required', message: terminalError.value, tone: 'warning' })
     return
   }
   try {
@@ -224,7 +241,9 @@ onUnmounted(() => {
   <div class="server-workspace">
     <p v-if="terminalError" class="login-error">{{ terminalError }}</p>
     <p v-if="error" class="login-error">{{ error }}</p>
-    <p v-else-if="loading && !server" class="empty-state">Loading server...</p>
+    <p v-else-if="loading && !server" class="empty-state">Loading server
+    <p class="loading"></p>
+    </p>
 
     <template v-else-if="server">
       <section class="resource-context resource-context--sticky server-resource-context">
@@ -233,42 +252,47 @@ onUnmounted(() => {
           <span>/</span>
           <strong>{{ server.name }}</strong>
           <span>/</span>
-          <strong>{{ activeTab === 'overview' ? 'Overview' : activeTab === 'metrics' ? 'Metrics' : 'Databases' }}</strong>
+          <strong>{{ activeTab === 'overview' ? 'Overview' : activeTab === 'metrics' ? 'Metrics' : 'Databases'
+            }}</strong>
         </div>
 
         <div class="resource-context__main">
           <div class="resource-context__identity">
             <div class="resource-context__title-row">
               <h1>{{ server.name }}</h1>
-              <span class="workspace-status-pill workspace-status-pill--engine">{{ osLabel(server.os_family) }}</span>
-              <span v-if="server.environment" class="workspace-status-pill workspace-status-pill--muted">{{ server.environment }}</span>
-              <span class="resource-state-pill" :data-state="serverStateLabel.toLowerCase()">{{ serverStateLabel }}</span>
+              <span class="server-overview-reachability-dot"
+                :class="`server-overview-reachability-dot--${serverReachabilityTone}`" :title="serverReachabilityTone === 'reachable'
+                    ? 'Online'
+                    : serverReachabilityTone === 'unreachable'
+                      ? 'Unreachable'
+                      : 'Unknown'
+                  " />
             </div>
             <p>{{ server.hostname }}<template v-if="server.ip_address"> · {{ server.ip_address }}</template></p>
           </div>
 
           <div class="resource-context__actions" @click.stop>
-            <button type="button" class="secondary-button" :disabled="loading || healthLoading" @click="refreshAll">
-              {{ loading || healthLoading ? 'Refreshing…' : 'Refresh' }}
+            <button type="button" class="secondary-button refresh-button" :disabled="loading || healthLoading" @click="refreshAll">
+              {{ loading || healthLoading ? 'Refreshing' : 'Refresh' }}
+              <p v-if="loading || healthLoading" class="loading"></p>
             </button>
             <div class="context-action-menu">
-              <button
-                type="button"
-                class="icon-button context-action-menu__trigger"
-                aria-label="Server actions"
-                :aria-expanded="actionMenuOpen"
-                @click="actionMenuOpen = !actionMenuOpen"
-              >
+              <button type="button" class="icon-button context-action-menu__trigger" aria-label="Server actions"
+                :aria-expanded="actionMenuOpen" @click="actionMenuOpen = !actionMenuOpen">
                 <FontAwesomeIcon icon="ellipsis-vertical" />
               </button>
               <div v-if="actionMenuOpen" class="context-action-menu__popover">
-                <button v-if="sshConfigured && canTestConnections" type="button" :disabled="sshTestLoading" @click="testSsh(); actionMenuOpen = false">
-                  {{ sshTestLoading ? 'Testing SSH…' : 'Test SSH' }}
+                <button v-if="sshConfigured && canTestConnections" type="button" :disabled="sshTestLoading"
+                  @click="testSsh(); actionMenuOpen = false">
+                  {{ sshTestLoading ? 'Testing SSH' : 'Test SSH' }}
+                  <p v-if="sshTestLoading" class="loading"></p>
                 </button>
-                <button v-if="canOpenTerminal && sshConfigured && sshTrusted" type="button" @click="openTerminal(); actionMenuOpen = false">
+                <button v-if="canOpenTerminal && sshConfigured && sshTrusted" type="button"
+                  @click="openTerminal(); actionMenuOpen = false">
                   Open terminal
                 </button>
-                <RouterLink v-if="canManageServers" :to="{ name: 'settings-connections', query: { type: 'servers' } }" @click="actionMenuOpen = false">Manage server connection</RouterLink>
+                <RouterLink v-if="canManageServers" :to="{ name: 'settings-connections', query: { type: 'servers' } }"
+                  @click="actionMenuOpen = false">Manage server connection</RouterLink>
               </div>
             </div>
           </div>
@@ -291,13 +315,15 @@ onUnmounted(() => {
           <button type="button" class="database-overview-summary-card" @click="selectTab('metrics')">
             <span>Memory</span>
             <strong>{{ health ? formatPercent(health.memory.used_percent) : '—' }}</strong>
-            <small v-if="health">{{ formatBytes(health.memory.used_bytes) }} / {{ formatBytes(health.memory.total_bytes) }}</small>
+            <small v-if="health">{{ formatBytes(health.memory.used_bytes) }} / {{ formatBytes(health.memory.total_bytes)
+              }}</small>
             <small v-else>No current host sample</small>
           </button>
           <button type="button" class="database-overview-summary-card" @click="selectTab('metrics')">
             <span>Filesystem</span>
             <strong>{{ highestFilesystem ? formatPercent(highestFilesystem.used_percent) : '—' }}</strong>
-            <small>{{ highestFilesystem ? `${highestFilesystem.mount_point} · highest usage` : 'No filesystem sample' }}</small>
+            <small>{{ highestFilesystem ? `${highestFilesystem.mount_point} · highest usage` : 'No filesystem sample'
+              }}</small>
           </button>
           <article class="database-overview-summary-card database-overview-summary-card--static">
             <span>Uptime</span>
@@ -313,45 +339,81 @@ onUnmounted(() => {
 
         <div class="server-detail-grid server-detail-grid--unified">
           <section class="detail-card">
-            <div class="server-card-heading"><h2>Server information</h2></div>
+            <div class="server-card-heading">
+              <h2>Server information</h2>
+            </div>
             <dl class="detail-list">
-              <div><dt>Type</dt><dd>{{ serverTypeLabel(server.server_type) }}</dd></div>
-              <div><dt>Operating system</dt><dd>{{ osLabel(server.os_family) }}{{ server.os_version ? ` · ${server.os_version}` : '' }}</dd></div>
-              <div><dt>Environment</dt><dd>{{ server.environment ?? '—' }}</dd></div>
-              <div><dt>Owner / team</dt><dd>{{ server.owner ?? '—' }}</dd></div>
-              <div><dt>Status</dt><dd>{{ server.enabled ? 'Enabled' : 'Disabled' }}</dd></div>
-              <div><dt>SSH profile</dt><dd>{{ server.ssh_profile_name ?? 'Not configured' }}</dd></div>
-              <div><dt>Host key</dt><dd>{{ sshTrusted ? 'Trusted' : sshConfigured ? 'Not trusted yet' : '—' }}</dd></div>
-              <div v-if="health"><dt>Last checked</dt><dd>{{ formatCheckedAt(health.checked_at) }}</dd></div>
+              <div>
+                <dt>Type</dt>
+                <dd>{{ serverTypeLabel(server.server_type) }}</dd>
+              </div>
+              <div>
+                <dt>Operating system</dt>
+                <dd>{{ osLabel(server.os_family) }}{{ server.os_version ? ` · ${server.os_version}` : '' }}</dd>
+              </div>
+              <div>
+                <dt>Environment</dt>
+                <dd>{{ server.environment ?? '—' }}</dd>
+              </div>
+              <div>
+                <dt>Owner / team</dt>
+                <dd>{{ server.owner ?? '—' }}</dd>
+              </div>
+              <div>
+                <dt>Status</dt>
+                <dd>{{ server.enabled ? 'Enabled' : 'Disabled' }}</dd>
+              </div>
+              <div>
+                <dt>SSH profile</dt>
+                <dd>{{ server.ssh_profile_name ?? 'Not configured' }}</dd>
+              </div>
+              <div>
+                <dt>Host key</dt>
+                <dd>{{ sshTrusted ? 'Trusted' : sshConfigured ? 'Not trusted yet' : '—' }}</dd>
+              </div>
+              <div v-if="health">
+                <dt>Last checked</dt>
+                <dd>{{ formatCheckedAt(health.checked_at) }}</dd>
+              </div>
             </dl>
           </section>
 
           <section class="detail-card server-ssh-card">
-            <div class="server-card-heading"><h2>SSH access</h2></div>
+            <div class="server-card-heading">
+              <h2>SSH access</h2>
+            </div>
             <template v-if="server.ssh_profile_name">
               <strong>{{ server.ssh_profile_name }}</strong>
-              <p>Credentials stay backend-side and host identity is verified before use.</p>
               <dl class="detail-list compact-detail-list">
-                <div><dt>Host key</dt><dd>{{ sshTrusted ? 'Trusted' : 'Not trusted yet' }}</dd></div>
-                <div v-if="server.ssh_host_key_fingerprint"><dt>Fingerprint</dt><dd class="mono-wrap">{{ server.ssh_host_key_fingerprint }}</dd></div>
-                <div v-if="sshTest"><dt>Last test</dt><dd>{{ sshTest.message }}</dd></div>
+                <div>
+                  <dt>Host key</dt>
+                  <dd>{{ sshTrusted ? 'Trusted' : 'Not trusted yet' }}</dd>
+                </div>
+                <div v-if="server.ssh_host_key_fingerprint">
+                  <dt>Fingerprint</dt>
+                  <dd class="mono-wrap">{{ server.ssh_host_key_fingerprint }}</dd>
+                </div>
+                <div v-if="sshTest">
+                  <dt>Last test</dt>
+                  <dd>{{ sshTest.message }}</dd>
+                </div>
               </dl>
               <div v-if="sshTest?.state === 'untrusted'" class="ssh-trust-panel">
                 <strong>Verify host identity before authentication</strong>
                 <code>{{ sshTest.fingerprint }}</code>
-                <p>DBAChum reached the SSH endpoint but has not sent the stored credential yet.</p>
-                <button v-if="canManageServers" type="button" class="primary-button" :disabled="sshTestLoading" @click="trustHostKey">Trust this host key</button>
-                <small v-else>An administrator must trust the verified host key in DBAChum.</small>
+                <button v-if="canManageServers" type="button" class="primary-button" :disabled="sshTestLoading"
+                  @click="trustHostKey">Trust this host key</button>
               </div>
             </template>
             <template v-else>
               <strong>Not configured</strong>
-              <p>Assign an SSH access profile when this host should support monitoring or terminal access.</p>
             </template>
           </section>
 
           <section class="detail-card server-detail-notes">
-            <div class="server-card-heading"><h2>Notes & tags</h2></div>
+            <div class="server-card-heading">
+              <h2>Notes & tags</h2>
+            </div>
             <p>{{ server.notes ?? 'No notes.' }}</p>
             <div v-if="server.tags.length" class="server-tags">
               <span v-for="tag in server.tags" :key="tag">{{ tag }}</span>
@@ -364,60 +426,137 @@ onUnmounted(() => {
         <div class="section-toolbar">
           <div>
             <h2>Host metrics</h2>
-            <p>Current SSH-backed operating system snapshot.</p>
           </div>
           <div class="server-monitoring-actions">
             <span v-if="health" class="server-last-checked">Checked {{ formatCheckedAt(health.checked_at) }}</span>
-            <button type="button" class="secondary-button" :disabled="!sshConfigured || !sshTrusted || !canCollectHostMetrics || healthLoading" @click="refreshHost">
-              {{ healthLoading ? 'Refreshing...' : 'Refresh metrics' }}
+            <button type="button" class="secondary-button refresh-button"
+              :disabled="!sshConfigured || !sshTrusted || !canCollectHostMetrics || healthLoading" @click="refreshHost">
+              {{ healthLoading ? 'Refreshing' : 'Refresh metrics' }}
+              <p v-if="healthLoading" class="loading"></p>
             </button>
           </div>
         </div>
 
-        <div v-if="!sshConfigured" class="notice-card">Assign an SSH access profile before host metrics can be collected.</div>
-        <div v-else-if="!sshTrusted" class="notice-card">
-          <template v-if="canTestConnections">Test SSH and verify the server fingerprint before DBAChum sends the stored SSH credential.</template>
-          <template v-else>An operator or administrator must verify SSH connectivity; an administrator must trust the verified host key.</template>
+        <div v-if="!sshConfigured" class="notice-card">Assign an SSH access profile before host metrics can be
+          collected.
         </div>
-        <div v-else-if="!canCollectHostMetrics" class="notice-card">Host metrics are available for Linux, AIX and Unix assets.</div>
+        <div v-else-if="!sshTrusted" class="notice-card">
+          <template v-if="canTestConnections">Test SSH and verify the server fingerprint before DBAChum sends the stored
+            SSH credential.</template>
+          <template v-else>An operator or administrator must verify SSH connectivity; an administrator must trust the
+            verified host key.</template>
+        </div>
+        <div v-else-if="!canCollectHostMetrics" class="notice-card">Host metrics are available for Linux, AIX and Unix
+          assets.
+        </div>
         <p v-if="monitoringError" class="login-error">{{ monitoringError }}</p>
 
         <template v-if="health">
           <div class="server-health-metrics">
-            <article class="metric-card"><span class="metric-card__label">CPU used</span><strong class="metric-card__value">{{ formatPercent(health.cpu_used_percent) }}</strong><small class="metric-card__hint">{{ health.cpu_measurement ?? 'Current host sample' }}</small></article>
-            <article class="metric-card"><span class="metric-card__label">Memory used</span><strong class="metric-card__value">{{ formatPercent(health.memory.used_percent) }}</strong><small class="metric-card__hint">{{ formatBytes(health.memory.used_bytes) }} / {{ formatBytes(health.memory.total_bytes) }}</small></article>
-            <article class="metric-card"><span class="metric-card__label">Load average</span><strong class="metric-card__value">{{ health.load_1 ?? '—' }}</strong><small class="metric-card__hint">1m / 5m / 15m · {{ health.load_1 ?? '—' }} / {{ health.load_5 ?? '—' }} / {{ health.load_15 ?? '—' }}</small></article>
-            <article class="metric-card"><span class="metric-card__label">Uptime</span><strong class="metric-card__value">{{ formatUptime(health.uptime_seconds) }}</strong><small class="metric-card__hint">{{ health.remote_hostname ?? health.target }}</small></article>
-            <article class="metric-card"><span class="metric-card__label">Swap used</span><strong class="metric-card__value">{{ formatPercent(health.memory.swap_used_percent) }}</strong><small class="metric-card__hint">{{ formatBytes(health.memory.swap_used_bytes) }} / {{ formatBytes(health.memory.swap_total_bytes) }}</small></article>
-            <article class="metric-card"><span class="metric-card__label">SSH</span><strong class="metric-card__value">{{ health.ssh_latency_ms != null ? `${health.ssh_latency_ms} ms` : 'Connected' }}</strong><small class="metric-card__hint">{{ health.target }}:{{ health.port }}</small></article>
+            <article class="metric-card"><span class="metric-card__label">CPU used</span><strong
+                class="metric-card__value">{{ formatPercent(health.cpu_used_percent) }}</strong><small
+                class="metric-card__hint">{{ health.cpu_measurement ?? 'Current host sample' }}</small></article>
+            <article class="metric-card"><span class="metric-card__label">Memory used</span><strong
+                class="metric-card__value">{{ formatPercent(health.memory.used_percent) }}</strong><small
+                class="metric-card__hint">{{ formatBytes(health.memory.used_bytes) }} / {{
+                  formatBytes(health.memory.total_bytes) }}</small></article>
+            <article class="metric-card"><span class="metric-card__label">Load average</span><strong
+                class="metric-card__value">{{ health.load_1 ?? '—' }}</strong><small class="metric-card__hint">1m / 5m /
+                15m · {{ health.load_1 ?? '—' }} / {{ health.load_5 ?? '—' }} / {{ health.load_15 ?? '—' }}</small>
+            </article>
+            <article class="metric-card"><span class="metric-card__label">Uptime</span><strong
+                class="metric-card__value">{{ formatUptime(health.uptime_seconds) }}</strong><small
+                class="metric-card__hint">{{ health.remote_hostname ?? health.target }}</small></article>
+            <article class="metric-card"><span class="metric-card__label">Swap used</span><strong
+                class="metric-card__value">{{ formatPercent(health.memory.swap_used_percent) }}</strong><small
+                class="metric-card__hint">{{ formatBytes(health.memory.swap_used_bytes) }} / {{
+                  formatBytes(health.memory.swap_total_bytes) }}</small></article>
+            <article class="metric-card"><span class="metric-card__label">SSH</span><strong
+                class="metric-card__value">{{ health.ssh_latency_ms != null ? `${health.ssh_latency_ms} ms` :
+                'Connected' }}</strong><small class="metric-card__hint">{{ health.target }}:{{ health.port }}</small>
+            </article>
           </div>
 
-          <div v-if="health.warnings.length" class="server-monitoring-warnings"><strong>Partial metrics</strong><ul><li v-for="warning in health.warnings" :key="warning">{{ warning }}</li></ul></div>
+          <div v-if="health.warnings.length" class="server-monitoring-warnings"><strong>Partial metrics</strong>
+            <ul>
+              <li v-for="warning in health.warnings" :key="warning">{{ warning }}</li>
+            </ul>
+          </div>
 
           <div class="server-monitoring-grid">
             <section class="detail-card">
-              <div class="server-card-heading"><div><h2>Filesystems</h2><p>Highest utilization first.</p></div><span class="count-badge">{{ health.filesystems.length }}</span></div>
-              <ScrollableDataTable :empty="health.filesystems.length === 0" empty-message="No filesystem metrics were returned by this host." max-height="25rem">
-                <template #header><tr><th>Mount</th><th>Filesystem</th><th>Used</th><th>Available</th><th>Capacity</th></tr></template>
-                <tr v-for="filesystem in health.filesystems" :key="`${filesystem.filesystem}:${filesystem.mount_point}`">
-                  <td><strong>{{ filesystem.mount_point }}</strong></td><td class="mono-wrap">{{ filesystem.filesystem }}</td><td>{{ formatBytes(filesystem.used_bytes) }} / {{ formatBytes(filesystem.total_bytes) }}</td><td>{{ formatBytes(filesystem.available_bytes) }}</td><td><span class="filesystem-usage" :data-state="filesystemState(filesystem)">{{ formatPercent(filesystem.used_percent) }}</span></td>
+              <div class="server-card-heading">
+                <div>
+                  <h2>Filesystems</h2>
+                  <p>Highest utilization first.</p>
+                </div><span class="count-badge">{{ health.filesystems.length }}</span>
+              </div>
+              <ScrollableDataTable :empty="health.filesystems.length === 0"
+                empty-message="No filesystem metrics were returned by this host." max-height="25rem">
+                <template #header>
+                  <tr>
+                    <th>Mount</th>
+                    <th>Filesystem</th>
+                    <th>Used</th>
+                    <th>Available</th>
+                    <th>Capacity</th>
+                  </tr>
+                </template>
+                <tr v-for="filesystem in health.filesystems"
+                  :key="`${filesystem.filesystem}:${filesystem.mount_point}`">
+                  <td><strong>{{ filesystem.mount_point }}</strong></td>
+                  <td class="mono-wrap">{{ filesystem.filesystem }}</td>
+                  <td>{{ formatBytes(filesystem.used_bytes) }} / {{ formatBytes(filesystem.total_bytes) }}</td>
+                  <td>{{ formatBytes(filesystem.available_bytes) }}</td>
+                  <td><span class="filesystem-usage" :data-state="filesystemState(filesystem)">{{
+                    formatPercent(filesystem.used_percent) }}</span></td>
                 </tr>
               </ScrollableDataTable>
             </section>
 
             <section class="detail-card">
-              <div class="server-card-heading"><div><h2>Service health</h2><p>{{ health.services.manager === 'systemd' ? 'systemd status' : 'Detected service-manager summary' }}</p></div><span class="service-state-pill" :data-state="health.services.state">{{ health.services.state }}</span></div>
+              <div class="server-card-heading">
+                <div>
+                  <h2>Service health</h2>
+                  <p>{{ health.services.manager === 'systemd' ? 'systemd status' : 'Detected service-manager summary' }}
+                  </p>
+                </div><span class="service-state-pill" :data-state="health.services.state">{{ health.services.state
+                  }}</span>
+              </div>
               <p v-if="health.services.note">{{ health.services.note }}</p>
-              <div v-if="health.services.failed_services.length" class="failed-service-list"><code v-for="service in health.services.failed_services" :key="service">{{ service }}</code></div>
-              <p v-else-if="health.services.manager === 'systemd'" class="status-message">No failed systemd services reported.</p>
+              <div v-if="health.services.failed_services.length" class="failed-service-list"><code
+                  v-for="service in health.services.failed_services" :key="service">{{ service }}</code></div>
+              <p v-else-if="health.services.manager === 'systemd'" class="status-message">No failed systemd services
+                reported.</p>
             </section>
           </div>
 
           <section class="detail-card server-process-section">
-            <div class="server-card-heading"><div><h2>Top processes</h2><p>Top 10 processes from the current SSH snapshot, sorted by reported CPU.</p></div><span class="count-badge">{{ health.top_processes.length }}</span></div>
-            <ScrollableDataTable :empty="health.top_processes.length === 0" empty-message="No process metrics were returned by this host." max-height="27rem">
-              <template #header><tr><th>PID</th><th>User</th><th>CPU</th><th>Memory</th><th>Elapsed</th><th>Command</th></tr></template>
-              <tr v-for="process in health.top_processes" :key="process.pid"><td>{{ process.pid }}</td><td>{{ process.user ?? '—' }}</td><td>{{ formatPercent(process.cpu_percent) }}</td><td>{{ formatPercent(process.memory_percent) }}</td><td>{{ process.elapsed ?? '—' }}</td><td class="server-process-command">{{ process.command }}</td></tr>
+            <div class="server-card-heading">
+              <div>
+                <h2>Top processes</h2>
+              </div><span class="count-badge">{{ health.top_processes.length }}</span>
+            </div>
+            <ScrollableDataTable :empty="health.top_processes.length === 0"
+              empty-message="No process metrics were returned by this host." max-height="27rem">
+              <template #header>
+                <tr>
+                  <th>PID</th>
+                  <th>User</th>
+                  <th>CPU</th>
+                  <th>Memory</th>
+                  <th>Elapsed</th>
+                  <th>Command</th>
+                </tr>
+              </template>
+              <tr v-for="process in health.top_processes" :key="process.pid">
+                <td>{{ process.pid }}</td>
+                <td>{{ process.user ?? '—' }}</td>
+                <td>{{ formatPercent(process.cpu_percent) }}</td>
+                <td>{{ formatPercent(process.memory_percent) }}</td>
+                <td>{{ process.elapsed ?? '—' }}</td>
+                <td class="server-process-command">{{ process.command }}</td>
+              </tr>
             </ScrollableDataTable>
           </section>
         </template>
@@ -425,14 +564,62 @@ onUnmounted(() => {
 
       <section v-else class="server-related-section server-tab-panel">
         <div class="section-toolbar">
-          <div><h2>Related databases</h2><p>Database connections linked to this host.</p></div>
+          <div>
+            <h2>Related databases</h2>
+          </div>
           <span class="count-badge">{{ databases.length }}</span>
         </div>
-        <ScrollableDataTable :loading="loading" :empty="databases.length === 0" empty-message="No database connections are related to this server." max-height="32rem">
-          <template #header><tr><th>Database</th><th>Engine</th><th>Endpoint</th><th>Monitoring</th><th></th></tr></template>
-          <tr v-for="database in databases" :key="database.id"><td><strong>{{ database.name }}</strong></td><td>{{ engineLabel(database.engine) }}</td><td>{{ database.host }}:{{ database.port }}</td><td>{{ database.monitor_enabled ? 'Enabled' : 'Off' }}</td><td><RouterLink class="text-link" :to="`/databases/${database.id}`">Open database →</RouterLink></td></tr>
+        <ScrollableDataTable :loading="loading" :empty="databases.length === 0"
+          empty-message="No database connections are related to this server." max-height="32rem">
+          <template #header>
+            <tr>
+              <th>Database</th>
+              <th>Engine</th>
+              <th>Endpoint</th>
+              <th>Monitoring</th>
+              <th></th>
+            </tr>
+          </template>
+          <tr v-for="database in databases" :key="database.id">
+            <td><strong>{{ database.name }}</strong></td>
+            <td>{{ engineLabel(database.engine) }}</td>
+            <td>{{ database.host }}:{{ database.port }}</td>
+            <td>{{ database.monitor_enabled ? 'Enabled' : 'Off' }}</td>
+            <td>
+              <RouterLink class="text-link" :to="`/databases/${database.id}`">Open database →</RouterLink>
+            </td>
+          </tr>
         </ScrollableDataTable>
       </section>
     </template>
   </div>
 </template>
+<style>
+.server-overview-reachability-dot {
+  width: 0.62rem;
+  height: 0.62rem;
+  flex: 0 0 0.62rem;
+  border-radius: 50%;
+  background: var(--text-muted);
+
+  box-shadow:
+    0 0 0 3px
+    color-mix(in srgb, var(--text-muted) 12%, transparent);
+}
+
+.server-overview-reachability-dot--reachable {
+  background: var(--success);
+
+  box-shadow:
+    0 0 0 3px
+    color-mix(in srgb, var(--success) 13%, transparent);
+}
+
+.server-overview-reachability-dot--unreachable {
+  background: var(--danger);
+
+  box-shadow:
+    0 0 0 3px
+    color-mix(in srgb, var(--danger) 13%, transparent);
+}
+</style>

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import {
   computed,
+  onBeforeUnmount,
   onMounted,
   reactive,
   ref,
@@ -31,24 +32,22 @@ const connectionsStore = useConnectionsStore()
 const serversStore = useServersStore()
 const uiStore = useUiStore()
 
-const identityMessage = ref<string | null>(null)
 const identityError = ref<string | null>(null)
-const preferencesMessage = ref<string | null>(null)
 const preferencesError = ref<string | null>(null)
-const notificationsMessage = ref<string | null>(null)
 const notificationsError = ref<string | null>(null)
-const preferenceDataMessage = ref<string | null>(null)
 const preferenceDataError = ref<string | null>(null)
 const preferenceImportInput = ref<HTMLInputElement | null>(null)
 const avatarInput = ref<HTMLInputElement | null>(null)
 const avatarSaving = ref(false)
 const avatarError = ref<string | null>(null)
+const pendingAvatarFile = ref<File | null>(null)
+const pendingAvatarPreview = ref<string | null>(null)
+const pendingAvatarRemoval = ref(false)
 
 type ProfileSection =
   | 'profile'
   | 'customization'
   | 'alerts'
-  | 'transfer'
 
 const activeSection = ref<ProfileSection>('profile')
 
@@ -65,9 +64,6 @@ const profileSectionMeta: Record<
   alerts: {
     title: 'Alert subscriptions',
   },
-  transfer: {
-    title: 'Import / Export',
-  },
 }
 
 const activeSectionMeta = computed(() =>
@@ -77,13 +73,9 @@ const activeSectionMeta = computed(() =>
 function selectProfileSection(section: ProfileSection) {
   activeSection.value = section
 
-  identityMessage.value = null
   identityError.value = null
-  preferencesMessage.value = null
   preferencesError.value = null
-  notificationsMessage.value = null
   notificationsError.value = null
-  preferenceDataMessage.value = null
   preferenceDataError.value = null
 }
 
@@ -166,7 +158,8 @@ const engineOptions: Array<{
     { value: 'mysql', label: 'MySQL / MariaDB' },
   ]
 
-const avatarUrl = computed(() => authStore.avatarUrl)
+const avatarUrl = computed(() => pendingAvatarPreview.value ?? (pendingAvatarRemoval.value ? null : authStore.avatarUrl))
+const avatarChanged = computed(() => pendingAvatarFile.value !== null || pendingAvatarRemoval.value)
 
 const roleLabel = computed(() => {
   const role = authStore.user?.role ?? 'viewer'
@@ -236,9 +229,22 @@ onMounted(async () => {
   ])
 })
 
+onBeforeUnmount(clearAvatarPreview)
+
+function clearAvatarPreview() {
+  if (pendingAvatarPreview.value) URL.revokeObjectURL(pendingAvatarPreview.value)
+  pendingAvatarPreview.value = null
+}
+
+function resetPendingAvatar() {
+  clearAvatarPreview()
+  pendingAvatarFile.value = null
+  pendingAvatarRemoval.value = false
+}
+
 async function saveIdentity() {
-  identityMessage.value = null
   identityError.value = null
+  avatarError.value = null
 
   try {
     await authStore.updateProfile({
@@ -246,11 +252,27 @@ async function saveIdentity() {
       email: identity.email.trim() || null,
     })
 
-    identityMessage.value = 'Profile updated.'
+    if (pendingAvatarFile.value) {
+      avatarSaving.value = true
+      await authStore.uploadAvatar(pendingAvatarFile.value)
+    } else if (pendingAvatarRemoval.value && authStore.user?.has_avatar) {
+      avatarSaving.value = true
+      await authStore.removeAvatar()
+    }
+
+    const photoChanged = avatarChanged.value
+    resetPendingAvatar()
+    showToast({
+      title: photoChanged ? 'Profile and photo updated' : 'Profile updated',
+      tone: 'success',
+    })
   } catch (cause) {
-    identityError.value = cause instanceof Error
-      ? cause.message
-      : 'Unable to update profile.'
+    const message = cause instanceof Error ? cause.message : 'Unable to update profile.'
+    if (avatarSaving.value) avatarError.value = message
+    else identityError.value = message
+    showToast({ title: 'Unable to update profile', message, tone: 'danger' })
+  } finally {
+    avatarSaving.value = false
   }
 }
 
@@ -258,47 +280,35 @@ function chooseAvatar() {
   avatarInput.value?.click()
 }
 
-async function uploadAvatar(event: Event) {
+function uploadAvatar(event: Event) {
   const input = event.target as HTMLInputElement
   const file = input.files?.[0]
   input.value = ''
   if (!file) return
 
-  avatarSaving.value = true
   avatarError.value = null
-  try {
-    await authStore.uploadAvatar(file)
-    showToast({ title: 'Profile photo updated', tone: 'success' })
-  } catch (cause) {
-    avatarError.value = cause instanceof Error ? cause.message : 'Unable to update profile photo.'
-  } finally {
-    avatarSaving.value = false
-  }
+  clearAvatarPreview()
+  pendingAvatarFile.value = file
+  pendingAvatarRemoval.value = false
+  pendingAvatarPreview.value = URL.createObjectURL(file)
 }
 
 async function removeAvatar() {
   const confirmed = await confirmDialog({
     title: 'Remove profile photo?',
-    message: 'Your initials will be shown instead.',
+    message: 'Your initials will be shown after you save your profile.',
     confirmLabel: 'Remove photo',
     tone: 'warning',
   })
   if (!confirmed) return
 
-  avatarSaving.value = true
   avatarError.value = null
-  try {
-    await authStore.removeAvatar()
-    showToast({ title: 'Profile photo removed', tone: 'success' })
-  } catch (cause) {
-    avatarError.value = cause instanceof Error ? cause.message : 'Unable to remove profile photo.'
-  } finally {
-    avatarSaving.value = false
-  }
+  clearAvatarPreview()
+  pendingAvatarFile.value = null
+  pendingAvatarRemoval.value = true
 }
 
 async function savePreferences() {
-  preferencesMessage.value = null
   preferencesError.value = null
 
   try {
@@ -313,16 +323,15 @@ async function savePreferences() {
     })
 
     uiStore.applyUserPreferences(user.preferences)
-    preferencesMessage.value = 'Preferences saved.'
+    showToast({ title: 'Preferences saved', tone: 'success' })
   } catch (cause) {
-    preferencesError.value = cause instanceof Error
-      ? cause.message
-      : 'Unable to save preferences.'
+    const message = cause instanceof Error ? cause.message : 'Unable to save preferences.'
+    preferencesError.value = message
+    showToast({ title: 'Unable to save preferences', message, tone: 'danger' })
   }
 }
 
 async function saveNotifications() {
-  notificationsMessage.value = null
   notificationsError.value = null
 
   try {
@@ -340,11 +349,11 @@ async function saveNotifications() {
       server_ids: [...notifications.server_ids],
     })
 
-    notificationsMessage.value = 'Alert subscription saved.'
+    showToast({ title: 'Alert subscription saved', tone: 'success' })
   } catch (cause) {
-    notificationsError.value = cause instanceof Error
-      ? cause.message
-      : 'Unable to save alert subscription.'
+    const message = cause instanceof Error ? cause.message : 'Unable to save alert subscription.'
+    notificationsError.value = message
+    showToast({ title: 'Unable to save alert subscription', message, tone: 'danger' })
   }
 }
 
@@ -368,7 +377,6 @@ function exportPreferences() {
   if (!user) return
 
   preferenceDataError.value = null
-  preferenceDataMessage.value = null
 
   downloadJson(
     `dbachum-preferences-${user.username}.json`,
@@ -380,7 +388,7 @@ function exportPreferences() {
       notifications: user.notifications,
     },
   )
-  preferenceDataMessage.value = 'Preferences exported.'
+  showToast({ title: 'Preferences exported', tone: 'success' })
 }
 
 function choosePreferenceImport() {
@@ -389,7 +397,6 @@ function choosePreferenceImport() {
 
 async function importPreferences(event: Event) {
   preferenceDataError.value = null
-  preferenceDataMessage.value = null
 
   const input = event.target as HTMLInputElement
   const file = input.files?.[0]
@@ -445,11 +452,12 @@ async function importPreferences(event: Event) {
     })
 
     uiStore.applyUserPreferences(user.preferences)
-    preferenceDataMessage.value = 'Preferences imported.'
+    syncFromUser()
+    showToast({ title: 'Preferences imported', tone: 'success' })
   } catch (cause) {
-    preferenceDataError.value = cause instanceof Error
-      ? cause.message
-      : 'Unable to import preferences.'
+    const message = cause instanceof Error ? cause.message : 'Unable to import preferences.'
+    preferenceDataError.value = message
+    showToast({ title: 'Unable to import preferences', message, tone: 'danger' })
   }
 }
 
@@ -463,7 +471,6 @@ async function resetPreferences() {
   if (!confirmed) return
 
   preferenceDataError.value = null
-  preferenceDataMessage.value = null
 
   try {
     const user = await authStore.updatePreferences({
@@ -497,11 +504,12 @@ async function resetPreferences() {
     })
 
     uiStore.applyUserPreferences(user.preferences)
-    preferenceDataMessage.value = 'Preferences reset to defaults.'
+    syncFromUser()
+    showToast({ title: 'Preferences reset to defaults', tone: 'success' })
   } catch (cause) {
-    preferenceDataError.value = cause instanceof Error
-      ? cause.message
-      : 'Unable to reset preferences.'
+    const message = cause instanceof Error ? cause.message : 'Unable to reset preferences.'
+    preferenceDataError.value = message
+    showToast({ title: 'Unable to reset preferences', message, tone: 'danger' })
   }
 }
 
@@ -535,10 +543,6 @@ function engineLabel(engine: NotificationEngine) {
         :class="{ active: activeSection === 'alerts' }" @click="selectProfileSection('alerts')">
         Alert subscriptions
       </button>
-      <button type="button" class="settings-nav-item profile-section-button"
-        :class="{ active: activeSection === 'transfer' }" @click="selectProfileSection('transfer')">
-        Import / Export
-      </button>
     </aside>
 
     <section class="settings-content profile-settings-content">
@@ -547,11 +551,22 @@ function engineLabel(engine: NotificationEngine) {
       </header>
 
       <div class="profile-section-stack">
-        <section v-if="activeSection === 'profile'" class="panel profile-card">
+        <section v-if="activeSection === 'profile'" class="panel profile-card profile-custom-panel">
           <div class="profile-identity-heading profile-identity-heading--editable">
-            <div class="profile-avatar-large" :class="{ 'profile-avatar-large--image': avatarUrl }">
-              <img v-if="avatarUrl" :src="avatarUrl" alt="Profile photo" />
-              <span v-else>{{ authStore.user?.avatar_initials || 'DB' }}</span>
+            <div class="profile-avatar-editor">
+              <div class="profile-avatar-large" :class="{ 'profile-avatar-large--image': avatarUrl }">
+                <img v-if="avatarUrl" :src="avatarUrl" alt="Profile photo" />
+                <span v-else>{{ authStore.user?.avatar_initials || 'DB' }}</span>
+              </div>
+              <button
+                type="button"
+                class="profile-avatar-change"
+                :disabled="authStore.profileSaving || avatarSaving"
+                :aria-label="avatarUrl ? 'Change profile photo' : 'Add profile photo'"
+                @click="chooseAvatar"
+              >
+                {{ avatarUrl ? 'Change' : 'Add' }}
+              </button>
             </div>
 
             <div>
@@ -564,15 +579,11 @@ function engineLabel(engine: NotificationEngine) {
                 accept="image/png,image/jpeg,image/webp"
                 @change="uploadAvatar"
               />
-              <div class="profile-avatar-actions">
-                <button type="button" class="secondary-button" :disabled="avatarSaving" @click="chooseAvatar">
-                  {{ avatarSaving ? 'Updating…' : avatarUrl ? 'Change photo' : 'Add photo' }}
-                </button>
-                <button v-if="avatarUrl" type="button" class="secondary-button" :disabled="avatarSaving" @click="removeAvatar">
+              <div v-if="avatarUrl" class="profile-avatar-actions">
+                <button type="button" class="secondary-button" :disabled="authStore.profileSaving || avatarSaving" @click="removeAvatar">
                   Remove
                 </button>
               </div>
-              <small>PNG, JPEG or WebP, up to 2 MB.</small>
               <p v-if="avatarError" class="login-error">{{ avatarError }}</p>
             </div>
           </div>
@@ -591,7 +602,7 @@ function engineLabel(engine: NotificationEngine) {
 
             <label>
               Email
-              <input v-model="identity.email" type="email" maxlength="254" autocomplete="email"
+              <input v-model="identity.email" type="email" maxlength="255" autocomplete="email"
                 placeholder="dba@company.com" title="This address is used when you opt into email alert delivery." />
             </label>
 
@@ -603,16 +614,43 @@ function engineLabel(engine: NotificationEngine) {
             <p v-if="identityError" class="login-error">
               {{ identityError }}
             </p>
-            <p v-if="identityMessage" class="profile-success">
-              {{ identityMessage }}
-            </p>
 
             <div class="connection-form-actions">
-              <button type="submit" class="primary-button" :disabled="authStore.profileSaving">
-                {{ authStore.profileSaving ? 'Saving...' : 'Save profile' }}
+              <button type="submit" class="primary-button" :disabled="authStore.profileSaving || avatarSaving">
+                {{ authStore.profileSaving || avatarSaving ? 'Saving...' : 'Save profile' }}
               </button>
             </div>
           </form>
+
+          <div class="profile-preference-data">
+            <div>
+              <h3>Preference data</h3>
+            </div>
+            <input
+              ref="preferenceImportInput"
+              type="file"
+              accept="application/json,.json"
+              class="preference-file-input"
+              @change="importPreferences"
+            />
+            <div class="preference-data-actions">
+              <button
+                type="button"
+                class="secondary-button"
+                title="Export includes personal appearance, timezone, landing/history defaults and alert subscriptions. It does not include username, email, passwords, connection credentials or installation settings."
+                @click="exportPreferences"
+              >
+                Export preferences
+              </button>
+              <button type="button" class="secondary-button" @click="choosePreferenceImport">
+                Import preferences
+              </button>
+              <button type="button" class="danger-button" @click="resetPreferences">
+                Reset to defaults
+              </button>
+            </div>
+            <p v-if="preferenceDataError" class="login-error">{{ preferenceDataError }}</p>
+          </div>
         </section>
 
         <section v-if="activeSection === 'customization'" class="panel profile-card">
@@ -692,9 +730,6 @@ function engineLabel(engine: NotificationEngine) {
             <p v-if="preferencesError" class="login-error">
               {{ preferencesError }}
             </p>
-            <p v-if="preferencesMessage" class="profile-success">
-              {{ preferencesMessage }}
-            </p>
 
             <div class="connection-form-actions">
               <button type="submit" class="primary-button" :disabled="authStore.preferencesSaving">
@@ -702,28 +737,6 @@ function engineLabel(engine: NotificationEngine) {
               </button>
             </div>
           </form>
-        </section>
-
-        <section v-if="activeSection === 'transfer'" class="panel profile-card preference-data-card">
-
-          <input ref="preferenceImportInput" type="file" accept="application/json,.json" class="preference-file-input"
-            @change="importPreferences">
-
-          <div class="preference-data-actions">
-            <button type="button" class="secondary-button" @click="exportPreferences"
-              title="Export includes personal appearance, timezone, landing/history defaults and alert subscriptions. It does not include username, email, passwords, connection credentials or installation settings.">
-              Export preferences
-            </button>
-            <button type="button" class="secondary-button" @click="choosePreferenceImport">
-              Import preferences
-            </button>
-            <button type="button" class="danger-button" @click="resetPreferences">
-              Reset to defaults
-            </button>
-          </div>
-
-          <p v-if="preferenceDataError" class="login-error">{{ preferenceDataError }}</p>
-          <p v-if="preferenceDataMessage" class="profile-success">{{ preferenceDataMessage }}</p>
         </section>
 
         <section v-if="activeSection === 'alerts'" class="panel profile-card">
@@ -734,7 +747,7 @@ function engineLabel(engine: NotificationEngine) {
                 <span>
                   <strong>Email alerts</strong>
                 </span>
-                <input v-model="notifications.email_enabled" type="checkbox"
+                <input v-model="notifications.email_enabled" type="checkbox" class="toggle-switch"
                   title="Use the email address saved in your profile. " />
               </label>
 
@@ -763,12 +776,12 @@ function engineLabel(engine: NotificationEngine) {
                 </label>
 
                 <label class="notification-check-row">
-                  <input v-model="notifications.include_servers" type="checkbox" />
+                  <input v-model="notifications.include_servers" type="checkbox" class="toggle-switch"/>
                   <span>Server / infrastructure alerts</span>
                 </label>
 
                 <label class="notification-check-row">
-                  <input v-model="notifications.include_system" type="checkbox" />
+                  <input v-model="notifications.include_system" type="checkbox" class="toggle-switch"/>
                   <span>DBAChum collector / system alerts</span>
                 </label>
               </fieldset>
@@ -875,9 +888,6 @@ function engineLabel(engine: NotificationEngine) {
             <p v-if="notificationsError" class="login-error">
               {{ notificationsError }}
             </p>
-            <p v-if="notificationsMessage" class="profile-success">
-              {{ notificationsMessage }}
-            </p>
 
             <div class="connection-form-actions">
               <button type="submit" class="primary-button" :disabled="authStore.notificationsSaving">
@@ -890,3 +900,76 @@ function engineLabel(engine: NotificationEngine) {
     </section>
   </div>
 </template>
+
+<style scoped>
+.profile-avatar-editor {
+  position: relative;
+  flex: 0 0 100px;
+  width: 100px;
+  height: 100px;
+  border-radius: 50%;
+  overflow: hidden;
+}
+
+.profile-avatar-editor .profile-avatar-large {
+  width: 100%;
+  height: 100%;
+  flex-basis: auto;
+}
+
+.profile-avatar-change {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: .75rem;
+  border: 0;
+  border-radius: 50%;
+  background: rgb(17 17 21 / 58%);
+  color: #fff;
+  font: inherit;
+  font-size: .75rem;
+  font-weight: 650;
+  text-align: center;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity .18s ease;
+  backdrop-filter: blur(5px);
+}
+
+.profile-avatar-editor:hover .profile-avatar-change,
+.profile-avatar-change:focus-visible {
+  opacity: 1;
+}
+
+.profile-avatar-change:disabled {
+  cursor: wait;
+}
+
+.profile-preference-data {
+  display: grid;
+  gap: .75rem;
+  margin-top: 1.25rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--border);
+}
+
+.profile-preference-data h3,
+.profile-preference-data p {
+  margin: 0;
+}
+
+.profile-preference-data p {
+  margin-top: .25rem;
+  color: var(--text-muted);
+  font-size: .82rem;
+}
+
+@media (hover: none) {
+  .profile-avatar-change {
+    opacity: 1;
+    background: rgb(17 17 21 / 42%);
+  }
+}
+</style>

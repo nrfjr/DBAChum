@@ -3,6 +3,7 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import ScrollableDataTable from '@/components/common/ScrollableDataTable.vue'
+import FloatingActionMenu from '@/components/common/FloatingActionMenu.vue'
 import { engineLabel } from '@/core/databasePresentation'
 import { hasPermission } from '@/core/permissions'
 import { useAuthStore } from '@/stores/auth'
@@ -280,16 +281,19 @@ async function saveRecord() {
   formError.value = null
   try {
     const payload = buildPayload()
+    const updated = Boolean(editingId.value)
     if (editingId.value) {
       await recordsStore.update(editingId.value, payload)
     } else {
       await recordsStore.create(payload)
     }
+    const name = payload.name
     closeForm()
+    showToast({ title: updated ? 'Record updated' : 'Record created', message: name, tone: 'success' })
   } catch (error) {
-    formError.value = error instanceof Error
-      ? error.message
-      : 'Unable to save record.'
+    const message = error instanceof Error ? error.message : 'Unable to save record.'
+    formError.value = message
+    showToast({ title: 'Unable to save record', message, tone: 'danger' })
   }
 }
 
@@ -392,6 +396,7 @@ onMounted(async () => {
   ])
   await openEditFromRoute()
 })
+
 </script>
 
 <template>
@@ -532,7 +537,7 @@ onMounted(async () => {
           <th>Application / owner</th>
           <th>Status</th>
           <th>Updated</th>
-          <th>Actions</th>
+          <th class="user-actions-column">Actions</th>
         </tr>
       </template>
 
@@ -581,18 +586,22 @@ onMounted(async () => {
           </span>
         </td>
         <td class="records-updated-cell">{{ formatDate(record.updated_at) }}</td>
-        <td>
-          <div class="table-actions-cell">
-            <RouterLink :to="`/records/${record.id}`" class="secondary-button records-link-button">
+        <td class="user-actions-cell">
+          <FloatingActionMenu :label="`Actions for ${record.name}`">
+            <button type="button" role="menuitem" @click="router.push(`/records/${record.id}`)">
+              <FontAwesomeIcon icon="arrow-up-right-from-square" />
               Open
-            </RouterLink>
-            <button v-if="canManage" type="button" class="secondary-button" @click="editRecord(record)">
+            </button>
+            <button v-if="canManage" type="button" role="menuitem" @click="editRecord(record)">
+              <FontAwesomeIcon icon="pen" />
               Edit
             </button>
-            <button v-if="canManage" type="button" class="danger-button" @click="removeRecord(record)">
+            <div v-if="canManage" class="user-action-divider" />
+            <button v-if="canManage" type="button" role="menuitem" class="danger-menu-item" @click="removeRecord(record)">
+              <FontAwesomeIcon icon="trash-can" />
               Delete
             </button>
-          </div>
+          </FloatingActionMenu>
         </td>
       </tr>
     </ScrollableDataTable>
@@ -611,7 +620,7 @@ onMounted(async () => {
         <div class="records-form-grid records-form-grid--identity">
           <label>
             <span class="field-label">Name <span class="required-mark" aria-hidden="true">*</span></span>
-            <input v-model="form.name" required maxlength="160" placeholder="FINPRD" />
+            <input v-model="form.name" required maxlength="160" placeholder="DBPRD" />
           </label>
 
           <label>

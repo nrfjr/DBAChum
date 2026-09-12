@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed, onMounted } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 
 import ScrollableDataTable from '@/components/common/ScrollableDataTable.vue'
+import FloatingActionMenu from '@/components/common/FloatingActionMenu.vue'
 import { hasPermission } from '@/core/permissions'
 import { useAuthStore } from '@/stores/auth'
 import { useDatabaseOperationsStore } from '@/stores/databaseOperations'
@@ -14,6 +15,11 @@ const operations = useDatabaseOperationsStore()
 const authStore = useAuthStore()
 const storage = computed(() => sqlServerStore.storage[props.connectionId])
 const canOperate = computed(() => hasPermission(authStore.user, 'database:operate'))
+
+function fileKey(file: SqlServerFile) {
+  return `${file.file_type}-${file.name}`
+}
+
 
 function formatBytes(bytes: number | null) {
   if (bytes == null) return '—'
@@ -53,7 +59,9 @@ async function resizeFile(file: SqlServerFile) {
     })
     await sqlServerStore.loadStorage(props.connectionId)
     showToast({ title: 'Database file resized', message: file.name, tone: 'success' })
-  } catch {}
+  } catch (cause) {
+    showToast({ title: 'Unable to resize database file', message: cause instanceof Error ? cause.message : operations.error ?? undefined, tone: 'danger' })
+  }
 }
 
 async function addFile() {
@@ -95,10 +103,15 @@ async function addFile() {
     })
     await sqlServerStore.loadStorage(props.connectionId)
     showToast({ title: 'Database file added', message: String(result.logical_name), tone: 'success' })
-  } catch {}
+  } catch (cause) {
+    showToast({ title: 'Unable to add database file', message: cause instanceof Error ? cause.message : operations.error ?? undefined, tone: 'danger' })
+  }
 }
 
-onMounted(() => void sqlServerStore.loadStorage(props.connectionId))
+onMounted(() => {
+  void sqlServerStore.loadStorage(props.connectionId)
+})
+
 </script>
 
 <template>
@@ -107,7 +120,7 @@ onMounted(() => void sqlServerStore.loadStorage(props.connectionId))
       <div title="SQL Server data and transaction-log file allocation."><h2>Storage</h2></div>
       <div class="database-inline-actions">
         <button v-if="canOperate" type="button" class="secondary-button" :disabled="operations.busy" @click="addFile">Add file</button>
-        <button type="button" class="secondary-button" :disabled="sqlServerStore.loadingStorage[connectionId]" @click="sqlServerStore.loadStorage(connectionId)">{{ sqlServerStore.loadingStorage[connectionId] ? 'Refreshing...' : 'Refresh' }}</button>
+        <button type="button" class="secondary-button refresh-button" :disabled="sqlServerStore.loadingStorage[connectionId]" @click="sqlServerStore.loadStorage(connectionId)">{{ sqlServerStore.loadingStorage[connectionId] ? 'Refreshing' : 'Refresh' }}<p v-if="sqlServerStore.loadingStorage[connectionId]" class="loading"></p></button>
       </div>
     </div>
 
@@ -124,10 +137,18 @@ onMounted(() => void sqlServerStore.loadStorage(props.connectionId))
         <section class="utility-section">
           <h3>Database files</h3>
           <ScrollableDataTable :empty="storage.files.length === 0" empty-message="No SQL Server files returned." max-height="34rem">
-            <template #header><tr><th>Name</th><th>Type</th><th>Allocated</th><th>Used</th><th>Free</th><th>Used %</th><th>Physical path</th><th v-if="canOperate">Actions</th></tr></template>
+            <template #header><tr><th>Name</th><th>Type</th><th>Allocated</th><th>Used</th><th>Free</th><th>Used %</th><th>Physical path</th><th v-if="canOperate" class="user-actions-column">Actions</th></tr></template>
             <tr v-for="file in storage.files" :key="`${file.file_type}-${file.name}`">
               <td>{{ file.name }}</td><td>{{ file.file_type }}</td><td>{{ formatBytes(file.allocated_bytes) }}</td><td>{{ formatBytes(file.used_bytes) }}</td><td>{{ formatBytes(file.free_bytes) }}</td><td>{{ file.used_percent != null ? `${file.used_percent}%` : '—' }}</td>
-              <td class="utility-sql-text" :title="file.physical_name ?? ''">{{ file.physical_name ?? '—' }}</td><td v-if="canOperate"><button type="button" class="secondary-button" :disabled="operations.busy" @click="resizeFile(file)">Resize</button></td>
+              <td class="utility-sql-text" :title="file.physical_name ?? ''">{{ file.physical_name ?? '—' }}</td>
+              <td v-if="canOperate" class="user-actions-cell">
+                <FloatingActionMenu :label="`Actions for ${file.name}`" :disabled="operations.busy">
+                  <button type="button" role="menuitem" @click="resizeFile(file)">
+                    <FontAwesomeIcon icon="expand" />
+                    Resize
+                  </button>
+                </FloatingActionMenu>
+              </td>
             </tr>
           </ScrollableDataTable>
         </section>

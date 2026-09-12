@@ -11,17 +11,35 @@ const collectorState = computed(() => String(store.maintenance?.collector?.state
 
 async function load() { error.value = null; try { await store.loadMaintenance() } catch (exc) { error.value = exc instanceof Error ? exc.message : 'Unable to load system diagnostics.' } }
 async function cleanup() {
-  const ok = await confirmDialog({ title: 'Run DBAChum cleanup', message: 'Apply configured retention, remove Analytics snapshots whose targets no longer exist, and reconcile terminal audit sessions left open for more than 24 hours.', confirmLabel: 'Run cleanup' })
+  const ok = await confirmDialog({ title: 'Run DBAChum cleanup', message: '', confirmLabel: 'Run cleanup' })
   if (!ok) return
   busy.value = true; error.value = null
   try {
     const result = await store.cleanup(); const retained = Object.values(result.retention_deleted).reduce((a, b) => a + b, 0)
     showToast({ title: 'System cleanup complete', message: `${retained} expired history rows · ${result.orphaned_analytics_deleted} orphaned Analytics rows · ${result.stale_terminal_sessions_reconciled} stale terminal sessions`, tone: 'success' })
     await load()
-  } catch (exc) { error.value = exc instanceof Error ? exc.message : 'Cleanup failed.' }
+  } catch (exc) {
+    const message = exc instanceof Error ? exc.message : 'Cleanup failed.'
+    error.value = message
+    showToast({ title: 'System cleanup failed', message, tone: 'danger' })
+  }
   finally { busy.value = false }
 }
-async function verifyIndexes() { busy.value = true; error.value = null; try { const result = await store.verifyIndexes(); showToast({ title: 'Indexes verified', message: result.message, tone: 'success' }); await load() } catch (exc) { error.value = exc instanceof Error ? exc.message : 'Index verification failed.' } finally { busy.value = false } }
+async function verifyIndexes() {
+  busy.value = true
+  error.value = null
+  try {
+    const result = await store.verifyIndexes()
+    showToast({ title: 'Indexes verified', message: result.message, tone: 'success' })
+    await load()
+  } catch (exc) {
+    const message = exc instanceof Error ? exc.message : 'Index verification failed.'
+    error.value = message
+    showToast({ title: 'Index verification failed', message, tone: 'danger' })
+  } finally {
+    busy.value = false
+  }
+}
 onMounted(load)
 </script>
 

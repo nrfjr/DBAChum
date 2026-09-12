@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
+import FloatingActionMenu from '@/components/common/FloatingActionMenu.vue'
 import { useServersStore } from '@/stores/servers'
 
 import {
@@ -29,6 +30,7 @@ const formError = ref<string | null>(null)
 const testingId = ref<string | null>(null)
 
 const formOpen = ref(false)
+
 
 const serversStore = useServersStore()
 
@@ -219,8 +221,8 @@ async function saveConnection() {
   formError.value = null
 
   if (!isEditing.value && !form.password) {
-    formError.value =
-      'Password is required for a new connection.'
+    formError.value = 'Password is required for a new connection.'
+    showToast({ title: 'Password required', message: formError.value, tone: 'warning' })
     return
   }
 
@@ -233,8 +235,8 @@ async function saveConnection() {
       existing
       && existing.username !== form.username.trim()
     ) {
-      formError.value =
-        'Password is required when changing the connection username.'
+      formError.value = 'Password is required when changing the connection username.'
+      showToast({ title: 'Password required', message: formError.value, tone: 'warning' })
       return
     }
   }
@@ -242,6 +244,7 @@ async function saveConnection() {
   try {
     const payload = buildPayload()
 
+    const updated = Boolean(editingId.value)
     if (editingId.value) {
       await connectionsStore.update(
         editingId.value,
@@ -251,12 +254,13 @@ async function saveConnection() {
       await connectionsStore.create(payload)
     }
 
+    const name = payload.name
     closeForm()
+    showToast({ title: updated ? 'Database connection updated' : 'Database connection created', message: name, tone: 'success' })
   } catch (error) {
-    formError.value =
-      error instanceof Error
-        ? error.message
-        : 'Unable to save database connection.'
+    const message = error instanceof Error ? error.message : 'Unable to save database connection.'
+    formError.value = message
+    showToast({ title: 'Unable to save database connection', message, tone: 'danger' })
   }
 }
 
@@ -283,10 +287,9 @@ async function removeConnection(
       resetForm()
     }
   } catch (error) {
-    formError.value =
-      error instanceof Error
-        ? error.message
-        : 'Unable to delete database connection.'
+    const message = error instanceof Error ? error.message : 'Unable to delete database connection.'
+    formError.value = message
+    showToast({ title: 'Unable to delete database connection', message, tone: 'danger' })
   }
 }
 
@@ -321,20 +324,13 @@ async function testConnection(
       .filter(Boolean)
       .join(' · ')
 
-    testResults[connection.id] = {
-      success: true,
-      message: details
-        ? `${result.message} ${details}`
-        : result.message,
-    }
+    const message = details ? `${result.message} ${details}` : result.message
+    testResults[connection.id] = { success: true, message }
+    showToast({ title: 'Database connection test passed', message: connection.name, tone: 'success' })
   } catch (error) {
-    testResults[connection.id] = {
-      success: false,
-      message:
-        error instanceof Error
-          ? error.message
-          : 'Connection test failed.',
-    }
+    const message = error instanceof Error ? error.message : 'Connection test failed.'
+    testResults[connection.id] = { success: false, message }
+    showToast({ title: 'Database connection test failed', message, tone: 'danger' })
   } finally {
     testingId.value = null
   }
@@ -355,6 +351,7 @@ onMounted(() => {
   connectionsStore.load()
   serversStore.load()
 })
+
 </script>
 
 <template>
@@ -372,6 +369,7 @@ onMounted(() => {
 
       <p v-if="connectionsStore.loading" class="empty-state">
         Loading connections...
+      <p v-if="connectionsStore.loading" class="loading"></p>
       </p>
 
       <p v-else-if="connectionsStore.error" class="login-error">
@@ -411,35 +409,26 @@ onMounted(() => {
 
             <small>
               {{ connection.username }}
-              <template
-                v-if="connection.engine === 'oracle' && connection.oracle_auth_mode === 'sysdba'"
-              >
+              <template v-if="connection.engine === 'oracle' && connection.oracle_auth_mode === 'sysdba'">
                 · SYSDBA
               </template>
             </small>
-            <p v-if="testResults[connection.id]" class="connection-test-result" :class="{
-              success:
-                testResults[connection.id]?.success,
-              error:
-                !testResults[connection.id]?.success,
-            }">
-              {{ testResults[connection.id]?.message }}
-            </p>
           </div>
 
-          <div class="connection-actions">
-            <button v-if="canTestConnections" type="button" class="secondary-button"
-              @click="testConnection(connection)">
-              Test
+          <FloatingActionMenu v-if="canTestConnections || canManageConnections" :label="`Actions for ${connection.name}`">
+            <button v-if="canTestConnections" type="button" role="menuitem" @click="testConnection(connection)">
+              <FontAwesomeIcon icon="plug" />
+              Test connection
             </button>
-            <button v-if="canManageConnections" type="button" class="secondary-button" @click="editConnection(connection)">
+            <button v-if="canManageConnections" type="button" role="menuitem" @click="editConnection(connection)">
+              <FontAwesomeIcon icon="pen" />
               Edit
             </button>
-
-            <button v-if="canManageConnections" type="button" class="secondary-button" @click="removeConnection(connection)">
+            <button v-if="canManageConnections" type="button" role="menuitem" class="danger-menu-item" @click="removeConnection(connection)">
+              <FontAwesomeIcon icon="trash-can" />
               Delete
             </button>
-          </div>
+          </FloatingActionMenu>
         </article>
       </div>
     </section>
@@ -448,7 +437,7 @@ onMounted(() => {
       <section class="modal-panel" role="dialog" aria-modal="true" :aria-label="isEditing
         ? 'Edit database connection'
         : 'Add database connection'
-        ">
+        " style="--modal-width: 650px">
         <div class="modal-header">
           <div>
             <h2>
@@ -465,31 +454,50 @@ onMounted(() => {
           </button>
         </div>
 
-        <form class="connection-form" @submit.prevent="saveConnection">
-          <label>
-            <span class="field-label">Connection name <span class="required-mark" aria-hidden="true">*</span></span>
-            <input v-model="form.name" required maxlength="100" placeholder="ERP Production" />
-          </label>
-
-          <label>
-            <span class="field-label">Database engine <span class="required-mark" aria-hidden="true">*</span></span>
-            <select v-model="form.engine" required @change="changeEngine">
-              <option value="oracle">Oracle</option>
-              <option value="sqlserver">
-                SQL Server
-              </option>
-              <option value="mysql">MySQL / MariaDB</option>
-            </select>
-          </label>
-
-          <div class="connection-form-row">
+        <form class="connection-form database-connection-form" @submit.prevent="saveConnection">
+          <div class="database-connection-form__row">
             <label>
-              <span class="field-label">Host <span class="required-mark" aria-hidden="true">*</span></span>
+              <span class="field-label">
+                Connection name
+                <span class="required-mark" aria-hidden="true">*</span>
+              </span>
+
+              <input v-model="form.name" required maxlength="100" placeholder="ERP Production" />
+            </label>
+
+            <label>
+              <span class="field-label">
+                Database engine
+                <span class="required-mark" aria-hidden="true">*</span>
+              </span>
+
+              <select v-model="form.engine" required @change="changeEngine">
+                <option value="oracle">Oracle</option>
+                <option value="sqlserver">SQL Server</option>
+                <option value="mysql">MySQL / MariaDB</option>
+              </select>
+            </label>
+          </div>
+
+          <div class="
+    database-connection-form__row
+    database-connection-form__row--host
+  ">
+            <label>
+              <span class="field-label">
+                Host
+                <span class="required-mark" aria-hidden="true">*</span>
+              </span>
+
               <input v-model="form.host" required maxlength="255" placeholder="db01.example.local" />
             </label>
 
             <label>
-              <span class="field-label">Port <span class="required-mark" aria-hidden="true">*</span></span>
+              <span class="field-label">
+                Port
+                <span class="required-mark" aria-hidden="true">*</span>
+              </span>
+
               <input v-model.number="form.port" required type="number" min="1" max="65535" />
             </label>
           </div>
@@ -512,23 +520,6 @@ onMounted(() => {
                 <span class="required-mark" aria-hidden="true">*</span>
               </span>
               <input v-model="form.oracle_identifier" required maxlength="128" placeholder="ORCLPDB1" />
-            </label>
-
-            <label>
-              Oracle privilege mode
-
-              <select v-model="form.oracle_auth_mode">
-                <option value="normal">Normal</option>
-                <option value="sysdba">SYSDBA</option>
-              </select>
-
-              <small
-                v-if="form.oracle_auth_mode === 'sysdba'"
-                class="connection-danger-note"
-              >
-                SYSDBA grants unrestricted Oracle administrative access.
-                Use it only for connections that require privileged DBA operations.
-              </small>
             </label>
           </template>
 
@@ -556,26 +547,14 @@ onMounted(() => {
                   Legacy ODBC / pyodbc
                 </option>
               </select>
-
-              <small>
-                Use Auto normally. SQL Server 2000 can use the isolated legacy
-                ODBC path when the modern provider cannot negotiate with it.
-              </small>
             </label>
 
             <label v-if="form.sqlserver_provider !== 'mssql_python'">
               ODBC driver (Optional)
 
-              <input
-                v-model="form.sqlserver_driver"
-                maxlength="128"
-                placeholder="SQL Server or SQL Server Native Client 10.0"
-              />
+              <input v-model="form.sqlserver_driver" maxlength="128"
+                placeholder="SQL Server or SQL Server Native Client 10.0" />
 
-              <small>
-                Leave blank to let DBAChum inspect installed SQL Server ODBC
-                drivers. Set this explicitly for a known legacy driver.
-              </small>
             </label>
 
             <label>
@@ -587,10 +566,6 @@ onMounted(() => {
                 <option value="no">Disable encryption for legacy server</option>
               </select>
 
-              <small v-if="form.sqlserver_encrypt === 'no'" class="connection-danger-note">
-                Use unencrypted transport only for legacy SQL Server endpoints
-                on a trusted internal network.
-              </small>
             </label>
           </template>
           <label>
@@ -605,28 +580,53 @@ onMounted(() => {
             </select>
           </label>
 
-          <label>
-            <span class="field-label">Username <span class="required-mark" aria-hidden="true">*</span></span>
-            <input v-model="form.username" required maxlength="128" autocomplete="off" />
-          </label>
+          <div class="database-connection-form__row">
+            <label>
+              <span class="field-label">
+                Username
+                <span class="required-mark" aria-hidden="true">*</span>
+              </span>
 
-          <label>
-            <span class="field-label">Password <span v-if="!isEditing" class="required-mark" aria-hidden="true">*</span></span>
-            <input v-model="form.password" :required="!isEditing" maxlength="512" type="password" autocomplete="new-password"
-              :placeholder="isEditing
-                ? 'Leave blank to keep current password'
-                : 'Database password'
+              <input v-model="form.username" required maxlength="128" autocomplete="off" />
+            </label>
+
+            <label v-if="form.engine === 'oracle'">
+              Oracle privilege mode
+
+              <select v-model="form.oracle_auth_mode">
+                <option value="normal">
+                  Normal
+                </option>
+
+                <option value="sysdba">
+                  SYSDBA
+                </option>
+              </select>
+            </label>
+          </div>
+          <label class="database-connection-form__half">
+            <span class="field-label">
+              Password
+              <span v-if="!isEditing" class="required-mark" aria-hidden="true">
+                *
+              </span>
+            </span>
+
+            <input v-model="form.password" :required="!isEditing" maxlength="512" type="password"
+              autocomplete="new-password" :placeholder="isEditing
+                  ? 'Leave blank to keep current password'
+                  : 'Database password'
                 " />
           </label>
 
           <label class="connection-checkbox">
-            <input v-model="form.active" type="checkbox" />
+            <input v-model="form.active" type="checkbox" class="toggle-switch" />
 
             Connection enabled
           </label>
 
           <label class="connection-checkbox">
-            <input v-model="form.monitor_enabled" type="checkbox" />
+            <input v-model="form.monitor_enabled" type="checkbox" class="toggle-switch" />
 
             Monitor this connection
           </label>
@@ -639,11 +639,12 @@ onMounted(() => {
             <button type="submit" class="primary-button" :disabled="connectionsStore.saving">
               {{
                 connectionsStore.saving
-                  ? 'Saving...'
+                  ? 'Saving'
                   : isEditing
                     ? 'Save changes'
                     : 'Add connection'
               }}
+              <p v-if="connectionsStore.saving" class="loading"></p>
             </button>
 
             <button type="button" class="secondary-button" @click="closeForm">
@@ -654,4 +655,56 @@ onMounted(() => {
       </section>
     </div>
   </div>
+  
 </template>
+<style>
+
+.database-connection-form {
+  --database-connection-gap: 0.75rem;
+}
+
+.database-connection-form__row {
+  display: grid;
+  grid-template-columns:
+    repeat(2, minmax(0, 1fr));
+  gap: var(--database-connection-gap);
+}
+
+.database-connection-form__row--host {
+  grid-template-columns:
+    minmax(0, 1fr)
+    120px;
+}
+
+.database-connection-form__row > label,
+.database-connection-form input,
+.database-connection-form select,
+.database-connection-form textarea {
+  min-width: 0;
+}
+
+.database-connection-form input,
+.database-connection-form select,
+.database-connection-form textarea {
+  width: 100%;
+  max-width: none;
+  box-sizing: border-box;
+}
+
+.database-connection-form__half {
+  width: calc(
+    50% - var(--database-connection-gap) / 2
+  );
+}
+
+@media (max-width: 720px) {
+  .database-connection-form__row,
+  .database-connection-form__row--host {
+    grid-template-columns: 1fr;
+  }
+
+  .database-connection-form__half {
+    width: 100%;
+  }
+}
+</style>

@@ -156,7 +156,7 @@ onMounted(() => {
           <div class="status-row"><span>MongoDB</span><span class="status status--healthy">● {{ health.mongodb }}</span></div>
         </div>
         <div v-else-if="healthError" class="status-message status-message--error">Backend unavailable.</div>
-        <div v-else class="status-message">Checking services...</div>
+        <div v-else class="status-message">Checking services<p class="loading"></p></div>
       </article>
     </section>
 

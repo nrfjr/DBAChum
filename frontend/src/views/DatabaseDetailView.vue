@@ -383,6 +383,7 @@ async function testDatabaseConnection() {
     const result = await connectionsStore.test(connectionId.value)
     if (result.success) {
       showConnectionNotice('Connection successful', 'success')
+      showToast({ title: 'Connection successful', message: result.message, tone: 'success' })
     } else {
       showConnectionNotice('Connection failed', 'error')
       showToast({ title: 'Connection test failed', message: result.message, tone: 'danger' })
@@ -450,7 +451,7 @@ onUnmounted(() => {
 <template>
   <div class="database-workspace">
     <div v-if="connectionsStore.loading" class="empty-state">
-      Loading database...
+      Loading database<p class="loading"></p>
     </div>
 
     <div v-else-if="!connection" class="database-empty-state">
@@ -481,13 +482,6 @@ onUnmounted(() => {
                 :title="statusLabel(overview?.status)"
                 :aria-label="statusLabel(overview?.status)"
               />
-              <span
-                v-if="connectionTestNotice"
-                class="connection-test-notice"
-                :class="`connection-test-notice--${connectionTestTone}`"
-              >
-                {{ connectionTestNotice }}
-              </span>
             </div>
             <p>
               {{ engineProductLabel(connection.engine, overview?.database_product) }}
@@ -497,8 +491,9 @@ onUnmounted(() => {
           </div>
 
           <div class="resource-context__actions" @click.stop>
-            <button type="button" class="secondary-button" :disabled="refreshing" @click="refreshWorkspace">
-              {{ refreshing ? 'Refreshing…' : 'Refresh' }}
+            <button type="button" class="secondary-button refresh-button" :disabled="refreshing" @click="refreshWorkspace">
+              {{ refreshing ? 'Refreshing' : 'Refresh' }}
+              <p v-if="refreshing" class="loading"></p>
             </button>
 
             <div class="context-action-menu">

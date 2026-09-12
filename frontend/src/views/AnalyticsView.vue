@@ -388,7 +388,9 @@ async function handleImportFile(event: Event) {
     const byName = new Map(connectionsStore.connections.map((connection) => [connection.name.toLowerCase(), connection.id]))
     databaseMap.value = Object.fromEntries(values.map((value) => [value, byName.get(value.toLowerCase()) ?? '']))
   } catch (error) {
-    importError.value = error instanceof Error ? error.message : 'Unable to preview the file.'
+    const message = error instanceof Error ? error.message : 'Unable to preview the file.'
+    importError.value = message
+    showToast({ title: 'Unable to preview growth file', message, tone: 'danger' })
   } finally {
     importLoading.value = false
   }
@@ -419,7 +421,9 @@ async function submitImport() {
     closeImport()
     await analyticsStore.loadDatabases(engine.value, months.value)
   } catch (error) {
-    importError.value = error instanceof Error ? error.message : 'Unable to import growth history.'
+    const message = error instanceof Error ? error.message : 'Unable to import growth history.'
+    importError.value = message
+    showToast({ title: 'Unable to import growth history', message, tone: 'danger' })
   } finally {
     importLoading.value = false
   }
@@ -467,7 +471,7 @@ onMounted(async () => {
             <option :value="60">60 months</option>
           </select>
         </label>
-        <button type="button" class="secondary-button" :disabled="analyticsStore.loading" @click="load">{{ analyticsStore.loading ? 'Refreshing…' : 'Refresh' }}</button>
+        <button type="button" class="secondary-button refresh-button" :disabled="analyticsStore.loading" @click="load">{{ analyticsStore.loading ? 'Refreshing' : 'Refresh' }}<p v-if="analyticsStore.loading" class="loading"></p></button>
       </div>
     </div>
 

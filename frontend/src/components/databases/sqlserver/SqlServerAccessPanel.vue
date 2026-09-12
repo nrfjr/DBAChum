@@ -76,7 +76,9 @@ async function roleOperation(action: 'grant_role' | 'revoke_role') {
     })
     await store.loadSecurity(props.connectionId, true)
     showToast({ title: action === 'grant_role' ? 'Role granted' : 'Role revoked', tone: 'success' })
-  } catch {}
+  } catch (cause) {
+    showToast({ title: action === 'grant_role' ? 'Unable to grant role' : 'Unable to revoke role', message: cause instanceof Error ? cause.message : operations.error ?? undefined, tone: 'danger' })
+  }
 }
 
 async function privilegeOperation(action: 'grant_privilege' | 'revoke_privilege') {
@@ -101,7 +103,9 @@ async function privilegeOperation(action: 'grant_privilege' | 'revoke_privilege'
     })
     await store.loadSecurity(props.connectionId, true)
     showToast({ title: action === 'grant_privilege' ? 'Privilege granted' : 'Privilege revoked', tone: 'success' })
-  } catch {}
+  } catch (cause) {
+    showToast({ title: action === 'grant_privilege' ? 'Unable to grant privilege' : 'Unable to revoke privilege', message: cause instanceof Error ? cause.message : operations.error ?? undefined, tone: 'danger' })
+  }
 }
 
 
@@ -122,7 +126,7 @@ onMounted(() => {
         <button v-if="canOperate" type="button" class="secondary-button" :disabled="operations.busy" @click="roleOperation('revoke_role')">Revoke role</button>
         <button v-if="canOperate" type="button" class="secondary-button" :disabled="operations.busy" @click="privilegeOperation('grant_privilege')">Grant privilege</button>
         <button v-if="canOperate" type="button" class="secondary-button" :disabled="operations.busy" @click="privilegeOperation('revoke_privilege')">Revoke privilege</button>
-        <button type="button" class="secondary-button" :disabled="store.loadingSecurity[connectionId]" @click="store.loadSecurity(connectionId, true)">{{ store.loadingSecurity[connectionId] ? 'Refreshing...' : 'Refresh' }}</button>
+        <button type="button" class="secondary-button refresh-button" :disabled="store.loadingSecurity[connectionId]" @click="store.loadSecurity(connectionId, true)">{{ store.loadingSecurity[connectionId] ? 'Refreshing' : 'Refresh' }}<p v-if="store.loadingSecurity[connectionId]" class="loading"></p></button>
       </div>
     </div>
 
@@ -169,7 +173,7 @@ onMounted(() => {
           <button type="button" :class="{ active: section === 'server' }" @click="section = 'server'">Server permissions</button>
           <button type="button" :class="{ active: section === 'database' }" @click="section = 'database'">Database permissions</button>
         </div>
-        <input v-model="search" type="search" placeholder="Search principal, role, permission..." />
+        <input v-model="search" type="search" class="utility-search-input" placeholder="Search principal, role, permission..." />
       </div>
 
       <template v-if="section === 'roles'">

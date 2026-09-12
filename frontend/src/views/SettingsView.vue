@@ -139,7 +139,7 @@ const filteredGroups = computed(() => {
     </div>
   </section>
 
-  <div class="settings-layout settings-layout--phase8">
+  <div class="settings-layout settings-layout--app">
     <aside class="settings-nav settings-nav--grouped">
       <label class="settings-search">
         <input v-model="search" type="search" placeholder="Looking for something?" />

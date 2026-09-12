@@ -80,7 +80,9 @@ async function revealPassword() {
   try {
     revealedPassword.value = await recordsStore.revealPassword(record.value.id)
   } catch (err) {
-    secretError.value = err instanceof Error ? err.message : 'Unable to reveal password.'
+    const message = err instanceof Error ? err.message : 'Unable to reveal password.'
+    secretError.value = message
+    showToast({ title: 'Unable to reveal password', message, tone: 'danger' })
   }
 }
 
@@ -103,7 +105,9 @@ async function deleteRecord() {
     showToast({ title: 'Record deleted', message: record.value.name, tone: 'success' })
     await router.push('/records')
   } catch (err) {
-    error.value = err instanceof Error ? err.message : 'Unable to delete record.'
+    const message = err instanceof Error ? err.message : 'Unable to delete record.'
+    error.value = message
+    showToast({ title: 'Unable to delete record', message, tone: 'danger' })
   }
 }
 
@@ -123,7 +127,7 @@ onMounted(async () => {
 
 <template>
   <div v-if="loading" class="empty-state">
-    Loading record...
+    Loading record<p class="loading"></p>
   </div>
 
   <div v-else-if="error" class="login-error">

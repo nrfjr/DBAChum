@@ -20,6 +20,7 @@ import {
 } from '@/stores/oracleDba'
 import OracleBulkProvisionModal from '@/components/databases/oracle/OracleBulkProvisionModal.vue'
 import ScrollableDataTable from '@/components/common/ScrollableDataTable.vue'
+import FloatingActionMenu from '@/components/common/FloatingActionMenu.vue'
 
 import {
   useProvisioningStore,
@@ -203,12 +204,10 @@ const usernameChecking = ref(false)
 const bulkCreateOpen = ref(false)
 const createActionsOpen = ref(false)
 const resultPassword = ref('')
-const summaryCopyNotice = ref('')
 
 const historyOpen = ref(false)
 const historyLoading = ref(false)
 const historyError = ref<string | null>(null)
-const historyClearMessage = ref<string | null>(null)
 const selectedProvisioningRunIds = ref<string[]>([])
 const historyClearing = ref(false)
 const retryingRunId = ref<string | null>(null)
@@ -224,8 +223,6 @@ const deprovisionConfirmation = ref('')
 const deprovisionRequestReference = ref('')
 const deprovisionResult = ref<OracleUserDeprovisionResult | null>(null)
 
-const actionMenuUsername = ref<string | null>(null)
-const actionNotice = ref<string | null>(null)
 
 const inspectorTargetUsername = ref<string | null>(null)
 const inspectorLoading = ref(false)
@@ -325,7 +322,6 @@ async function clearSelectedProvisioningHistory() {
 
   historyClearing.value = true
   historyError.value = null
-  historyClearMessage.value = null
   try {
     const result = await provisioningStore.clearRunsForConnection(
       props.connectionId,
@@ -333,11 +329,15 @@ async function clearSelectedProvisioningHistory() {
       false,
     )
     selectedProvisioningRunIds.value = []
-    historyClearMessage.value = `Cleared ${result.deleted_count} provisioning history record${result.deleted_count === 1 ? '' : 's'}.${result.skipped_count ? ` ${result.skipped_count} active/nonexistent record(s) were left untouched.` : ''}`
+      showToast({
+      title: 'Provisioning history cleared',
+      message: `${result.deleted_count} record${result.deleted_count === 1 ? '' : 's'} removed${result.skipped_count ? ` · ${result.skipped_count} left untouched` : ''}.`,
+      tone: result.skipped_count ? 'warning' : 'success',
+    })
   } catch (error) {
-    historyError.value = error instanceof Error
-      ? error.message
-      : 'Unable to clear provisioning history.'
+    const message = error instanceof Error ? error.message : 'Unable to clear provisioning history.'
+    historyError.value = message
+    showToast({ title: 'Unable to clear provisioning history', message, tone: 'danger' })
   } finally {
     historyClearing.value = false
   }
@@ -357,7 +357,6 @@ async function clearAllProvisioningHistory() {
 
   historyClearing.value = true
   historyError.value = null
-  historyClearMessage.value = null
   try {
     const result = await provisioningStore.clearRunsForConnection(
       props.connectionId,
@@ -365,11 +364,11 @@ async function clearAllProvisioningHistory() {
       true,
     )
     selectedProvisioningRunIds.value = []
-    historyClearMessage.value = `Cleared ${result.deleted_count} provisioning history record${result.deleted_count === 1 ? '' : 's'}.`
+      showToast({ title: 'Provisioning history cleared', message: `${result.deleted_count} record${result.deleted_count === 1 ? '' : 's'} removed.`, tone: 'success' })
   } catch (error) {
-    historyError.value = error instanceof Error
-      ? error.message
-      : 'Unable to clear provisioning history.'
+    const message = error instanceof Error ? error.message : 'Unable to clear provisioning history.'
+    historyError.value = message
+    showToast({ title: 'Unable to clear provisioning history', message, tone: 'danger' })
   } finally {
     historyClearing.value = false
   }
@@ -389,10 +388,11 @@ async function performRetry(run: ProvisioningRunSummary, password: string | null
     retryShowPassword.value = false
     await oracleStore.loadUsers(props.connectionId)
     await loadProvisioningHistory()
+    showToast({ title: 'Provisioning retry completed', message: run.username, tone: 'success' })
   } catch (error) {
-    historyError.value = error instanceof Error
-      ? error.message
-      : 'Unable to retry the provisioning run.'
+    const message = error instanceof Error ? error.message : 'Unable to retry the provisioning run.'
+    historyError.value = message
+    showToast({ title: 'Unable to retry provisioning', message, tone: 'danger' })
   } finally {
     retryingRunId.value = null
   }
@@ -417,6 +417,7 @@ async function submitRetryPassword() {
   if (!retryPasswordRun.value) return
   if (retryPassword.value.length < 8) {
     historyError.value = 'Provisioning password must contain at least 8 characters.'
+    showToast({ title: 'Password is too short', message: historyError.value, tone: 'warning' })
     return
   }
   const run = retryPasswordRun.value
@@ -431,19 +432,7 @@ function cancelRetryPassword() {
   retryShowPassword.value = false
 }
 
-function closeActionMenu() {
-  actionMenuUsername.value = null
-}
-
-function toggleActionMenu(user: OracleDatabaseUser, event: Event) {
-  event.stopPropagation()
-  actionMenuUsername.value = actionMenuUsername.value === user.username
-    ? null
-    : user.username
-}
-
-function documentClickClosesActionMenu() {
-  closeActionMenu()
+function documentClickClosesCreateActions() {
   createActionsOpen.value = false
 }
 
@@ -473,7 +462,6 @@ const filteredInspectorObjectPrivileges = computed(() => {
 })
 
 async function openAccessInspector(user: OracleDatabaseUser) {
-  closeActionMenu()
   inspectorTargetUsername.value = user.username
   inspectorLoading.value = true
   inspectorError.value = null
@@ -547,7 +535,6 @@ function editPayload() {
 }
 
 async function openEditUser(user: OracleDatabaseUser) {
-  closeActionMenu()
   editTargetUsername.value = user.username
   editLoading.value = true
   editError.value = null
@@ -600,11 +587,13 @@ async function executeEditUser() {
         request_reference: editRequestReference.value.trim() || null,
       },
     )
-    actionNotice.value = `${result.username} access updated · ${result.changes_applied} change(s).`
     await oracleStore.loadUsers(props.connectionId)
     closeEditUser()
+    showToast({ title: 'Oracle user access updated', message: `${result.username} · ${result.changes_applied} change(s)`, tone: 'success' })
   } catch (error) {
-    editError.value = error instanceof Error ? error.message : 'Unable to update Oracle user access.'
+    const message = error instanceof Error ? error.message : 'Unable to update Oracle user access.'
+    editError.value = message
+    showToast({ title: 'Unable to update Oracle user access', message, tone: 'danger' })
   } finally {
     editExecuting.value = false
   }
@@ -631,7 +620,6 @@ function generatedPassword() {
 }
 
 function openPasswordReset(user: OracleDatabaseUser) {
-  closeActionMenu()
   passwordTargetUsername.value = user.username
   passwordValue.value = ''
   passwordConfirm.value = ''
@@ -652,10 +640,12 @@ async function executePasswordReset() {
   passwordError.value = null
   if (passwordValue.value.length < 8) {
     passwordError.value = 'Password must contain at least 8 characters.'
+    showToast({ title: 'Password is too short', message: passwordError.value, tone: 'warning' })
     return
   }
   if (passwordValue.value !== passwordConfirm.value) {
     passwordError.value = 'Password confirmation does not match.'
+    showToast({ title: 'Password confirmation mismatch', tone: 'warning' })
     return
   }
   passwordExecuting.value = true
@@ -669,11 +659,13 @@ async function executePasswordReset() {
     )
     passwordValue.value = ''
     passwordConfirm.value = ''
-    actionNotice.value = `${result.username} password reset successfully.`
     await oracleStore.loadUsers(props.connectionId)
     closePasswordReset()
+    showToast({ title: 'Oracle password reset', message: result.username, tone: 'success' })
   } catch (error) {
-    passwordError.value = error instanceof Error ? error.message : 'Unable to reset Oracle password.'
+    const message = error instanceof Error ? error.message : 'Unable to reset Oracle password.'
+    passwordError.value = message
+    showToast({ title: 'Unable to reset Oracle password', message, tone: 'danger' })
   } finally {
     passwordExecuting.value = false
     passwordValue.value = ''
@@ -692,7 +684,6 @@ function closePasswordReset() {
 }
 
 function openAccountAction(user: OracleDatabaseUser, action: AccountAction) {
-  closeActionMenu()
   accountActionTargetUsername.value = user.username
   accountAction.value = action
   accountActionRequestReference.value = ''
@@ -717,11 +708,14 @@ async function executeAccountAction() {
       accountAction.value,
       accountActionRequestReference.value.trim() || null,
     )
-    actionNotice.value = `${result.username} · ${accountActionLabel.value} completed.`
+    const completedAction = accountActionLabel.value
     await oracleStore.loadUsers(props.connectionId)
     closeAccountAction()
+    showToast({ title: `${completedAction} completed`, message: result.username, tone: 'success' })
   } catch (error) {
-    accountActionError.value = error instanceof Error ? error.message : 'Unable to update Oracle account state.'
+    const message = error instanceof Error ? error.message : 'Unable to update Oracle account state.'
+    accountActionError.value = message
+    showToast({ title: 'Unable to update Oracle account state', message, tone: 'danger' })
   } finally {
     accountActionExecuting.value = false
   }
@@ -787,17 +781,19 @@ async function executeUserDeprovision() {
 
     if (result.status === 'succeeded') {
       closeDeprovisionPreview()
+      showToast({ title: 'Oracle user deprovisioned', message: result.username, tone: 'success' })
     } else {
       deprovisionPreview.value = await provisioningStore.previewOracleUserDeprovision(
         props.connectionId,
         result.username,
       )
       deprovisionConfirmation.value = ''
+      showToast({ title: 'Deprovisioning completed with warnings', message: result.error ?? result.status, tone: 'warning' })
     }
   } catch (error) {
-    deprovisionError.value = error instanceof Error
-      ? error.message
-      : 'Unable to deprovision the Oracle schema.'
+    const message = error instanceof Error ? error.message : 'Unable to deprovision the Oracle schema.'
+    deprovisionError.value = message
+    showToast({ title: 'Unable to deprovision Oracle schema', message, tone: 'danger' })
   } finally {
     deprovisionExecuting.value = false
   }
@@ -838,7 +834,6 @@ function resetCreate() {
   provisioningExecuting.value = false
   showPassword.value = false
   resultPassword.value = ''
-  summaryCopyNotice.value = ''
 }
 
 function toggleCreateActions(event: Event) {
@@ -1193,11 +1188,10 @@ const requesterSummary = computed(() => [
 ].join('\n'))
 
 async function copyRequesterSummary() {
-  summaryCopyNotice.value = ''
   const text = requesterSummary.value
   try {
     await navigator.clipboard.writeText(text)
-    summaryCopyNotice.value = 'Copied.'
+    showToast({ title: 'Requester summary copied', tone: 'success' })
   } catch {
     const textarea = document.createElement('textarea')
     textarea.value = text
@@ -1207,7 +1201,7 @@ async function copyRequesterSummary() {
     textarea.select()
     document.execCommand('copy')
     textarea.remove()
-    summaryCopyNotice.value = 'Copied.'
+    showToast({ title: 'Requester summary copied', tone: 'success' })
   }
 }
 
@@ -1249,11 +1243,15 @@ async function executeProvisioning() {
     createStep.value = 'success'
     await oracleStore.loadUsers(props.connectionId)
     await loadProvisioningHistory()
+    showToast({
+      title: provisioningResult.value.status === 'succeeded' ? 'Provisioning completed' : 'Provisioning completed with issues',
+      message: provisioningResult.value.username,
+      tone: provisioningResult.value.status === 'succeeded' ? 'success' : 'warning',
+    })
   } catch (error) {
-    createError.value =
-      error instanceof Error
-        ? error.message
-        : 'Unable to execute provisioning.'
+    const message = error instanceof Error ? error.message : 'Unable to execute provisioning.'
+    createError.value = message
+    showToast({ title: 'Provisioning failed', message, tone: 'danger' })
   } finally {
     provisioningExecuting.value = false
   }
@@ -1273,7 +1271,6 @@ function createAnotherUser() {
   provisioningResult.value = null
   showPassword.value = false
   resultPassword.value = ''
-  summaryCopyNotice.value = ''
 }
 
 function downloadProvisioningLdif() {
@@ -1339,16 +1336,16 @@ async function createUser() {
     await oracleStore.loadUsers(
       props.connectionId,
     )
+    showToast({ title: 'Oracle user created', message: createResult.value.username, tone: 'success' })
   } catch (error) {
-    createError.value =
-      error instanceof Error
-        ? error.message
-        : 'Unable to create Oracle user.'
+    const message = error instanceof Error ? error.message : 'Unable to create Oracle user.'
+    createError.value = message
+    showToast({ title: 'Unable to create Oracle user', message, tone: 'danger' })
   }
 }
 
 onMounted(() => {
-  document.addEventListener('click', documentClickClosesActionMenu)
+  document.addEventListener('click', documentClickClosesCreateActions)
   oracleStore.loadUsers(
     props.connectionId,
   )
@@ -1357,7 +1354,7 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
-  document.removeEventListener('click', documentClickClosesActionMenu)
+  document.removeEventListener('click', documentClickClosesCreateActions)
 })
 
 </script>
@@ -1396,15 +1393,16 @@ onBeforeUnmount(() => {
 
         <button
           type="button"
-          class="secondary-button"
+          class="secondary-button refresh-button"
           :disabled="oracleStore.loadingUsers"
           @click="oracleStore.loadUsers(connectionId)"
         >
           {{
             oracleStore.loadingUsers
-              ? 'Refreshing...'
+              ? 'Refreshing'
               : 'Refresh'
           }}
+          <p v-if="oracleStore.loadingUsers" class="loading"></p>
         </button>
       </div>
     </div>
@@ -1487,14 +1485,6 @@ onBeforeUnmount(() => {
           </span>
         </div>
 
-        <div v-if="actionNotice" class="preview-callout user-action-notice">
-          <div>
-            <strong>Oracle user updated</strong>
-            <span>{{ actionNotice }}</span>
-          </div>
-          <button type="button" class="secondary-button compact-button" @click="actionNotice = null">Dismiss</button>
-        </div>
-
         <div
           class="utility-table-wrap user-list-table-wrap"
           :class="{ 'user-list-table-wrap--scroll': userPageSize > 10 }"
@@ -1547,59 +1537,48 @@ onBeforeUnmount(() => {
                 </td>
 
                 <td class="user-actions-cell">
-                  <div class="user-action-menu-wrap" @click.stop>
+                  <FloatingActionMenu :label="`Actions for ${user.username}`">
+                    <button type="button" role="menuitem" @click="openAccessInspector(user)">
+                      <FontAwesomeIcon icon="magnifying-glass" />
+                      Inspect access
+                    </button>
+                    <button type="button" role="menuitem" @click="openEditUser(user)">
+                      <FontAwesomeIcon icon="pen" />
+                      Edit access
+                    </button>
+                    <button type="button" role="menuitem" @click="openPasswordReset(user)">
+                      <FontAwesomeIcon icon="key" />
+                      Change password
+                    </button>
                     <button
                       type="button"
-                      class="user-action-button user-menu-button"
-                      :aria-expanded="actionMenuUsername === user.username"
-                      :aria-label="`Actions for ${user.username}`"
-                      :title="`Actions for ${user.username}`"
-                      @click="toggleActionMenu(user, $event)"
+                      role="menuitem"
+                      @click="openAccountAction(user, user.status.toUpperCase().includes('LOCKED') ? 'unlock' : 'lock')"
                     >
-                      <FontAwesomeIcon icon="ellipsis-vertical" />
+                      <FontAwesomeIcon :icon="user.status.toUpperCase().includes('LOCKED') ? 'lock-open' : 'lock'" />
+                      {{ user.status.toUpperCase().includes('LOCKED') ? 'Unlock account' : 'Lock account' }}
                     </button>
-
-                    <div
-                      v-if="actionMenuUsername === user.username"
-                      class="user-action-dropdown"
-                      role="menu"
+                    <button
+                      type="button"
+                      role="menuitem"
+                      :disabled="user.status.toUpperCase().includes('EXPIRED')"
+                      @click="openAccountAction(user, 'expire_password')"
                     >
-                      <button type="button" role="menuitem" @click="openAccessInspector(user)">
-                        Inspect access
-                      </button>
-                      <button type="button" role="menuitem" @click="openEditUser(user)">
-                        Edit access
-                      </button>
-                      <button type="button" role="menuitem" @click="openPasswordReset(user)">
-                        Change password
-                      </button>
-                      <button
-                        type="button"
-                        role="menuitem"
-                        @click="openAccountAction(user, user.status.toUpperCase().includes('LOCKED') ? 'unlock' : 'lock')"
-                      >
-                        {{ user.status.toUpperCase().includes('LOCKED') ? 'Unlock account' : 'Lock account' }}
-                      </button>
-                      <button
-                        type="button"
-                        role="menuitem"
-                        :disabled="user.status.toUpperCase().includes('EXPIRED')"
-                        @click="openAccountAction(user, 'expire_password')"
-                      >
-                        Expire password
-                      </button>
-                      <div class="user-action-divider"></div>
-                      <button
-                        type="button"
-                        role="menuitem"
-                        class="danger-menu-item"
-                        :disabled="deprovisionTargetUsername === user.username && deprovisionLoadingRunId !== null"
-                        @click="previewUserDeprovision(user); closeActionMenu()"
-                      >
-                        Deprovision
-                      </button>
-                    </div>
-                  </div>
+                      <FontAwesomeIcon icon="clock" />
+                      Expire password
+                    </button>
+                    <div class="user-action-divider"></div>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      class="danger-menu-item"
+                      :disabled="deprovisionTargetUsername === user.username && deprovisionLoadingRunId !== null"
+                      @click="previewUserDeprovision(user)"
+                    >
+                      <FontAwesomeIcon icon="trash-can" />
+                      Deprovision
+                    </button>
+                  </FloatingActionMenu>
                 </td>
               </tr>
 
@@ -1683,7 +1662,6 @@ onBeforeUnmount(() => {
         </div>
       </div>
       <p v-if="historyError" class="login-error">{{ historyError }}</p>
-      <p v-if="historyClearMessage" class="profile-success">{{ historyClearMessage }}</p>
 
       <div v-if="provisioningResult && !createOpen" class="preview-callout provisioning-retry-result">
         <div>
@@ -1817,7 +1795,6 @@ onBeforeUnmount(() => {
         <div class="modal-header">
           <div>
             <h2>Access inspector · {{ inspectorTargetUsername }}</h2>
-            <p>Read-only view of direct and inherited Oracle access. No grants are changed from this screen.</p>
           </div>
           <button type="button" class="modal-close" aria-label="Close" @click="closeAccessInspector">×</button>
         </div>
@@ -2599,10 +2576,6 @@ onBeforeUnmount(() => {
           </details>
 
           <section v-if="provisioningPreview" class="oracle-provisioning-preview">
-            <div class="preview-callout">
-              <strong>Reviewed execution plan — no changes have been made yet.</strong>
-              <span>Click Provision once to execute this parent account and its application provisioning lifecycle.</span>
-            </div>
 
             <details class="wizard-review-details">
               <summary><span>Oracle execution plan</span><strong>{{ provisioningPreview.account_action.toUpperCase() }}</strong></summary>
@@ -2681,9 +2654,10 @@ onBeforeUnmount(() => {
             >
               {{
                 oracleStore.creatingUser
-                  ? 'Creating user...'
+                  ? 'Creating user'
                   : `Create ${createForm.username}`
               }}
+              <p v-if="oracleStore.creatingUser" class="loading"></p>
             </button>
 
             <button
@@ -2693,7 +2667,8 @@ onBeforeUnmount(() => {
               :disabled="provisioningExecuting || !provisioningPreview.ready_to_execute"
               @click="executeProvisioning"
             >
-              {{ provisioningExecuting ? 'Provisioning...' : `Provision ${createForm.username}` }}
+              {{ provisioningExecuting ? 'Provisioning' : `Provision ${createForm.username}` }}
+              <p v-if="provisioningExecuting" class="loading"></p>
             </button>
 
             <button
@@ -2719,7 +2694,6 @@ onBeforeUnmount(() => {
             <pre>{{ requesterSummary }}</pre>
             <div class="requester-summary-actions">
               <button type="button" class="secondary-button" @click="copyRequesterSummary">Copy summary</button>
-              <small v-if="summaryCopyNotice">{{ summaryCopyNotice }}</small>
             </div>
           </section>
 

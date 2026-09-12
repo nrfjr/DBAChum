@@ -2,6 +2,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 
 import ScrollableDataTable from '@/components/common/ScrollableDataTable.vue'
+import FloatingActionMenu from '@/components/common/FloatingActionMenu.vue'
 import { hasPermission } from '@/core/permissions'
 import { useAuthStore } from '@/stores/auth'
 import { useConnectionsStore } from '@/stores/connections'
@@ -88,6 +89,7 @@ const rows = computed(() => {
     })
 })
 
+
 async function loadComparison() {
   if (!compareConnectionId.value) return
   try {
@@ -150,7 +152,9 @@ async function setParameter(item: DatabaseParameterItem) {
     })
     await parametersStore.load(props.connectionId)
     showToast({ title: 'Parameter updated', message: `${item.name} = ${value}`, tone: 'success' })
-  } catch {}
+  } catch (cause) {
+    showToast({ title: 'Unable to update parameter', message: cause instanceof Error ? cause.message : operations.error ?? undefined, tone: 'danger' })
+  }
 }
 
 watch(compareConnectionId, () => void loadComparison())
@@ -159,6 +163,7 @@ onMounted(async () => {
   if (connectionsStore.connections.length === 0) await connectionsStore.load()
   await parametersStore.load(props.connectionId).catch(() => undefined)
 })
+
 </script>
 
 <template>
@@ -178,8 +183,9 @@ onMounted(async () => {
           </select>
         </label>
         <input v-model="search" class="utility-search-input" type="search" placeholder="Search parameters" />
-        <button type="button" class="secondary-button" :disabled="loading || comparisonLoading" @click="refresh">
-          {{ loading || comparisonLoading ? 'Refreshing...' : 'Refresh' }}
+        <button type="button" class="secondary-button refresh-button" :disabled="loading || comparisonLoading" @click="refresh">
+          {{ loading || comparisonLoading ? 'Refreshing' : 'Refresh' }}
+          <p v-if="loading" class="loading"></p>
         </button>
       </div>
     </div>
@@ -203,7 +209,7 @@ onMounted(async () => {
           <th v-if="compareConnectionId">{{ comparisonConnection?.name ?? 'Comparison database' }}</th>
           <th>Dynamic</th>
           <th>Description</th>
-          <th v-if="canOperate">Actions</th>
+          <th v-if="canOperate" class="user-actions-column">Actions</th>
         </tr>
       </template>
       <tr v-for="row in rows" :key="row.name" :class="{ 'parameter-comparison-row--different': row.differs }">
@@ -216,8 +222,14 @@ onMounted(async () => {
           <template v-else>Server decides</template>
         </td>
         <td class="utility-sql-text" :title="row.current?.description ?? row.comparison?.description ?? ''">{{ row.current?.description ?? row.comparison?.description ?? '—' }}</td>
-        <td v-if="canOperate">
-          <button v-if="row.current" type="button" class="secondary-button" :disabled="operations.busy" @click="setParameter(row.current)">Set</button>
+        <td v-if="canOperate" class="user-actions-cell">
+          <FloatingActionMenu v-if="row.current" :label="`Actions for ${row.name}`" :disabled="operations.busy">
+            <button type="button" role="menuitem" @click="setParameter(row.current)">
+              <FontAwesomeIcon icon="sliders" />
+              Set parameter
+            </button>
+          </FloatingActionMenu>
+          <span v-else>—</span>
         </td>
       </tr>
     </ScrollableDataTable>

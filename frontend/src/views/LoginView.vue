@@ -90,12 +90,47 @@ async function submit() {
           <p v-if="error" class="login-error">{{ error }}</p>
 
           <button class="primary-button login-submit" type="submit" :disabled="authStore.loading">
-            {{ authStore.loading ? 'Signing in...' : 'Sign in' }}
+              <p>{{ authStore.loading ? 'Signing in' : 'Sign in' }}</p>
+              <p v-if="authStore.loading" class="loading"></p>
           </button>
         </form>
       </section>
 
       <AppLegalFooter />
     </div>
+<footer class="login-wave-footer">
+  <svg viewBox="0 0 120 28" class="login-wave-svg">
+    <defs>
+      <path
+        id="login-wave-path"
+        d="M 0,10 C 30,10 30,15 60,15 90,15 90,10 120,10 150,10 150,15 180,15 210,15 210,10 240,10 v 28 h -240 z"
+      />
+    </defs>
+
+    <use
+      id="wave3"
+      class="login-wave"
+      href="#login-wave-path"
+      x="0"
+      y="-2"
+    />
+
+    <use
+      id="wave2"
+      class="login-wave"
+      href="#login-wave-path"
+      x="0"
+      y="0"
+    />
+
+    <use
+      id="wave1"
+      class="login-wave"
+      href="#login-wave-path"
+      x="0"
+      y="1"
+    />
+  </svg>
+</footer>
   </main>
 </template>

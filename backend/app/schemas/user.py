@@ -58,11 +58,6 @@ class HistoryRangePreference(str, Enum):
 
 
 class UserPreferences(BaseModel):
-    """Personal presentation preferences stored with a DBAChum user.
-
-    Notification subscriptions live in a sibling user field rather than here,
-    keeping identity/appearance independent from alert-delivery choices.
-    """
 
     timezone: str = Field(
         default="system",

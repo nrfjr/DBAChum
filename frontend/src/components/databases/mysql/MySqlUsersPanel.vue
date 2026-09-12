@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 
 import ScrollableDataTable from '@/components/common/ScrollableDataTable.vue'
+import FloatingActionMenu from '@/components/common/FloatingActionMenu.vue'
 import { hasPermission } from '@/core/permissions'
 import { useAuthStore } from '@/stores/auth'
 import { useDatabaseOperationsStore } from '@/stores/databaseOperations'
@@ -30,6 +31,7 @@ const accounts = computed(() => {
 function formatDate(value: string | null) { if (!value) return '—'; const parsed = new Date(value); return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString() }
 function stateLabel(account: MySqlSecurityAccount) { if (account.account_locked === true) return 'Locked'; if (account.password_expired === true) return 'Password expired'; if (account.is_role) return 'Role'; return 'Enabled' }
 
+
 async function toggleAccount(account: MySqlSecurityAccount) {
   const action = account.account_locked ? 'enable' : 'disable'
   const confirmed = await confirmDialog({ title: `${action === 'enable' ? 'Unlock' : 'Lock'} account`, message: account.account, confirmLabel: action === 'enable' ? 'Unlock account' : 'Lock account', tone: action === 'disable' ? 'warning' : 'default' })
@@ -38,7 +40,9 @@ async function toggleAccount(account: MySqlSecurityAccount) {
     await operations.runAccount(props.connectionId, { action, account_name: account.user, host: account.host })
     await store.loadSecurity(props.connectionId, true)
     showToast({ title: action === 'enable' ? 'Account unlocked' : 'Account locked', message: account.account, tone: 'success' })
-  } catch {}
+  } catch (cause) {
+    showToast({ title: 'Unable to update account', message: cause instanceof Error ? cause.message : operations.error ?? undefined, tone: 'danger' })
+  }
 }
 async function resetPassword(account: MySqlSecurityAccount) {
   const result = await formDialog({
@@ -53,16 +57,21 @@ async function resetPassword(account: MySqlSecurityAccount) {
     await operations.runAccount(props.connectionId, { action: 'reset_password', account_name: account.user, host: account.host, password: String(result.password) })
     await store.loadSecurity(props.connectionId, true)
     showToast({ title: 'Password reset', message: account.account, tone: 'success' })
-  } catch {}
+  } catch (cause) {
+    showToast({ title: 'Unable to reset password', message: cause instanceof Error ? cause.message : operations.error ?? undefined, tone: 'danger' })
+  }
 }
 
 
-onMounted(() => void store.loadSecurity(props.connectionId))
+onMounted(() => {
+  void store.loadSecurity(props.connectionId)
+})
+
 </script>
 
 <template>
   <section>
-    <div class="utility-toolbar"><div><h2>Users &amp; Hosts</h2></div><button type="button" class="secondary-button" :disabled="store.loadingSecurity[connectionId]" @click="store.loadSecurity(connectionId, true)">{{ store.loadingSecurity[connectionId] ? 'Refreshing...' : 'Refresh' }}</button></div>
+    <div class="utility-toolbar"><div><h2>Users &amp; Hosts</h2></div><button type="button" class="secondary-button refresh-button" :disabled="store.loadingSecurity[connectionId]" @click="store.loadSecurity(connectionId, true)">{{ store.loadingSecurity[connectionId] ? 'Refreshing' : 'Refresh' }}<p v-if="store.loadingSecurity[connectionId]" class="loading"></p></button></div>
     <p v-if="operations.error" class="login-error">{{ operations.error }}</p>
     <p v-if="store.securityError[connectionId]" class="login-error">{{ store.securityError[connectionId] }}</p>
 
@@ -74,10 +83,21 @@ onMounted(() => void store.loadSecurity(props.connectionId))
       </div>
       <div class="mysql-security-toolbar"><span>{{ security.complete_account_list ? 'Full account inventory visible' : 'Limited account inventory' }}</span><input class="utility-search-input" v-model="search" type="search" placeholder="Search user, host, plugin, role..." /></div>
       <ScrollableDataTable :empty="accounts.length === 0" empty-message="No matching MySQL/MariaDB accounts." max-height="34rem">
-        <template #header><tr><th>Account</th><th>Authentication</th><th>Default role</th><th>SSL</th><th>State</th><th>Grants</th><th>Password changed</th><th v-if="canOperate">Actions</th></tr></template>
+        <template #header><tr><th>Account</th><th>Authentication</th><th>Default role</th><th>SSL</th><th>State</th><th>Grants</th><th>Password changed</th><th v-if="canOperate" class="user-actions-column">Actions</th></tr></template>
         <tr v-for="account in accounts" :key="account.account">
           <td><strong>{{ account.account }}</strong><small v-if="account.current_identity" class="mysql-account-note">Connected identity</small><small v-if="account.login_identity" class="mysql-account-note">Login: {{ account.login_identity }}</small></td><td>{{ account.auth_plugin ?? 'Not exposed' }}</td><td>{{ account.default_role ?? (account.roles.length ? account.roles.join(', ') : '—') }}</td><td>{{ account.ssl_type || '—' }}</td><td><span :class="['mysql-security-state', { danger: account.account_locked || account.password_expired }]">{{ stateLabel(account) }}</span></td><td>{{ account.grants_visible ? account.grants.length : 'Limited' }}</td><td>{{ formatDate(account.password_last_changed) }}</td>
-          <td v-if="canOperate"><div v-if="!account.is_role" class="database-inline-actions"><button type="button" class="secondary-button" :disabled="operations.busy" @click="toggleAccount(account)">{{ account.account_locked ? 'Unlock' : 'Lock' }}</button><button type="button" class="secondary-button" :disabled="operations.busy" @click="resetPassword(account)">Reset password</button></div></td>
+          <td v-if="canOperate" class="user-actions-cell">
+            <FloatingActionMenu v-if="!account.is_role" :label="`Actions for ${account.account}`" :disabled="operations.busy">
+              <button type="button" role="menuitem" @click="toggleAccount(account)">
+                <FontAwesomeIcon :icon="account.account_locked ? 'lock-open' : 'lock'" />
+                {{ account.account_locked ? 'Unlock account' : 'Lock account' }}
+              </button>
+              <button type="button" role="menuitem" @click="resetPassword(account)">
+                <FontAwesomeIcon icon="key" />
+                Reset password
+              </button>
+            </FloatingActionMenu>
+          </td>
         </tr>
       </ScrollableDataTable>
     </template>

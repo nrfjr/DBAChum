@@ -21,13 +21,10 @@ import ScrollableDataTable from '@/components/common/ScrollableDataTable.vue'
 const emailStore = useEmailDeliveryStore()
 const authStore = useAuthStore()
 
-const savedMessage = ref('')
-const testMessage = ref('')
 const testError = ref('')
 const testRecipient = ref('')
 const testRecipientName = ref('')
 const selectedDeliveryIds = ref<string[]>([])
-const deliveryClearMessage = ref('')
 const deliveryClearError = ref('')
 
 const form = reactive({
@@ -97,8 +94,6 @@ watch(
 )
 
 async function saveSettings() {
-  savedMessage.value = ''
-  testMessage.value = ''
   testError.value = ''
 
   try {
@@ -119,18 +114,20 @@ async function saveSettings() {
     })
 
     applySettings()
-    savedMessage.value = 'Email delivery settings saved.'
-  } catch {
+      showToast({ title: 'Email delivery settings saved', tone: 'success' })
+  } catch (cause) {
+    const message = cause instanceof Error ? cause.message : 'Unable to save email delivery settings.'
+    showToast({ title: 'Unable to save email delivery settings', message, tone: 'danger' })
   }
 }
 
 async function sendTest() {
-  testMessage.value = ''
   testError.value = ''
 
   const recipient = testRecipient.value.trim()
   if (!recipient) {
     testError.value = 'Enter a recipient email address.'
+    showToast({ title: 'Recipient email required', tone: 'warning' })
     return
   }
 
@@ -139,11 +136,15 @@ async function sendTest() {
       recipient,
       testRecipientName.value.trim() || null,
     )
-    testMessage.value = `Test email accepted by ${result.provider.toUpperCase()} for ${result.recipient_email}.`
+      showToast({
+      title: 'Test email accepted',
+      message: `${result.provider.toUpperCase()} · ${result.recipient_email}`,
+      tone: 'success',
+    })
   } catch (cause) {
-    testError.value = cause instanceof Error
-      ? cause.message
-      : 'Unable to send test email.'
+    const message = cause instanceof Error ? cause.message : 'Unable to send test email.'
+    testError.value = message
+    showToast({ title: 'Unable to send test email', message, tone: 'danger' })
   }
 }
 
@@ -178,16 +179,19 @@ async function clearSelectedDeliveries() {
   })
   if (!confirmed) return
 
-  deliveryClearMessage.value = ''
   deliveryClearError.value = ''
   try {
     const result = await emailStore.clearDeliveries(ids, false)
     selectedDeliveryIds.value = []
-    deliveryClearMessage.value = `Cleared ${result.deleted_count} delivery record${result.deleted_count === 1 ? '' : 's'}.${result.skipped_count ? ` ${result.skipped_count} pending/nonexistent record(s) were left untouched.` : ''}`
+      showToast({
+      title: 'Delivery history cleared',
+      message: `${result.deleted_count} record${result.deleted_count === 1 ? '' : 's'} removed${result.skipped_count ? ` · ${result.skipped_count} left untouched` : ''}.`,
+      tone: result.skipped_count ? 'warning' : 'success',
+    })
   } catch (cause) {
-    deliveryClearError.value = cause instanceof Error
-      ? cause.message
-      : 'Unable to clear delivery history.'
+    const message = cause instanceof Error ? cause.message : 'Unable to clear delivery history.'
+    deliveryClearError.value = message
+    showToast({ title: 'Unable to clear delivery history', message, tone: 'danger' })
   }
 }
 
@@ -203,16 +207,15 @@ async function clearAllDeliveries() {
   })
   if (!confirmed) return
 
-  deliveryClearMessage.value = ''
   deliveryClearError.value = ''
   try {
     const result = await emailStore.clearDeliveries([], true)
     selectedDeliveryIds.value = []
-    deliveryClearMessage.value = `Cleared ${result.deleted_count} terminal delivery record${result.deleted_count === 1 ? '' : 's'}.`
+      showToast({ title: 'Delivery history cleared', message: `${result.deleted_count} record${result.deleted_count === 1 ? '' : 's'} removed.`, tone: 'success' })
   } catch (cause) {
-    deliveryClearError.value = cause instanceof Error
-      ? cause.message
-      : 'Unable to clear delivery history.'
+    const message = cause instanceof Error ? cause.message : 'Unable to clear delivery history.'
+    deliveryClearError.value = message
+    showToast({ title: 'Unable to clear delivery history', message, tone: 'danger' })
   }
 }
 
@@ -250,7 +253,7 @@ onMounted(async () => {
             <span>
               <strong>Enable alert email delivery</strong>
             </span>
-            <input v-model="form.enabled" type="checkbox" title="New active alerts are queued only while this is enabled.">
+            <input v-model="form.enabled" type="checkbox" class="toggle-switch" title="New active alerts are queued only while this is enabled.">
           </label>
 
           <div class="connection-form-row email-provider-row">
@@ -363,7 +366,6 @@ onMounted(async () => {
           </section>
 
           <p v-if="emailStore.error" class="login-error">{{ emailStore.error }}</p>
-          <p v-if="savedMessage" class="profile-success">{{ savedMessage }}</p>
 
           <div class="connection-form-actions">
             <button type="submit" class="primary-button" :disabled="emailStore.saving">
@@ -394,7 +396,6 @@ onMounted(async () => {
           </div>
 
           <p v-if="testError" class="login-error">{{ testError }}</p>
-          <p v-if="testMessage" class="profile-success">{{ testMessage }}</p>
 
           <div class="connection-form-actions">
             <button type="submit" class="secondary-button" :disabled="emailStore.testing">
@@ -433,7 +434,6 @@ onMounted(async () => {
           </div>
         </div>
         <p v-if="deliveryClearError" class="login-error">{{ deliveryClearError }}</p>
-        <p v-if="deliveryClearMessage" class="profile-success">{{ deliveryClearMessage }}</p>
 
         <div v-if="!emailStore.deliveries.length" class="empty-state">
           No email delivery records yet.

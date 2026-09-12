@@ -6,6 +6,7 @@ import { hasPermission } from '@/core/permissions'
 import { useAuthStore } from '@/stores/auth'
 import type { Server } from '@/stores/servers'
 import { useTerminalSessionsStore } from '@/stores/terminalSessions'
+import { showToast } from '@/ui/feedback'
 
 const props = defineProps<{
   connectionName: string
@@ -59,6 +60,7 @@ function openTerminal(server: Server) {
 
   if (!canUseTerminal.value) {
     error.value = 'You do not have permission to open SSH terminals.'
+    showToast({ title: 'Terminal access unavailable', message: error.value, tone: 'warning' })
     return
   }
 
@@ -67,6 +69,7 @@ function openTerminal(server: Server) {
     error.value = !server.ssh_profile_id
       ? `Assign an SSH access profile to ${server.name} before opening a terminal.`
       : `Test SSH and trust the host key for ${server.name} before opening a terminal.`
+    showToast({ title: 'SSH terminal is not ready', message: error.value, tone: 'warning' })
     return
   }
 
@@ -82,6 +85,7 @@ function openTerminal(server: Server) {
     error.value = err instanceof Error
       ? err.message
       : 'Unable to open SSH terminal.'
+    showToast({ title: 'Unable to open SSH terminal', message: error.value, tone: 'danger' })
   }
 }
 </script>

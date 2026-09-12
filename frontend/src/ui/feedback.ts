@@ -36,6 +36,7 @@ export interface DialogField {
 export interface DialogRequest {
   title: string
   message?: string
+  width?: string
   tone?: FeedbackTone
   confirmLabel?: string
   cancelLabel?: string
@@ -49,6 +50,7 @@ export interface PromptOptions {
   title: string
   label?: string
   message?: string
+  width?: string
   defaultValue?: string
   placeholder?: string
   inputType?: 'text' | 'password' | 'number' | 'textarea'
@@ -106,6 +108,7 @@ export function resolveDialog(result: DialogResult | null) {
 export async function confirmDialog(options: {
   title: string
   message?: string
+  width?: string
   confirmLabel?: string
   cancelLabel?: string
   tone?: FeedbackTone
@@ -122,6 +125,7 @@ export async function promptDialog(options: PromptOptions) {
   const result = await openDialog({
     title: options.title,
     message: options.message,
+    width: options.width,
     confirmLabel: options.confirmLabel ?? 'Continue',
     fields: [
       {

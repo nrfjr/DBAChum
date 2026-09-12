@@ -46,7 +46,6 @@ function updateClock() {
     hour: 'numeric',
     minute: '2-digit',
     second: '2-digit',
-    timeZoneName: 'short',
   }).format(new Date())
 }
 
@@ -433,19 +432,32 @@ onUnmounted(() => {
               </div>
 
               <RouterLink to="/profile" class="profile-menu__item" @click="profileMenuOpen = false">
-                Profile & preferences
+                <FontAwesomeIcon icon="user-gear" />
+                <span>Profile & preferences</span>
               </RouterLink>
 
               <div class="profile-menu__section">
                 <span>Theme</span>
                 <div class="profile-menu__theme-grid">
-                  <button type="button" :class="{ active: uiStore.themePreference === 'system' }" @click="setTheme('system')">System</button>
-                  <button type="button" :class="{ active: uiStore.themePreference === 'light' }" @click="setTheme('light')">Light</button>
-                  <button type="button" :class="{ active: uiStore.themePreference === 'dark' }" @click="setTheme('dark')">Dark</button>
+                  <button type="button" :class="{ active: uiStore.themePreference === 'system' }" @click="setTheme('system')">
+                    <FontAwesomeIcon icon="desktop" />
+                    <span>System</span>
+                  </button>
+                  <button type="button" :class="{ active: uiStore.themePreference === 'light' }" @click="setTheme('light')">
+                    <FontAwesomeIcon icon="sun" />
+                    <span>Light</span>
+                  </button>
+                  <button type="button" :class="{ active: uiStore.themePreference === 'dark' }" @click="setTheme('dark')">
+                    <FontAwesomeIcon icon="moon" />
+                    <span>Dark</span>
+                  </button>
                 </div>
               </div>
 
-              <button type="button" class="profile-menu__item profile-menu__item--danger" @click="logout">Logout</button>
+              <button type="button" class="profile-menu__item profile-menu__item--danger" @click="logout">
+                <FontAwesomeIcon icon="right-from-bracket" />
+                <span>Logout</span>
+              </button>
             </div>
           </div>
         </div>

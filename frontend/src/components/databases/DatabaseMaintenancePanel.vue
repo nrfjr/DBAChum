@@ -39,9 +39,15 @@ async function run(body: MaintenanceOperationInput, label: string) {
           message: finished.status === 'succeeded' ? undefined : finished.error ?? 'Unknown error',
           tone: finished.status === 'succeeded' ? 'success' : 'danger',
         })
-      }).catch(() => {})
+      }).catch((cause) => {
+        const error = cause instanceof Error ? cause.message : 'Unable to follow maintenance operation status.'
+        showToast({ title: `${label} status unavailable`, message: error, tone: 'danger' })
+      })
     }
-  } catch {}
+  } catch (cause) {
+    const error = cause instanceof Error ? cause.message : operations.error ?? 'Unable to start maintenance operation.'
+    showToast({ title: `${label} failed to start`, message: error, tone: 'danger' })
+  }
 }
 
 async function gatherSchemaStats() {

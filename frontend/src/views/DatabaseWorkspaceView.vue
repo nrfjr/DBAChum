@@ -77,13 +77,14 @@ onMounted(() => {
       <h1>{{ pageHeading }}</h1>
     </div>
 
-    <button type="button" class="secondary-button" :disabled="databasesStore.loading" @click="refresh">
-      {{ databasesStore.loading ? 'Refreshing...' : 'Refresh' }}
+    <button type="button" class="secondary-button refresh-button" :disabled="databasesStore.loading" @click="refresh">
+      {{ databasesStore.loading ? 'Refreshing' : 'Refresh' }}
+      <p v-if="databasesStore.loading" class="loading"></p>
     </button>
   </section>
 
   <div v-if="connectionsStore.loading && connectionsStore.connections.length === 0" class="empty-state">
-    Loading databases...
+    Loading databases<p class="loading"></p>
   </div>
 
   <div v-else-if="connectionsStore.error" class="login-error">

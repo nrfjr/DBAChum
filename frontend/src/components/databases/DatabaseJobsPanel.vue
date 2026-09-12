@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed, onMounted } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 
 import ScrollableDataTable from '@/components/common/ScrollableDataTable.vue'
+import FloatingActionMenu from '@/components/common/FloatingActionMenu.vue'
 import { hasPermission } from '@/core/permissions'
 import { useAuthStore } from '@/stores/auth'
 import { useDatabaseJobsStore, type DatabaseJobItem, type JobOperation } from '@/stores/databaseJobs'
@@ -20,6 +21,11 @@ const result = computed(() => jobsStore.results[props.connectionId])
 const loading = computed(() => Boolean(jobsStore.loading[props.connectionId]))
 const error = computed(() => jobsStore.errors[props.connectionId])
 const canOperate = computed(() => hasPermission(authStore.user, 'database:operate'))
+
+function hasJobActions(job: DatabaseJobItem) {
+  return job.can_run || job.can_enable_disable
+}
+
 
 function formatWhen(value: string | null) {
   if (!value) return '—'
@@ -40,10 +46,15 @@ async function operate(job: DatabaseJobItem, action: JobOperation) {
   try {
     await jobsStore.operate(props.connectionId, job.id, action)
     showToast({ title: `Job ${action === 'run' ? 'started' : action === 'enable' ? 'enabled' : 'disabled'}`, message: job.name, tone: 'success' })
-  } catch {}
+  } catch (cause) {
+    showToast({ title: 'Job action failed', message: cause instanceof Error ? cause.message : error.value ?? undefined, tone: 'danger' })
+  }
 }
 
-onMounted(() => void jobsStore.load(props.connectionId))
+onMounted(() => {
+  void jobsStore.load(props.connectionId)
+})
+
 </script>
 
 <template>
@@ -52,8 +63,9 @@ onMounted(() => void jobsStore.load(props.connectionId))
       <div title="{{ (engine === 'oracle' ? 'Oracle Scheduler and legacy DBMS_JOB.' : engine === 'sqlserver' ? 'SQL Server Agent jobs.' : 'MySQL/MariaDB Event Scheduler.') }}">
         <h2>Jobs</h2>
       </div>
-      <button type="button" class="secondary-button" :disabled="loading" @click="jobsStore.load(connectionId)">
-        {{ loading ? 'Refreshing...' : 'Refresh' }}
+      <button type="button" class="secondary-button refresh-button" :disabled="loading" @click="jobsStore.load(connectionId)">
+        {{ loading ? 'Refreshing' : 'Refresh' }}
+        <p v-if="loading" class="loading"></p>
       </button>
     </div>
 
@@ -74,7 +86,7 @@ onMounted(() => void jobsStore.load(props.connectionId))
           <th>Last run</th>
           <th>Next run</th>
           <th>Owner / Type</th>
-          <th v-if="canOperate">Actions</th>
+          <th v-if="canOperate" class="user-actions-column">Actions</th>
         </tr>
       </template>
       <tr v-for="job in result.items" :key="job.id">
@@ -91,12 +103,22 @@ onMounted(() => void jobsStore.load(props.connectionId))
         <td>{{ formatWhen(job.last_run) }}</td>
         <td>{{ formatWhen(job.next_run) }}</td>
         <td>{{ job.owner ?? '—' }}<template v-if="job.job_type"> · {{ job.job_type }}</template></td>
-        <td v-if="canOperate">
-          <div class="database-inline-actions">
-            <button v-if="job.can_run" type="button" class="secondary-button" :disabled="jobsStore.busy" @click="operate(job, 'run')">Run now</button>
-            <button v-if="job.can_enable_disable && job.enabled !== false" type="button" class="secondary-button" :disabled="jobsStore.busy" @click="operate(job, 'disable')">Disable</button>
-            <button v-if="job.can_enable_disable && job.enabled === false" type="button" class="secondary-button" :disabled="jobsStore.busy" @click="operate(job, 'enable')">Enable</button>
-          </div>
+        <td v-if="canOperate" class="user-actions-cell">
+          <FloatingActionMenu v-if="hasJobActions(job)" :label="`Actions for ${job.name}`" :disabled="jobsStore.busy">
+            <button v-if="job.can_run" type="button" role="menuitem" @click="operate(job, 'run')">
+              <FontAwesomeIcon icon="play" />
+              Run now
+            </button>
+            <button v-if="job.can_enable_disable && job.enabled !== false" type="button" role="menuitem" @click="operate(job, 'disable')">
+              <FontAwesomeIcon icon="ban" />
+              Disable
+            </button>
+            <button v-if="job.can_enable_disable && job.enabled === false" type="button" role="menuitem" @click="operate(job, 'enable')">
+              <FontAwesomeIcon icon="circle-check" />
+              Enable
+            </button>
+          </FloatingActionMenu>
+          <span v-else>—</span>
         </td>
       </tr>
     </ScrollableDataTable>

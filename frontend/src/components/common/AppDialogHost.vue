@@ -16,6 +16,9 @@ const dialogPanel = ref<HTMLElement | null>(null)
 
 const request = computed(() => dialogState.request)
 const fields = computed(() => request.value?.fields ?? [])
+const dialogStyle = computed<Record<string, string>>(() => ({
+  '--app-dialog-width': request.value?.width ?? '34rem',
+}))
 
 function sizePresets(field: DialogField) {
   return field.presetsGb?.length ? field.presetsGb : [10, 20, 30]
@@ -144,6 +147,7 @@ function onKeydown(event: KeyboardEvent) {
         ref="dialogPanel"
         class="app-dialog"
         :class="[`app-dialog--${request.tone ?? 'default'}`, { 'app-dialog--destructive': request.destructive }]"
+        :style="dialogStyle"
         role="dialog"
         aria-modal="true"
         :aria-labelledby="`dialog-title-${dialogState.requestId}`"
@@ -166,7 +170,7 @@ function onKeydown(event: KeyboardEvent) {
 
             <template v-if="field.type === 'checkbox'">
               <label class="app-dialog-checkbox">
-                <input :checked="Boolean(values[field.name])" type="checkbox" @change="setCheckboxValue(field.name, $event)" />
+                <input :checked="Boolean(values[field.name])" type="checkbox" class="toggle-switch" @change="setCheckboxValue(field.name, $event)" />
                 <span>{{ field.hint ?? field.label }}</span>
               </label>
             </template>

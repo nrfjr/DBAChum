@@ -2,6 +2,7 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 
 import ScrollableDataTable from '@/components/common/ScrollableDataTable.vue'
+import FloatingActionMenu from '@/components/common/FloatingActionMenu.vue'
 import { useConnectionsStore } from '@/stores/connections'
 import {
   useServersStore,
@@ -24,10 +25,19 @@ import {
 } from '@/stores/terminalShortcuts'
 import { confirmDialog, showToast } from '@/ui/feedback'
 
+import {
+  useAuthStore,
+} from '@/stores/auth'
+
+import {
+  hasPermission,
+} from '@/core/permissions'
+
 const serversStore = useServersStore()
 const sshStore = useSshAccessStore()
 const connectionsStore = useConnectionsStore()
 const terminalShortcutsStore = useTerminalShortcutsStore()
+const authStore = useAuthStore()
 
 const activeTab = ref<'servers' | 'ssh' | 'shortcuts'>('servers')
 const serverFormOpen = ref(false)
@@ -43,7 +53,6 @@ const serverFilter = ref('')
 const sshFilter = ref('')
 const shortcutFilter = ref('')
 const shortcutServerFilter = ref('')
-
 interface ServerForm {
   name: string
   hostname: string
@@ -188,6 +197,14 @@ const shortcutServerOptions = computed(() => {
   })
 })
 
+const canManageConnections = computed(
+  () =>
+    hasPermission(
+      authStore.user,
+      'connections:manage',
+    ),
+)
+
 function shortcutScopeLabel(shortcut: TerminalShortcut) {
   if (!shortcut.server_ids.length) return 'All SSH-enabled servers'
   const names = shortcut.server_ids
@@ -279,9 +296,14 @@ async function saveServer() {
       await serversStore.create(payload)
     }
     await connectionsStore.load()
+    const name = serverForm.name.trim()
+    const updated = Boolean(editingServerId.value)
     closeServerForm()
+    showToast({ title: updated ? 'Server updated' : 'Server created', message: name, tone: 'success' })
   } catch (error) {
-    serverFormError.value = error instanceof Error ? error.message : 'Unable to save server.'
+    const message = error instanceof Error ? error.message : 'Unable to save server.'
+    serverFormError.value = message
+    showToast({ title: 'Unable to save server', message, tone: 'danger' })
   }
 }
 
@@ -293,7 +315,9 @@ async function removeServer(server: Server) {
     await connectionsStore.load()
     showToast({ title: 'Server deleted', message: server.name, tone: 'success' })
   } catch (error) {
-    serverFormError.value = error instanceof Error ? error.message : 'Unable to delete server.'
+    const message = error instanceof Error ? error.message : 'Unable to delete server.'
+    serverFormError.value = message
+    showToast({ title: 'Unable to delete server', message, tone: 'danger' })
   }
 }
 
@@ -355,9 +379,14 @@ async function saveSshProfile() {
       await sshStore.create(payload)
     }
     await serversStore.load()
+    const name = sshForm.name.trim()
+    const updated = Boolean(editingSshId.value)
     closeSshForm()
+    showToast({ title: updated ? 'SSH profile updated' : 'SSH profile created', message: name, tone: 'success' })
   } catch (error) {
-    sshFormError.value = error instanceof Error ? error.message : 'Unable to save SSH access profile.'
+    const message = error instanceof Error ? error.message : 'Unable to save SSH access profile.'
+    sshFormError.value = message
+    showToast({ title: 'Unable to save SSH access profile', message, tone: 'danger' })
   }
 }
 
@@ -368,7 +397,9 @@ async function removeSshProfile(profile: SshAccessProfile) {
     await sshStore.remove(profile.id)
     showToast({ title: 'SSH profile deleted', message: profile.name, tone: 'success' })
   } catch (error) {
-    sshFormError.value = error instanceof Error ? error.message : 'Unable to delete SSH access profile.'
+    const message = error instanceof Error ? error.message : 'Unable to delete SSH access profile.'
+    sshFormError.value = message
+    showToast({ title: 'Unable to delete SSH access profile', message, tone: 'danger' })
   }
 }
 
@@ -421,6 +452,7 @@ async function saveShortcut() {
   shortcutFormError.value = null
   if (shortcutForm.scope === 'selected' && shortcutForm.server_ids.length === 0) {
     shortcutFormError.value = 'Select at least one server, or choose All SSH-enabled servers.'
+    showToast({ title: 'Select at least one server', message: 'Choose a server or use All SSH-enabled servers.', tone: 'warning' })
     return
   }
   try {
@@ -430,9 +462,14 @@ async function saveShortcut() {
     } else {
       await terminalShortcutsStore.create(payload)
     }
+    const name = shortcutForm.name.trim()
+    const updated = Boolean(editingShortcutId.value)
     closeShortcutForm()
+    showToast({ title: updated ? 'Terminal shortcut updated' : 'Terminal shortcut created', message: name, tone: 'success' })
   } catch (error) {
-    shortcutFormError.value = error instanceof Error ? error.message : 'Unable to save terminal shortcut.'
+    const message = error instanceof Error ? error.message : 'Unable to save terminal shortcut.'
+    shortcutFormError.value = message
+    showToast({ title: 'Unable to save terminal shortcut', message, tone: 'danger' })
   }
 }
 
@@ -443,7 +480,9 @@ async function removeShortcut(shortcut: TerminalShortcut) {
     await terminalShortcutsStore.remove(shortcut.id)
     showToast({ title: 'Terminal shortcut deleted', message: shortcut.name, tone: 'success' })
   } catch (error) {
-    shortcutFormError.value = error instanceof Error ? error.message : 'Unable to delete terminal shortcut.'
+    const message = error instanceof Error ? error.message : 'Unable to delete terminal shortcut.'
+    shortcutFormError.value = message
+    showToast({ title: 'Unable to delete terminal shortcut', message, tone: 'danger' })
   }
 }
 
@@ -513,15 +552,21 @@ onMounted(async () => {
               <p>{{ server.hostname }}<template v-if="server.ip_address"> · {{ server.ip_address }}</template></p>
               <small>{{ osLabel(server.os_family) }}{{ server.os_version ? ` · ${server.os_version}` : '' }} · {{
                 serverTypeLabel(server.server_type) }}<template v-if="server.environment"> · {{ server.environment
-                  }}</template></small>
+                }}</template></small>
               <small v-if="server.ssh_profile_name">SSH profile: {{ server.ssh_profile_name }} · {{
                 server.database_count }} linked
                 database{{ server.database_count === 1 ? '' : 's' }}</small>
             </div>
-            <div class="connection-actions">
-              <button type="button" class="secondary-button" @click="editServer(server)">Edit</button>
-              <button type="button" class="secondary-button" @click="removeServer(server)">Delete</button>
-            </div>
+            <FloatingActionMenu v-if="canManageConnections" :label="`Actions for ${server.name}`">
+              <button type="button" role="menuitem" @click="editServer(server)">
+                <FontAwesomeIcon icon="pen" />
+                Edit
+              </button>
+              <button type="button" role="menuitem" class="danger-menu-item" @click="removeServer(server)">
+                <FontAwesomeIcon icon="trash-can" />
+                Delete
+              </button>
+            </FloatingActionMenu>
           </article>
         </div>
       </div>
@@ -529,119 +574,136 @@ onMounted(async () => {
 
     <template v-else-if="activeTab === 'ssh'">
       <div class="panel">
-      <div class="section-toolbar">
-        <div title="Reusable encrypted authentication profiles. Passwords and private keys are never returned to the browser
+        <div class="section-toolbar">
+          <div title="Reusable encrypted authentication profiles. Passwords and private keys are never returned to the browser
             after saving.">
-          <h3>SSH access profiles</h3>
+            <h3>SSH access profiles</h3>
+          </div>
+          <button class="primary-button" type="button" @click="openAddSshProfile">Add SSH profile</button>
         </div>
-        <button class="primary-button" type="button" @click="openAddSshProfile">Add SSH profile</button>
-      </div>
 
-      <input v-model="sshFilter" class="table-filter-input utility-search-input" placeholder="Search profile, username or notes..." />
+        <input v-model="sshFilter" class="table-filter-input utility-search-input"
+          placeholder="Search profile, username or notes..." />
 
-      <p v-if="sshStore.error" class="login-error">{{ sshStore.error }}</p>
+        <p v-if="sshStore.error" class="login-error">{{ sshStore.error }}</p>
 
-      <p v-if="sshStore.loading" class="empty-state">Loading SSH access profiles...</p>
-      <div v-else-if="filteredSshProfiles.length === 0" class="empty-state">No SSH access profiles configured.</div>
-      <div v-else class="connection-list">
-        <article v-for="profile in filteredSshProfiles" :key="profile.id" class="connection-item">
-          <div>
-            <div class="connection-title">
-              <strong>{{ profile.name }}</strong>
-              <span class="status-pill" :class="{ disabled: !profile.enabled }">{{ profile.enabled ? 'Enabled' :
-                'Disabled' }}</span>
-              <span class="status-pill"
-                :class="{ disabled: profile.auth_type === 'password' ? !profile.has_password : !profile.has_private_key }">
-                {{ profile.auth_type === 'password' ? (profile.has_password ? 'Secret stored' : 'Secret missing') :
-                  (profile.has_private_key ? 'Key stored' : 'Key missing') }}
-              </span>
+        <p v-if="sshStore.loading" class="empty-state">Loading SSH access profiles...</p>
+        <div v-else-if="filteredSshProfiles.length === 0" class="empty-state">No SSH access profiles configured.</div>
+        <div v-else class="connection-list">
+          <article v-for="profile in filteredSshProfiles" :key="profile.id" class="connection-item">
+            <div>
+              <div class="connection-title">
+                <strong>{{ profile.name }}</strong>
+                <span class="status-pill" :class="{ disabled: !profile.enabled }">{{ profile.enabled ? 'Enabled' :
+                  'Disabled' }}</span>
+                <span class="status-pill"
+                  :class="{ disabled: profile.auth_type === 'password' ? !profile.has_password : !profile.has_private_key }">
+                  {{ profile.auth_type === 'password' ? (profile.has_password ? 'Secret stored' : 'Secret missing') :
+                    (profile.has_private_key ? 'Key stored' : 'Key missing') }}
+                </span>
+              </div>
+              <p>{{ profile.username }}@SSH:{{ profile.port }}</p>
+              <small>{{ profile.auth_type === 'password' ? 'Password authentication' : 'Private-key authentication' }} ·
+                Used by {{ profile.server_count }} server{{ profile.server_count === 1 ? '' : 's' }}</small>
             </div>
-            <p>{{ profile.username }}@SSH:{{ profile.port }}</p>
-            <small>{{ profile.auth_type === 'password' ? 'Password authentication' : 'Private-key authentication' }} ·
-              Used by {{ profile.server_count }} server{{ profile.server_count === 1 ? '' : 's' }}</small>
-          </div>
-          <div class="connection-actions">
-            <button type="button" class="secondary-button" @click="editSshProfile(profile)">Edit</button>
-            <button type="button" class="secondary-button" @click="removeSshProfile(profile)">Delete</button>
-          </div>
-        </article>
-      </div>
+            <FloatingActionMenu :label="`Actions for ${profile.name}`">
+              <button type="button" role="menuitem" @click="editSshProfile(profile)">
+                <FontAwesomeIcon icon="pen" />
+                Edit
+              </button>
+              <button type="button" role="menuitem" class="danger-menu-item" @click="removeSshProfile(profile)">
+                <FontAwesomeIcon icon="trash-can" />
+                Delete
+              </button>
+            </FloatingActionMenu>
+          </article>
+        </div>
       </div>
     </template>
 
     <template v-else>
       <div class="panel">
-      <div class="section-toolbar">
-        <div title="Reusable buttons for frequent shell navigation and tools. A shortcut can run immediately or only insert
+        <div class="section-toolbar">
+          <div title="Reusable buttons for frequent shell navigation and tools. A shortcut can run immediately or only insert
             text at the prompt.">
-          <h3>Terminal shortcuts</h3>
+            <h3>Terminal shortcuts</h3>
+          </div>
+          <button class="primary-button" type="button" @click="openAddShortcut">Add shortcut</button>
         </div>
-        <button class="primary-button" type="button" @click="openAddShortcut">Add shortcut</button>
-      </div>
 
-      <input v-model="shortcutFilter" class="table-filter-input utility-search-input"
-        placeholder="Search shortcut, category, command or scope..." />
-      <p v-if="terminalShortcutsStore.error" class="login-error">{{ terminalShortcutsStore.error }}</p>
+        <input v-model="shortcutFilter" class="table-filter-input utility-search-input"
+          placeholder="Search shortcut, category, command or scope..." />
+        <p v-if="terminalShortcutsStore.error" class="login-error">{{ terminalShortcutsStore.error }}</p>
 
-      <ScrollableDataTable :loading="terminalShortcutsStore.loading"
-        :empty="!terminalShortcutsStore.loading && filteredShortcuts.length === 0"
-        empty-message="No terminal shortcuts configured." max-height="30rem">
-        <template #header>
-          <tr>
-            <th>Shortcut</th>
-            <th>Category</th>
-            <th>Behavior</th>
-            <th>Command</th>
-            <th>Scope</th>
-            <th>Status</th>
-            <th>Actions</th>
+        <ScrollableDataTable :loading="terminalShortcutsStore.loading"
+          :empty="!terminalShortcutsStore.loading && filteredShortcuts.length === 0"
+          empty-message="No terminal shortcuts configured." max-height="30rem">
+          <template #header>
+            <tr>
+              <th>Shortcut</th>
+              <th>Category</th>
+              <th>Behavior</th>
+              <th>Command</th>
+              <th>Scope</th>
+              <th>Status</th>
+              <th class="user-actions-column">
+  Actions
+</th>
+            </tr>
+          </template>
+          <tr v-for="shortcut in filteredShortcuts" :key="shortcut.id">
+            <td><strong>{{ shortcut.name }}</strong></td>
+            <td>{{ shortcut.category }}</td>
+            <td>{{ shortcut.mode === 'execute' ? 'Run now' : 'Insert only' }}</td>
+            <td class="terminal-shortcut-command"><code>{{ shortcut.command }}</code></td>
+            <td><span :title="shortcut.scope_label">{{ shortcutScopeLabel(shortcut) }}</span></td>
+            <td>{{ shortcut.enabled ? 'Enabled' : 'Disabled' }}</td>
+            <td class="user-actions-cell">
+              <FloatingActionMenu :label="`Actions for ${shortcut.name}`">
+                <button type="button" role="menuitem" @click="editShortcut(shortcut)">
+                  <FontAwesomeIcon icon="pen" />
+                  Edit
+                </button>
+                <button type="button" role="menuitem" class="danger-menu-item" @click="removeShortcut(shortcut)">
+                  <FontAwesomeIcon icon="trash-can" />
+                  Delete
+                </button>
+              </FloatingActionMenu>
+            </td>
           </tr>
-        </template>
-        <tr v-for="shortcut in filteredShortcuts" :key="shortcut.id">
-          <td><strong>{{ shortcut.name }}</strong></td>
-          <td>{{ shortcut.category }}</td>
-          <td>{{ shortcut.mode === 'execute' ? 'Run now' : 'Insert only' }}</td>
-          <td class="terminal-shortcut-command"><code>{{ shortcut.command }}</code></td>
-          <td><span :title="shortcut.scope_label">{{ shortcutScopeLabel(shortcut) }}</span></td>
-          <td>{{ shortcut.enabled ? 'Enabled' : 'Disabled' }}</td>
-          <td class="table-actions-cell">
-            <button type="button" class="secondary-button" @click="editShortcut(shortcut)">Edit</button>
-            <button type="button" class="secondary-button" @click="removeShortcut(shortcut)">Delete</button>
-          </td>
-        </tr>
-      </ScrollableDataTable>
+        </ScrollableDataTable>
 
-      <div class="section-toolbar terminal-audit-heading">
-        <div title="Session metadata is audited without storing raw terminal keystrokes or password-prompt input.">
-          <h3>Recent terminal sessions</h3>
+        <div class="section-toolbar terminal-audit-heading">
+          <div title="Session metadata is audited without storing raw terminal keystrokes or password-prompt input.">
+            <h3>Recent terminal sessions</h3>
+          </div>
+          <button class="secondary-button" type="button" @click="terminalShortcutsStore.loadAudit()">Refresh
+            audit</button>
         </div>
-        <button class="secondary-button" type="button" @click="terminalShortcutsStore.loadAudit()">Refresh
-          audit</button>
-      </div>
 
-      <ScrollableDataTable :empty="terminalShortcutsStore.audit.length === 0"
-        empty-message="No SSH terminal sessions have been audited yet." max-height="24rem">
-        <template #header>
-          <tr>
-            <th>Started</th>
-            <th>DBAChum user</th>
-            <th>Server</th>
-            <th>SSH user</th>
-            <th>Duration</th>
-            <th>Shortcuts</th>
-            <th>Status</th>
+        <ScrollableDataTable :empty="terminalShortcutsStore.audit.length === 0"
+          empty-message="No SSH terminal sessions have been audited yet." max-height="24rem">
+          <template #header>
+            <tr>
+              <th>Started</th>
+              <th>DBAChum user</th>
+              <th>Server</th>
+              <th>SSH user</th>
+              <th>Duration</th>
+              <th>Shortcuts</th>
+              <th>Status</th>
+            </tr>
+          </template>
+          <tr v-for="entry in terminalShortcutsStore.audit" :key="entry.session_id">
+            <td>{{ new Date(entry.started_at).toLocaleString() }}</td>
+            <td>{{ entry.operator_username }}</td>
+            <td><strong>{{ entry.server_name }}</strong><br /><small>{{ entry.target }}</small></td>
+            <td>{{ entry.ssh_username }}</td>
+            <td>{{ formatAuditDuration(entry.duration_seconds) }}</td>
+            <td>{{ entry.shortcut_actions.length }}</td>
+            <td>{{ entry.status }}</td>
           </tr>
-        </template>
-        <tr v-for="entry in terminalShortcutsStore.audit" :key="entry.session_id">
-          <td>{{ new Date(entry.started_at).toLocaleString() }}</td>
-          <td>{{ entry.operator_username }}</td>
-          <td><strong>{{ entry.server_name }}</strong><br /><small>{{ entry.target }}</small></td>
-          <td>{{ entry.ssh_username }}</td>
-          <td>{{ formatAuditDuration(entry.duration_seconds) }}</td>
-          <td>{{ entry.shortcut_actions.length }}</td>
-          <td>{{ entry.status }}</td>
-        </tr>
-      </ScrollableDataTable>
+        </ScrollableDataTable>
       </div>
     </template>
   </section>
@@ -655,9 +717,11 @@ onMounted(async () => {
         <button type="button" class="modal-close" @click="closeServerForm">×</button>
       </div>
 
-      <form class="connection-form" @submit.prevent="saveServer">
+      <form class="connection-form server-asset-form" @submit.prevent="saveServer">
         <div class="connection-form-row">
-          <label><span class="field-label">Display name <span class="required-mark" aria-hidden="true">*</span></span><input v-model="serverForm.name" required maxlength="100" placeholder="Oracle PROD 01" /></label>
+          <label><span class="field-label">Display name <span class="required-mark"
+                aria-hidden="true">*</span></span><input v-model="serverForm.name" required maxlength="100"
+              placeholder="Oracle PROD 01" /></label>
           <label>Server type
             <select v-model="serverForm.server_type">
               <option value="database">Database server</option>
@@ -669,12 +733,13 @@ onMounted(async () => {
         </div>
 
         <div class="connection-form-row">
-          <label><span class="field-label">Hostname <span class="required-mark" aria-hidden="true">*</span></span><input v-model="serverForm.hostname" required maxlength="255" placeholder="dbprod01" /></label>
+          <label><span class="field-label">Hostname <span class="required-mark" aria-hidden="true">*</span></span><input
+              v-model="serverForm.hostname" required maxlength="255" placeholder="dbprod01" /></label>
           <label>IP address<input v-model="serverForm.ip_address" maxlength="64" placeholder="192.168.1.10" /></label>
         </div>
 
-        <div class="connection-form-row">
-          <label>Operating system
+        <div class="connection-form-row server-asset-form__os-row">
+  <label>Operating system
             <select v-model="serverForm.os_family">
               <option value="windows">Windows</option>
               <option value="linux">Linux</option>
@@ -689,10 +754,12 @@ onMounted(async () => {
 
         <div class="connection-form-row">
           <label>Environment<input v-model="serverForm.environment" maxlength="64" placeholder="Production" /></label>
-          <label>Owner / team<input v-model="serverForm.owner" maxlength="128" placeholder="Database Administrator" /></label>
+          <label>Owner / team<input v-model="serverForm.owner" maxlength="128"
+              placeholder="Database Administrator" /></label>
         </div>
 
-        <label>SSH access profile (Optional)
+        <label class="server-asset-form__half">
+          SSH access profile (Optional)
           <select v-model="serverForm.ssh_profile_id">
             <option value="">No SSH access profile</option>
             <option v-for="profile in sshStore.profiles" :key="profile.id" :value="profile.id"
@@ -710,9 +777,10 @@ onMounted(async () => {
           </select>
         </label>
 
-        <label>Tags<input v-model="serverForm.tags" placeholder="Separate tags by commas. e.g.: oracle, production, erp" /></label>
+        <label>Tags<input v-model="serverForm.tags"
+            placeholder="Separate tags by commas. e.g.: oracle, production, erp" /></label>
         <label>Notes<textarea v-model="serverForm.notes" rows="3" /></label>
-        <label class="connection-checkbox"><input v-model="serverForm.enabled" type="checkbox" /> Enable this server
+        <label class="connection-checkbox"><input v-model="serverForm.enabled" type="checkbox" class="toggle-switch"/> Enable this server
           asset</label>
 
         <p v-if="serverFormError" class="login-error">{{ serverFormError }}</p>
@@ -726,7 +794,7 @@ onMounted(async () => {
   </div>
 
   <div v-if="sshFormOpen" class="modal-backdrop" @click.self="closeSshForm">
-    <section class="modal-panel infrastructure-modal" role="dialog" aria-modal="true">
+    <section class="modal-panel infrastructure-modal" role="dialog" aria-modal="true"  style="--modal-width: 500px">
       <div class="modal-header">
         <div>
           <h2>{{ editingSshId ? 'Edit SSH access profile' : 'Add SSH access profile' }}</h2>
@@ -736,12 +804,9 @@ onMounted(async () => {
 
       <form class="connection-form" @submit.prevent="saveSshProfile">
         <div class="connection-form-row">
-          <label><span class="field-label">Profile name <span class="required-mark" aria-hidden="true">*</span></span><input v-model="sshForm.name" required maxlength="100" placeholder="Linux DBA Production" /></label>
-          <label><span class="field-label">Username <span class="required-mark" aria-hidden="true">*</span></span><input v-model="sshForm.username" required maxlength="128" placeholder="oracle" /></label>
-        </div>
-
-        <div class="connection-form-row">
-          <label><span class="field-label">Port <span class="required-mark" aria-hidden="true">*</span></span><input v-model.number="sshForm.port" type="number" min="1" max="65535" required /></label>
+          <label><span class="field-label">Profile name <span class="required-mark"
+                aria-hidden="true">*</span></span><input v-model="sshForm.name" required maxlength="100"
+              placeholder="Linux DBA Production" /></label>
           <label>Authentication
             <select v-model="sshForm.auth_type">
               <option value="password">Password</option>
@@ -750,13 +815,23 @@ onMounted(async () => {
           </label>
         </div>
 
-        <label v-if="sshForm.auth_type === 'password'"><span class="field-label">Password <span v-if="!editingSshId" class="required-mark" aria-hidden="true">*</span></span>
-          <input v-model="sshForm.password" type="password" maxlength="4096" :required="!editingSshId" autocomplete="new-password" />
+        <div class="connection-form-row">
+          <label><span class="field-label">Username <span class="required-mark" aria-hidden="true">*</span></span><input
+              v-model="sshForm.username" required maxlength="128" placeholder="oracle" /></label>
+          <label><span class="field-label">Port <span class="required-mark" aria-hidden="true">*</span></span><input
+              v-model.number="sshForm.port" type="number" min="1" max="65535" required /></label>
+        </div>
+
+        <label v-if="sshForm.auth_type === 'password'"><span class="field-label">Password <span v-if="!editingSshId"
+              class="required-mark" aria-hidden="true">*</span></span>
+          <input v-model="sshForm.password" type="password" maxlength="4096" :required="!editingSshId"
+            autocomplete="new-password" />
           <small v-if="editingSshId">Leave blank to keep the stored password.</small>
         </label>
 
         <template v-else>
-          <label><span class="field-label">Private key <span v-if="!editingSshId" class="required-mark" aria-hidden="true">*</span></span>
+          <label><span class="field-label">Private key <span v-if="!editingSshId" class="required-mark"
+                aria-hidden="true">*</span></span>
             <textarea v-model="sshForm.private_key" rows="8" :required="!editingSshId"
               placeholder="-----BEGIN OPENSSH PRIVATE KEY-----" />
             <small v-if="editingSshId">Leave blank to keep the stored private key.</small>
@@ -769,7 +844,7 @@ onMounted(async () => {
 
         <label>Notes<textarea v-model="sshForm.notes" rows="3" maxlength="2000"
             placeholder="Scope / account owner / intended server group" /></label>
-        <label class="connection-checkbox"><input v-model="sshForm.enabled" type="checkbox" /> Enable this SSH access
+        <label class="connection-checkbox"><input v-model="sshForm.enabled" type="checkbox" class="toggle-switch"/> Enable this SSH access
           profile</label>
 
         <p v-if="sshFormError" class="login-error">{{ sshFormError }}</p>
@@ -783,7 +858,7 @@ onMounted(async () => {
   </div>
 
   <div v-if="shortcutFormOpen" class="modal-backdrop" @click.self="closeShortcutForm">
-    <section class="modal-panel infrastructure-modal" role="dialog" aria-modal="true">
+    <section class="modal-panel infrastructure-modal" role="dialog" aria-modal="true"  style="--modal-width: 500px">
       <div class="modal-header">
         <div>
           <h2>{{ editingShortcutId ? 'Edit terminal shortcut' : 'Add terminal shortcut' }}</h2>
@@ -793,8 +868,11 @@ onMounted(async () => {
 
       <form class="connection-form" @submit.prevent="saveShortcut">
         <div class="connection-form-row">
-          <label><span class="field-label">Shortcut name <span class="required-mark" aria-hidden="true">*</span></span><input v-model="shortcutForm.name" required maxlength="80" placeholder="Open SQLPLUS as SYSDBA" /></label>
-          <label><span class="field-label">Category <span class="required-mark" aria-hidden="true">*</span></span><input v-model="shortcutForm.category" required placeholder="Oracle" /></label>
+          <label><span class="field-label">Shortcut name <span class="required-mark"
+                aria-hidden="true">*</span></span><input v-model="shortcutForm.name" required maxlength="80"
+              placeholder="Open SQLPLUS as SYSDBA" /></label>
+          <label><span class="field-label">Category <span class="required-mark" aria-hidden="true">*</span></span><input
+              v-model="shortcutForm.category" required placeholder="Oracle" /></label>
         </div>
 
         <label><span class="field-label">Command <span class="required-mark" aria-hidden="true">*</span></span>
@@ -857,7 +935,7 @@ onMounted(async () => {
           </div>
         </fieldset>
 
-        <label class="connection-checkbox"><input v-model="shortcutForm.enabled" type="checkbox" /> Enable this terminal
+        <label class="connection-checkbox"><input v-model="shortcutForm.enabled" type="checkbox" class="toggle-switch"/> Enable this terminal
           shortcut</label>
         <p v-if="shortcutFormError" class="login-error">{{ shortcutFormError }}</p>
         <div class="connection-form-actions">
@@ -869,4 +947,33 @@ onMounted(async () => {
       </form>
     </section>
   </div>
+
 </template>
+<style>
+.server-asset-form .connection-form-row {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.server-asset-form .connection-form-row > label,
+.server-asset-form input,
+.server-asset-form select,
+.server-asset-form textarea {
+  min-width: 0;
+}
+
+.server-asset-form input,
+.server-asset-form select,
+.server-asset-form textarea {
+  width: 100%;
+  max-width: none;
+  box-sizing: border-box;
+}
+
+.server-asset-form .server-asset-form__os-row {
+  grid-template-columns: 19.5rem minmax(0, 1fr);
+}
+
+.server-asset-form__half {
+  width: calc(50% - 0.375rem);
+}
+</style>

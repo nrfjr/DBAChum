@@ -18,14 +18,32 @@ function bytes(value: number | null) {
 }
 function sync() { if (store.data) Object.assign(form, { analytics_retention_days: store.data.analytics_retention_days, action_audit_retention_days: store.data.action_audit_retention_days, terminal_audit_retention_days: store.data.terminal_audit_retention_days, provisioning_history_retention_days: store.data.provisioning_history_retention_days }) }
 async function load() { error.value = null; try { await store.loadData(); sync() } catch (exc) { error.value = exc instanceof Error ? exc.message : 'Unable to load data settings.' } }
-async function save() { saving.value = true; error.value = null; try { await store.saveData({ ...form }); sync(); showToast({ title: 'Data retention saved', message: 'The collector applies retention cleanup daily; System Maintenance can run it immediately.', tone: 'success' }) } catch (exc) { error.value = exc instanceof Error ? exc.message : 'Unable to save data settings.' } finally { saving.value = false } }
+async function save() {
+  saving.value = true
+  error.value = null
+  try {
+    await store.saveData({ ...form })
+    sync()
+    showToast({ title: 'Data retention saved', message: 'The collector applies retention cleanup daily; System Maintenance can run it immediately.', tone: 'success' })
+  } catch (exc) {
+    const message = exc instanceof Error ? exc.message : 'Unable to save data settings.'
+    error.value = message
+    showToast({ title: 'Unable to save data settings', message, tone: 'danger' })
+  } finally {
+    saving.value = false
+  }
+}
 async function exportMetadata() {
   try {
     const data = await store.exportMetadata()
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
     const url = URL.createObjectURL(blob); const link = document.createElement('a'); link.href = url; link.download = `dbachum-metadata-${new Date().toISOString().slice(0, 10)}.json`; link.click(); URL.revokeObjectURL(url)
     showToast({ title: 'Metadata exported', message: 'Credentials and encrypted secrets are excluded.', tone: 'success' })
-  } catch (exc) { error.value = exc instanceof Error ? exc.message : 'Unable to export metadata.' }
+  } catch (exc) {
+    const message = exc instanceof Error ? exc.message : 'Unable to export metadata.'
+    error.value = message
+    showToast({ title: 'Unable to export metadata', message, tone: 'danger' })
+  }
 }
 onMounted(load)
 </script>

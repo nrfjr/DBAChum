@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
+import FloatingActionMenu from '@/components/common/FloatingActionMenu.vue'
 
 import { useConnectionsStore } from '@/stores/connections'
 import {
@@ -14,6 +15,13 @@ import {
   type ProvisioningValueKind,
 } from '@/stores/provisioning'
 import { confirmDialog, showToast } from '@/ui/feedback'
+import {
+  useAuthStore,
+} from '@/stores/auth'
+
+import {
+  hasPermission,
+} from '@/core/permissions'
 
 interface StepMetadata {
   key: number
@@ -27,6 +35,7 @@ interface StepMetadata {
 
 const connectionsStore = useConnectionsStore()
 const provisioningStore = useProvisioningStore()
+const authStore = useAuthStore()
 
 const formOpen = ref(false)
 const editingId = ref<string | null>(null)
@@ -59,6 +68,14 @@ const availableLdapProfiles = computed(() =>
 const ldapAvailable = computed(() => availableLdapProfiles.value.length > 0)
 
 const sourceOptions = computed(() => provisioningStore.sources)
+
+const canManageConnections = computed(
+  () =>
+    hasPermission(
+      authStore.user,
+      'connections:manage',
+    ),
+)
 
 function blankMetadata(): StepMetadata {
   nextStepKey += 1
@@ -385,22 +402,26 @@ async function save() {
 
   if (!form.schema_connection_id) {
     formError.value = 'Select an Oracle connection for schema creation.'
+    showToast({ title: 'Oracle connection required', message: formError.value, tone: 'warning' })
     return
   }
 
   if (form.ldap_enabled && !form.ldap_profile_id) {
     formError.value = 'Select an LDAP profile for this provisioning workflow.'
+    showToast({ title: 'LDAP profile required', message: formError.value, tone: 'warning' })
     return
   }
 
   if (form.ldap_enabled && !availableLdapProfiles.value.some((profile) => profile.id === form.ldap_profile_id)) {
     formError.value = 'The selected LDAP profile is unavailable, disabled, or incomplete.'
+    showToast({ title: 'LDAP profile unavailable', message: formError.value, tone: 'warning' })
     return
   }
 
   const stepWithoutMatch = form.table_steps.findIndex((step) => step.match_columns.length === 0)
   if (stepWithoutMatch !== -1) {
     formError.value = `Table step ${stepWithoutMatch + 1} needs at least one upsert match column.`
+    showToast({ title: 'Provisioning step incomplete', message: formError.value, tone: 'warning' })
     return
   }
 
@@ -427,16 +448,18 @@ async function save() {
       })),
     }
 
+    const updated = Boolean(editingId.value)
     if (editingId.value) {
       await provisioningStore.updateProfile(editingId.value, payload)
     } else {
       await provisioningStore.createProfile(payload)
     }
     closeForm()
+    showToast({ title: updated ? 'Provisioning profile updated' : 'Provisioning profile created', message: payload.name, tone: 'success' })
   } catch (error) {
-    formError.value = error instanceof Error
-      ? error.message
-      : 'Unable to save provisioning profile.'
+    const message = error instanceof Error ? error.message : 'Unable to save provisioning profile.'
+    formError.value = message
+    showToast({ title: 'Unable to save provisioning profile', message, tone: 'danger' })
   }
 }
 
@@ -447,9 +470,9 @@ async function remove(profile: ProvisioningProfile) {
     await provisioningStore.removeProfile(profile.id)
     showToast({ title: 'Provisioning profile deleted', message: profile.name, tone: 'success' })
   } catch (error) {
-    formError.value = error instanceof Error
-      ? error.message
-      : 'Unable to delete provisioning profile.'
+    const message = error instanceof Error ? error.message : 'Unable to delete provisioning profile.'
+    formError.value = message
+    showToast({ title: 'Unable to delete provisioning profile', message, tone: 'danger' })
   }
 }
 
@@ -465,6 +488,7 @@ onMounted(async () => {
     provisioningStore.loadLdapProfiles(),
   ])
 })
+
 </script>
 
 <template>
@@ -510,11 +534,16 @@ onMounted(async () => {
               <li v-for="issue in profile.issues" :key="issue">{{ issue }}</li>
             </ul>
           </div>
-
-          <div class="connection-actions">
-            <button class="secondary-button" type="button" @click="openEdit(profile)">Edit</button>
-            <button class="secondary-button" type="button" @click="remove(profile)">Delete</button>
-          </div>
+          <FloatingActionMenu v-if="canManageConnections" :label="`Actions for ${profile.name}`">
+            <button v-if="canManageConnections" type="button" role="menuitem" @click="openEdit(profile)">
+              <FontAwesomeIcon icon="pen" />
+              Edit
+            </button>
+            <button v-if="canManageConnections" type="button" role="menuitem" class="danger-menu-item" @click="remove(profile)">
+              <FontAwesomeIcon icon="trash-can" />
+              Delete
+            </button>
+          </FloatingActionMenu>
         </article>
       </div>
     </section>
@@ -555,7 +584,7 @@ onMounted(async () => {
           </label>
 
           <label class="connection-checkbox">
-            <input v-model="form.enabled" type="checkbox" />
+            <input v-model="form.enabled" type="checkbox" class="toggle-switch"/>
             Profile enabled
           </label>
 
@@ -563,6 +592,7 @@ onMounted(async () => {
             <input
               v-model="form.ldap_enabled"
               type="checkbox"
+              class="toggle-switch"
               :disabled="!ldapAvailable"
               @change="ldapEnabledChanged"
             />
@@ -584,7 +614,6 @@ onMounted(async () => {
                 {{ ldap.name }} · {{ ldap.host }}:{{ ldap.port }}
               </option>
             </select>
-            <small>The selected profile supplies the LDAP connection, Base DN, credentials, and LDIF template. Enabled provisioning writes the LDAP entry automatically.</small>
           </label>
 
           <section class="provisioning-step-builder">
@@ -628,7 +657,6 @@ onMounted(async () => {
                 </select>
               </label>
 
-              <div class="connection-form-row">
                 <label>
                   <span class="field-label">Schema <span class="required-mark" aria-hidden="true">*</span></span>
                   <select v-model="step.owner" required @focus="loadSchemas(index)" @change="ownerChanged(index)">
@@ -648,7 +676,6 @@ onMounted(async () => {
                     </option>
                   </select>
                 </label>
-              </div>
 
               <p v-if="stepMetadata[index]?.loading" class="empty-state compact">Reading Oracle metadata...</p>
               <p v-if="stepMetadata[index]?.error" class="login-error">{{ stepMetadata[index]?.error }}</p>
@@ -770,4 +797,5 @@ onMounted(async () => {
       </section>
     </div>
   </div>
+    
 </template>

@@ -197,7 +197,6 @@ async def _collection_stats(database, collection_name: str) -> dict:
             "index_bytes": int(result.get("totalIndexSize") or 0),
         }
     except Exception:
-        # A missing optional collection should still be represented cleanly.
         count = await database[collection_name].count_documents({})
         return {
             "name": collection_name,

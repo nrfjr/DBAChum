@@ -4,10 +4,12 @@ import { useRoute, useRouter } from 'vue-router'
 
 import { useServersStore, type ServerOsFamily, type ServerType } from '@/stores/servers'
 import { useAuthStore } from '@/stores/auth'
+import { useAnalyticsStore } from '@/stores/analytics'
 import { hasPermission } from '@/core/permissions'
 
 const serversStore = useServersStore()
 const authStore = useAuthStore()
+const analyticsStore = useAnalyticsStore()
 const route = useRoute()
 const router = useRouter()
 
@@ -58,6 +60,17 @@ const filteredServers = computed(() => {
 
 const pageHeading = computed(() => selectedOs.value ? `${osLabel(selectedOs.value)} servers` : '')
 
+const serverStatus = computed(() => {
+  const statuses = new Map<string, string>()
+  for (const item of analyticsStore.servers?.items ?? []) statuses.set(item.server_id, item.status)
+  return statuses
+})
+
+function statusClass(serverId: string, enabled: boolean) {
+  if (!enabled) return 'disabled'
+  return serverStatus.value.get(serverId) ?? 'unknown'
+}
+
 function serverTypeLabel(value: ServerType) {
   return {
     database: 'Database server',
@@ -76,7 +89,10 @@ function openServer(id: string) {
 }
 
 onMounted(() => {
-  if (serversStore.servers.length === 0) void serversStore.load()
+  void Promise.allSettled([
+    serversStore.servers.length === 0 ? serversStore.load() : Promise.resolve(),
+    analyticsStore.loadServers(),
+  ])
 })
 </script>
 
@@ -87,8 +103,9 @@ onMounted(() => {
     </div>
     <div class="server-list-page-actions">
       <RouterLink v-if="canManageServers" class="secondary-button" :to="{ name: 'settings-connections', query: { type: 'servers' } }">Manage connections</RouterLink>
-      <button type="button" class="secondary-button" :disabled="serversStore.loading" @click="serversStore.load()">
-        {{ serversStore.loading ? 'Refreshing...' : 'Refresh' }}
+      <button type="button" class="secondary-button refresh-button" :disabled="serversStore.loading" @click="serversStore.load()">
+        {{ serversStore.loading ? 'Refreshing' : 'Refresh' }}
+        <p v-if="serversStore.loading" class="loading"></p>
       </button>
     </div>
   </section>
@@ -120,17 +137,20 @@ onMounted(() => {
   </div>
 
   <div v-else class="server-grid">
-    <button v-for="server in filteredServers" :key="server.id" type="button" class="server-card server-card-button" @click="openServer(server.id)">
-      <div class="server-card-header">
-        <div>
-          <strong>{{ server.name }}</strong>
-          <span>{{ osLabel(server.os_family) }}<template v-if="server.os_version"> · {{ server.os_version }}</template></span>
-        </div>
+    <button v-for="server in filteredServers" :key="server.id" type="button" class="database-card server-card-button server-selection-card" @click="openServer(server.id)">
+      <div class="server-selection-card__title">
+        <strong>{{ server.name }}</strong>
+        <span
+          class="server-reachability-dot"
+          :class="`server-reachability-dot--${statusClass(server.id, server.enabled)}`"
+          :title="statusClass(server.id, server.enabled)"
+        />
       </div>
 
-      <div class="server-card-host">{{ server.hostname }}<template v-if="server.ip_address"> · {{ server.ip_address }}</template></div>
+      <div class="database-endpoint">{{ server.hostname }}<template v-if="server.ip_address"> · {{ server.ip_address }}</template></div>
 
-      <div class="server-metadata">
+      <div class="database-identity server-selection-card__meta">
+        <span>{{ osLabel(server.os_family) }}<template v-if="server.os_version"> {{ server.os_version }}</template></span>
         <span>{{ serverTypeLabel(server.server_type) }}</span>
         <span v-if="server.environment">{{ server.environment }}</span>
         <span>{{ server.database_count }} {{ server.database_count === 1 ? 'database' : 'databases' }}</span>
@@ -140,6 +160,45 @@ onMounted(() => {
 </template>
 
 <style scoped>
+
+.server-grid {
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+}
+.server-selection-card {
+  min-width: 0;
+  text-align: left;
+}
+.server-selection-card__title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .75rem;
+}
+.server-selection-card__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .25rem .65rem;
+}
+.server-reachability-dot {
+  width: .65rem;
+  height: .65rem;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: var(--text-muted);
+  opacity: .65;
+}
+.server-reachability-dot--online,
+.server-reachability-dot--limited {
+  background: #22c55e;
+  opacity: 1;
+}
+.server-reachability-dot--unreachable {
+  background: #ef4444;
+  opacity: 1;
+}
+.server-reachability-dot--disabled {
+  background: var(--text-muted);
+}
 .server-list-page-header,
 .server-list-page-actions {
   display: flex;

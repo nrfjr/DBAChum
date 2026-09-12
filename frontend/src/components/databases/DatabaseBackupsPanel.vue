@@ -241,7 +241,7 @@ async function runBackup() {
       }
       const result = await formDialog({
         title: 'Run Oracle RMAN backup',
-        message: 'The backup runs in the background through the linked SSH server and is audited by DBAChum.',
+        message: '',
         confirmLabel: 'Start backup',
         fields,
       })
@@ -259,7 +259,7 @@ async function runBackup() {
     if (engine.value === 'sqlserver') {
       const result = await formDialog({
         title: 'Run SQL Server backup',
-        message: 'The destination must be visible to the SQL Server service account.',
+        message: '',
         confirmLabel: 'Start backup',
         fields: [
           {
@@ -301,7 +301,10 @@ async function runBackup() {
       })
       void waitForBackgroundAction(started.id, 'MySQL/MariaDB dump completed successfully.')
     }
-  } catch {}
+  } catch (cause) {
+    const message = cause instanceof Error ? cause.message : operations.error ?? 'Unable to start database backup.'
+    showToast({ title: 'Unable to start database backup', message, tone: 'danger' })
+  }
 }
 
 async function cleanupOracleArchiveLogs() {
@@ -311,7 +314,7 @@ async function cleanupOracleArchiveLogs() {
 
   const fields: DialogField[] = [
     { name: 'days', label: 'Delete logs older than (days)', type: 'number' as const, value: 2, min: 1, step: 1, required: true },
-    { name: 'backed_up_times', label: 'Require DISK backups before deletion', type: 'number' as const, value: 1, min: 0, step: 1, required: true, hint: 'Use 0 to skip the backup-count condition.' },
+    { name: 'backed_up_times', label: 'Require DISK backups before deletion', type: 'number' as const, value: 1, min: 0, step: 1, required: true, hint: '' },
   ]
   if (connection.value?.oracle_identifier_type !== 'sid') {
     fields.push({ name: 'oracle_sid', label: 'ORACLE_SID', type: 'text' as const, placeholder: 'Leave blank if already configured in the SSH environment' })
@@ -319,7 +322,7 @@ async function cleanupOracleArchiveLogs() {
 
   const result = await formDialog({
     title: 'Clear Oracle archivelogs',
-    message: 'RMAN will crosscheck archivelogs before applying the retention rule.',
+    message: 'Use 0 to skip the backup-count condition.',
     confirmLabel: 'Run cleanup',
     tone: 'warning',
     fields,
@@ -335,7 +338,10 @@ async function cleanupOracleArchiveLogs() {
       backed_up_times: Number(result.backed_up_times),
     })
     void waitForBackgroundAction(started.id, 'RMAN archive log cleanup completed successfully.')
-  } catch {}
+  } catch (cause) {
+    const message = cause instanceof Error ? cause.message : operations.error ?? 'Unable to start archive log cleanup.'
+    showToast({ title: 'Unable to start archive log cleanup', message, tone: 'danger' })
+  }
 }
 
 onMounted(() => load('today'))
@@ -369,11 +375,12 @@ onMounted(() => load('today'))
         </button>
         <button
           type="button"
-          class="secondary-button"
+          class="secondary-button refresh-button"
           :disabled="loading"
           @click="refresh"
         >
-          {{ loading ? 'Refreshing...' : 'Refresh' }}
+          {{ loading ? 'Refreshing' : 'Refresh' }}
+          <p v-if="loading" class="loading"></p>
         </button>
       </div>
     </div>
@@ -437,7 +444,8 @@ onMounted(() => load('today'))
     </p>
 
     <div v-if="loading && !result" class="empty-state">
-      Loading backup history...
+      Loading backup history
+      <p v-if="loading && !result" class="loading"></p>
     </div>
 
     <template v-else-if="result">

@@ -29,27 +29,22 @@ async function load() { error.value = null; try { await store.loadMonitoring(); 
 async function save() {
   saving.value = true; error.value = null
   try { await store.saveMonitoring({ ...form }); sync(); showToast({ title: 'Monitoring settings saved', message: 'The collector reloads these values on its next cycle.', tone: 'success' }) }
-  catch (exc) { error.value = exc instanceof Error ? exc.message : 'Unable to save monitoring settings.' }
+  catch (exc) {
+    const message = exc instanceof Error ? exc.message : 'Unable to save monitoring settings.'
+    error.value = message
+    showToast({ title: 'Unable to save monitoring settings', message, tone: 'danger' })
+  }
   finally { saving.value = false }
 }
 onMounted(load)
 </script>
 
 <template>
-  <div class="settings-stack">
-    <section class="panel">
-      <div class="panel-header"><div title="The dedicated background collector owns database/server monitoring and Analytics snapshots."><h3>Collector status</h3></div><button type="button" class="secondary-button" @click="load">Refresh</button></div>
-      <div class="overview-facts-grid">
-        <div><span>State</span><strong>{{ collectorState }}</strong></div>
-        <div><span>Last heartbeat</span><strong>{{ collectorHeartbeat }}</strong></div>
-        <div><span>Raw metrics retention</span><strong>{{ store.monitoring?.telemetry_retention_hours ?? 24 }} hours</strong></div>
-      </div>
-    </section>
-
-    <section class="panel">
+  <div class="monitoring-settings-layout">
+    <section class="panel custom-monitoring-panel">
       <div class="panel-header"><div title="Changes are stored in MongoDB and picked up by the running collector without restarting the web application."><h3>Collection cadence</h3></div></div>
       <p v-if="error" class="login-error">{{ error }}</p>
-      <label class="settings-toggle-row"><input v-model="form.enabled" type="checkbox" title="Pause collection without stopping the collector process." /><span><strong>Monitoring enabled</strong></span></label>
+      <label class="settings-toggle-row"><input v-model="form.enabled" type="checkbox" class="toggle-switch" title="Pause collection without stopping the collector process." /><span><strong>Monitoring enabled</strong></span></label>
       <div class="settings-form-grid">
         <label><span class="field-label">Database interval (seconds) <span class="required-mark" aria-hidden="true">*</span></span><input required class="utility-select-input" v-model.number="form.database_interval_seconds" type="number" min="10" max="300" /></label>
         <label><span class="field-label">Server interval (seconds) <span class="required-mark" aria-hidden="true">*</span></span><input required class="utility-select-input" v-model.number="form.server_interval_seconds" type="number" min="30" max="600" /></label>
@@ -60,6 +55,14 @@ onMounted(load)
         <label><span class="field-label">Heartbeat stale threshold (seconds) <span class="required-mark" aria-hidden="true">*</span></span><input required class="utility-select-input" v-model.number="form.stale_threshold_seconds" type="number" min="20" max="300" /></label>
       </div>
       <div class="connection-form-actions"><button type="button" class="primary-button" :disabled="saving" @click="save">{{ saving ? 'Saving…' : 'Save monitoring settings' }}</button></div>
+    </section>
+       <section class="panel">
+      <div class="panel-header"><div title="The dedicated background collector owns database/server monitoring and Analytics snapshots."><h3>Collector status</h3></div><button type="button" class="secondary-button" @click="load">Refresh</button></div>
+      <div class="overview-facts-grid">
+        <div><span>State</span><strong>{{ collectorState }}</strong></div>
+        <div><span>Last heartbeat</span><strong>{{ collectorHeartbeat }}</strong></div>
+        <div><span>Raw metrics retention</span><strong>{{ store.monitoring?.telemetry_retention_hours ?? 24 }} hours</strong></div>
+      </div>
     </section>
   </div>
 </template>

@@ -48,7 +48,7 @@ async function loadPlan(item: TopSqlItem) {
         plan_handle: item.plan_handle,
       }, item.key)
     } else {
-      const result = await formDialog({ title: 'Explain representative SQL', message: 'Paste a representative real SELECT for this normalized digest. application runs EXPLAIN only.', confirmLabel: 'Explain SQL', fields: [{ name: 'sql', label: 'SELECT statement', type: 'textarea', required: true }] })
+      const result = await formDialog({ title: 'Explain representative SQL', message: '', confirmLabel: 'Explain SQL', fields: [{ name: 'sql', label: 'SELECT statement', type: 'textarea', required: true }] })
       if (!result) return
       selectedPlan.value = await store.loadPlan(props.connectionId, { sql_text: String(result.sql).trim() }, item.key)
     }
@@ -75,7 +75,7 @@ onMounted(() => void store.loadTopSql(props.connectionId))
       </div>
       <div class="database-inline-actions">
         <button v-if="engine === 'mysql'" type="button" class="secondary-button" :disabled="loadingPlan" @click="explainMySqlSql">Explain SQL</button>
-        <button type="button" class="secondary-button" :disabled="loading" @click="store.loadTopSql(connectionId)">{{ loading ? 'Refreshing...' : 'Refresh Top SQL' }}</button>
+        <button type="button" class="secondary-button refresh-button" :disabled="loading" @click="store.loadTopSql(connectionId)">{{ loading ? 'Refreshing' : 'Refresh Top SQL' }}<p v-if="loading" class="loading"></p></button>
       </div>
     </div>
 
@@ -106,7 +106,7 @@ onMounted(() => void store.loadTopSql(props.connectionId))
         <td v-if="engine !== 'mysql'">{{ formatNumber(item.logical_reads) }}</td>
         <td v-if="engine === 'mysql'">{{ formatNumber(item.rows_examined) }}</td>
         <td class="utility-sql-text" :title="item.diagnostics.join('\n')">{{ item.diagnostics[0] ?? '—' }}</td>
-        <td><button type="button" class="secondary-button" :disabled="loadingPlan" @click="loadPlan(item)">{{ engine === 'mysql' ? 'Explain / Tune' : 'Tune' }}</button></td>
+        <td><button type="button" class="secondary-button" :disabled="loadingPlan" @click="loadPlan(item)">{{ engine === 'mysql' ? 'Explain' : 'Diagnose' }}</button></td>
       </tr>
     </ScrollableDataTable>
 

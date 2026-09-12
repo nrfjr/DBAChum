@@ -276,7 +276,7 @@ onMounted(() => {
         />
 
         <div v-if="filteredRows.length === 0" class="empty-state">No connection definitions match this view.</div>
-
+        
         <div v-else class="unified-connection-list">
           <button
             v-for="row in filteredRows"

@@ -8,40 +8,11 @@ import router from './router'
 
 import { library } from '@fortawesome/fontawesome-svg-core'
 import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome'
-
-import {
-  faGaugeHigh,
-  faDatabase,
-  faServer,
-  faBookOpen,
-  faBell,
-  faGear,
-  faBars,
-  faMoon,
-  faSun,
-  faTrashCan,
-  faEllipsisVertical,
-  faChevronDown,
-  faChartLine,
-} from '@fortawesome/free-solid-svg-icons'
+import { fas } from '@fortawesome/free-solid-svg-icons'
 
 import { useUiStore } from './stores/ui'
 
-library.add(
-  faGaugeHigh,
-  faDatabase,
-  faServer,
-  faBookOpen,
-  faBell,
-  faGear,
-  faBars,
-  faMoon,
-  faSun,
-  faTrashCan,
-  faEllipsisVertical,
-  faChevronDown,
-  faChartLine,
-)
+library.add(fas)
 
 const app = createApp(App)
 const pinia = createPinia()

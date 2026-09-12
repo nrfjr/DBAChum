@@ -702,11 +702,12 @@ onUnmounted(() => {
 
       <button
         type="button"
-        class="secondary-button"
+        class="secondary-button refresh-button"
         :disabled="metricsStore.loading"
         @click="loadHistory(hours)"
       >
-        {{ metricsStore.loading ? 'Refreshing...' : 'Refresh' }}
+        {{ metricsStore.loading ? 'Refreshing' : 'Refresh' }}
+        <p v-if="metricsStore.loading" class="loading"></p>
       </button>
     </div>
 
@@ -854,7 +855,7 @@ onUnmounted(() => {
                 <th>Logical reads</th>
                 <th>Physical reads</th>
                 <th>SQL text</th>
-                <th>Tuning</th>
+                <th>Action</th>
               </tr>
             </template>
             <tr v-for="row in visibleTopSqlRows" :key="row.key">
@@ -879,7 +880,7 @@ onUnmounted(() => {
                   :disabled="Boolean(performanceStore.loadingPlan[connectionId])"
                   @click="tuneOracleSql(row)"
                 >
-                  Tune
+                  Diagnose
                 </button>
               </td>
             </tr>

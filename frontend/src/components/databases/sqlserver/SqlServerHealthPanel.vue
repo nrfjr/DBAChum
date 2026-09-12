@@ -83,11 +83,12 @@ onMounted(() => {
 
       <button
         type="button"
-        class="secondary-button"
+        class="secondary-button refresh-button"
         :disabled="sqlServerStore.loadingHealth[connectionId]"
         @click="sqlServerStore.loadHealth(connectionId, true)"
       >
-        {{ sqlServerStore.loadingHealth[connectionId] ? 'Refreshing...' : 'Refresh' }}
+        {{ sqlServerStore.loadingHealth[connectionId] ? 'Refreshing' : 'Refresh' }}
+        <p v-if="sqlServerStore.loadingHealth[connectionId]" class="loading"></p>
       </button>
     </div>
 
