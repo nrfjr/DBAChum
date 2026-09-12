@@ -7,7 +7,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     app_name: str = "DBAChum API"
-    app_version: str = "2.0.0"
+    app_version: str = "1.0.0"
     environment: str = "development"
     log_level: str = "INFO"
 
