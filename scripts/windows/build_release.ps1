@@ -287,11 +287,19 @@ if (-not $SkipReleaseCheck) {
         throw "Release check script was not found: $ReleaseCheckScript"
     }
 
-    $releaseCheckArgs = @('-Port', $Port)
-    if ($SkipE2E) { $releaseCheckArgs += '-SkipE2E' }
-    if ($SkipSmoke) { $releaseCheckArgs += '-SkipSmoke' }
+$releaseCheckArgs = @{
+    Port = $Port
+}
 
-    & $ReleaseCheckScript @releaseCheckArgs
+if ($SkipE2E) {
+    $releaseCheckArgs.SkipE2E = $true
+}
+
+if ($SkipSmoke) {
+    $releaseCheckArgs.SkipSmoke = $true
+}
+
+& $ReleaseCheckScript @releaseCheckArgs
 }
 else {
     Write-Warning 'Release-readiness gate skipped.'
