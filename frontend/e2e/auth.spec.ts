@@ -11,7 +11,9 @@ test('redirects unauthenticated users to login and returns them after sign in', 
 
   await expect(page).toHaveURL(/\/login\?redirect=/)
   expect(new URL(page.url()).searchParams.get('redirect')).toBe('/databases')
-  await expect(page.getByRole('heading', { name: 'Welcome back' })).toBeVisible()
+  await expect(page.getByLabel('Username')).toBeVisible()
+  await expect(page.getByLabel('Password')).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Sign in' })).toBeVisible()
 
   await page.getByLabel('Username').fill('admin')
   await page.getByLabel('Password').fill('secret')

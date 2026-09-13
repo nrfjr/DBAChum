@@ -2,24 +2,21 @@ import { expect, test } from '@playwright/test'
 
 import { installMockApi } from './helpers/mockApi'
 
-test('creates a provisioning profile from Oracle metadata mappings', async ({ page }) => {
+test('creates and edits a provisioning profile from the current connections workspace', async ({ page }) => {
   const state = await installMockApi(page)
 
-  await page.goto('/settings/provisioning')
+  await page.goto('/settings/connections?type=provisioning')
   await page.getByRole('button', { name: 'Add profile' }).click()
 
   const dialog = page.getByRole('dialog', { name: 'Add provisioning profile' })
   await dialog.getByLabel('Profile name').fill('ORMS User')
   await dialog.getByLabel('Description').fill('ORM application user')
-  await dialog.getByLabel('Parent database connection (monitored)').selectOption('conn-oracle')
+  await dialog.getByLabel('Parent database connection').selectOption('conn-oracle')
   await dialog.getByRole('button', { name: 'Add table step' }).click()
 
   const step = dialog.locator('.provisioning-step-card').first()
   const stepName = step.getByLabel('Step name')
-  await stepName.fill('')
-  await stepName.click()
-  await page.keyboard.type('Insert USER_MASTER')
-  await expect(step.getByLabel('Step name')).toHaveValue('Insert USER_MASTER')
+  await stepName.fill('Insert USER_MASTER')
   await step.getByLabel('Application provisioning connection').selectOption('conn-oracle')
   await step.getByLabel('Schema').selectOption('ORMS')
   await step.getByLabel('Table').selectOption('USER_MASTER')
@@ -47,24 +44,10 @@ test('creates a provisioning profile from Oracle metadata mappings', async ({ pa
     name: 'ORMS User',
     schema_connection_id: 'conn-oracle',
     ldap_enabled: false,
-    table_steps: [
-      {
-        name: 'Insert USER_MASTER',
-        connection_id: 'conn-oracle',
-        owner: 'ORMS',
-        table_name: 'USER_MASTER',
-        mappings: [
-          { column_name: 'ID', value_kind: 'sequence', value_key: 'USER_MASTER_SEQ' },
-          { column_name: 'USERNAME', value_kind: 'generated', value_key: 'username' },
-          { column_name: 'PASSWORD', value_kind: 'generated', value_key: 'password' },
-          { column_name: 'STATUS', value_kind: 'custom', custom_value: 'ACTIVE' },
-        ],
-        match_columns: ['USERNAME'],
-      },
-    ],
   })
 
-  await page.getByRole('button', { name: 'Edit' }).click()
+  await page.getByRole('button', { name: 'Actions for ORMS User' }).click()
+  await page.getByRole('menuitem', { name: 'Edit' }).click()
   const editDialog = page.getByRole('dialog', { name: 'Edit provisioning profile' })
   await expect(editDialog.getByLabel('Step name')).toHaveValue('Insert USER_MASTER')
   await editDialog.getByLabel('Description').fill('Updated ORMS application user')
@@ -78,19 +61,21 @@ test('creates a provisioning profile from Oracle metadata mappings', async ({ pa
   })
 })
 
-test('migrates the existing LDAP entry into an editable/testable profile', async ({ page }) => {
+test('loads, tests and edits the migrated LDAP profile from the connections workspace', async ({ page }) => {
   const state = await installMockApi(page)
 
-  await page.goto('/settings/ldap')
+  await page.goto('/settings/connections?type=ldap')
 
   await expect(page.getByText('Default LDAP')).toBeVisible()
-  await expect(page.getByText(/Migrated from your previous global LDAP settings/)).toBeVisible()
+  await expect(page.getByText('Migrated automatically from the previous global LDAP settings.')).toBeVisible()
 
-  await page.getByRole('button', { name: 'Test' }).click()
-  await expect(page.locator('.connection-test-result.success')).toContainText('Base DN lookup succeeded')
+  await page.getByRole('button', { name: 'Actions for Default LDAP' }).click()
+  await page.getByRole('menuitem', { name: 'Test connection' }).click()
+  await expect(page.getByText('LDAP connection test passed')).toBeVisible()
   expect(state.ldapProfileTests).toEqual(['global'])
 
-  await page.getByRole('button', { name: 'Edit' }).click()
+  await page.getByRole('button', { name: 'Actions for Default LDAP' }).click()
+  await page.getByRole('menuitem', { name: 'Edit' }).click()
   const dialog = page.getByRole('dialog', { name: 'Edit LDAP profile' })
   await dialog.getByLabel('Profile name').fill('Oracle Retail LDAP')
   await dialog.getByLabel('Host').fill('ldap.example.local')

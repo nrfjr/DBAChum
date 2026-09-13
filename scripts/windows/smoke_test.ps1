@@ -40,7 +40,7 @@ if (-not $SkipCollector) {
     for ($attempt = 1; $attempt -le 15; $attempt++) {
         Push-Location $BackendDir
         try {
-            $collectorOutput = @(& $PythonExe scripts\collector_status.py 2>&1)
+            $collectorOutput = @(& $PythonExe -m scripts.collector_status 2>&1)
         }
         finally {
             Pop-Location

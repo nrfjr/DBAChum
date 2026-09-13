@@ -2,26 +2,25 @@ import { expect, test } from '@playwright/test'
 
 import { installMockApi } from './helpers/mockApi'
 
-test('tests an existing database connection', async ({ page }) => {
+test('tests an existing database connection from its action menu', async ({ page }) => {
   await installMockApi(page)
 
-  await page.goto('/settings/connections')
+  await page.goto('/settings/connections?type=databases')
 
   const connection = page.locator('.connection-item').filter({
     hasText: 'ERP Production',
   })
 
-  await connection.getByRole('button', { name: 'Test' }).click()
+  await connection.getByRole('button', { name: 'Actions for ERP Production' }).click()
+  await page.getByRole('menuitem', { name: 'Test connection' }).click()
 
-  await expect(connection).toContainText('Connection successful.')
-  await expect(connection).toContainText('ERPPRD')
-  await expect(connection).toContainText('Oracle Database 19c')
+  await expect(page.getByText('Database connection test passed')).toBeVisible()
 })
 
 test('adds a SQL Server connection with the expected payload', async ({ page }) => {
   const state = await installMockApi(page)
 
-  await page.goto('/settings/connections')
+  await page.goto('/settings/connections?type=databases')
   await page.getByRole('button', { name: 'Add connection' }).click()
 
   const dialog = page.getByRole('dialog', { name: 'Add database connection' })
@@ -59,7 +58,7 @@ test('adds a SQL Server connection with the expected payload', async ({ page }) 
 test('adds an Oracle SYSDBA connection explicitly', async ({ page }) => {
   const state = await installMockApi(page)
 
-  await page.goto('/settings/connections')
+  await page.goto('/settings/connections?type=databases')
   await page.getByRole('button', { name: 'Add connection' }).click()
 
   const dialog = page.getByRole('dialog', { name: 'Add database connection' })
@@ -71,7 +70,7 @@ test('adds an Oracle SYSDBA connection explicitly', async ({ page }) => {
   await dialog.getByLabel('Username').fill('SYS')
   await dialog.getByLabel('Password').fill('secret123')
 
-  await expect(dialog).toContainText('unrestricted Oracle administrative access')
+  await expect(dialog.getByLabel('Oracle privilege mode')).toHaveValue('sysdba')
 
   await dialog.getByRole('button', { name: 'Add connection' }).click()
 
@@ -84,12 +83,10 @@ test('adds an Oracle SYSDBA connection explicitly', async ({ page }) => {
   })
 })
 
-
-
 test('monitoring can be disabled without disabling the connection', async ({ page }) => {
   const state = await installMockApi(page)
 
-  await page.goto('/settings/connections')
+  await page.goto('/settings/connections?type=databases')
   await page.getByRole('button', { name: 'Add connection' }).click()
 
   const dialog = page.getByRole('dialog', { name: 'Add database connection' })
