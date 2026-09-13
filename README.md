@@ -1,77 +1,104 @@
 # DBAChum
 
-**DBAChum** is a self-hosted database administration and monitoring platform designed to provide a simple, centralized view of database infrastructure.
+DBAChum is a self-hosted database administration and monitoring workspace built for day-to-day DBA operations.
 
-The project is currently under active development.
+Current release: **v1.0.0**
 
----
+## Supported Databases
 
-## Goals
+- Oracle Database
+- Microsoft SQL Server
+- MySQL
+- MariaDB
 
-DBAChum aims to provide a lightweight interface for database administrators to:
+## Features
 
-* Monitor database availability and health
-* Manage database connection profiles
-* View database and server information
-* Track historical monitoring metrics
-* Maintain server and infrastructure inventory
-* Support multiple database engines
-* Authenticate users locally or through LDAP
-* Provide role-based access control
-* Work as an installable Progressive Web App
-* Run entirely on a local or self-hosted environment
+- Database connection and health monitoring
+- Sessions, storage, parameters, jobs, maintenance, and performance views
+- Historical metrics and background telemetry collection
+- Oracle user/schema administration and provisioning
+- Server monitoring and SSH terminal access
+- Alerts
+- User and role management
+- LDAP integration
+- Connection and application settings
+- Windows background deployment
 
----
+## Requirements
 
-## Supported Database Engines
+For the Windows release:
 
-Initial support:
+- Windows / Windows Server
+- Python 3
+- MongoDB Server
+- MongoDB Database Tools for backup/restore
 
-* Oracle Database
-* Microsoft SQL Server
-* MySQL
+Oracle Instant Client is optional and is required for Oracle Thick mode and Oracle 10g connectivity.
 
----
+## Windows Installation
 
-## Tech Stack
+Download the latest package from **GitHub Releases** and extract it.
 
-### Frontend
-
-* Vue 3
-* TypeScript
-* Vite
-* Vue Router
-* Pinia
-* PrimeVue
-* Progressive Web App support
-
-### Backend
-
-* Python
-* FastAPI
-* Pydantic
-* PyMongo
-* Database-specific Python connectors
-
-### Application Database
-
-* MongoDB
-
-
-Just a small project for making database administration a little less painful.
-
-## Production deployment
-
-For Windows Server environments where Docker/WSL is unavailable, DBAChum supports a native Windows deployment. The production Vue build is served by FastAPI, MongoDB runs as its Windows service, and Task Scheduler keeps the application process running.
-
-See [`docs/windows-deployment.md`](docs/windows-deployment.md), [`docs/windows-operations.md`](docs/windows-operations.md), and [`docs/security.md`](docs/security.md).
-
-## Production runtime packaging
-
-The source checkout includes a Windows release builder. It creates a minimal native-Windows runtime archive rather than copying the full development repository to production.
+Install the runtime:
 
 ```powershell
-.\scripts\windows\build_release.ps1 -Version 2.0.0-dev -Port 8080
+.\scripts\windows\install_release.ps1 -PythonCommand py
 ```
 
-See `docs/release-package.md` for package contents, installation, update, rollback, and integrity details.
+Configure `backend\.env`, particularly the MongoDB connection.
+
+Run the production preflight:
+
+```powershell
+.\scripts\windows\preflight.ps1 -RequireMongoTools -StrictProduction
+```
+
+Create the initial administrator:
+
+```powershell
+cd backend
+.\.venv\Scripts\python.exe -m scripts.bootstrap_admin
+cd ..
+```
+
+Install DBAChum as a background task from an elevated PowerShell:
+
+```powershell
+.\scripts\windows\install_startup_task.ps1 -Port 8080
+Start-ScheduledTask -TaskName DBAChum
+```
+
+Verify the deployment:
+
+```powershell
+.\scripts\windows\smoke_test.ps1 -Port 8080
+```
+
+Then open:
+
+```text
+http://localhost:8080
+```
+
+## Development
+
+Frontend:
+
+```powershell
+cd frontend
+npm ci
+npm run dev
+```
+
+Backend:
+
+```powershell
+cd backend
+.\.venv\Scripts\python.exe -m uvicorn app.main:app --reload
+```
+
+## Release
+
+Latest stable release: **DBAChum v1.0.0**
+
+Release packages, checksums, and release notes are available under GitHub Releases.
