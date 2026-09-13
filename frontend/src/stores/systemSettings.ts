@@ -15,6 +15,22 @@ export interface GeneralSettings {
   api_docs_enabled: boolean
 }
 
+export interface ReleaseUpdateStatus {
+  current_version: string
+  latest_version: string | null
+  update_available: boolean
+  release_name: string | null
+  release_notes: string
+  release_url: string | null
+  published_at: string | null
+  package_name: string | null
+  package_url: string | null
+  checksum_name: string | null
+  checksum_url: string | null
+  installable: boolean
+  checked_at: string
+}
+
 export interface MonitoringSettings {
   enabled: boolean
   database_interval_seconds: number
@@ -81,6 +97,9 @@ export const useSystemSettingsStore = defineStore('systemSettings', {
   state: () => ({
     branding: null as BrandingSettings | null,
     general: null as GeneralSettings | null,
+    updateStatus: null as ReleaseUpdateStatus | null,
+    updateLoading: false,
+    updateError: null as string | null,
     monitoring: null as MonitoringSettings | null,
     data: null as DataSettings | null,
     maintenance: null as MaintenanceDiagnostics | null,
@@ -112,6 +131,20 @@ export const useSystemSettingsStore = defineStore('systemSettings', {
       })
       if (this.branding) this.branding.installation_name = this.general.installation_name
       return this.general
+    },
+    async checkForUpdates(forceRefresh = false) {
+      this.updateLoading = true
+      this.updateError = null
+      try {
+        const query = forceRefresh ? '?refresh=true' : ''
+        this.updateStatus = await request<ReleaseUpdateStatus>(`/system/updates/check${query}`)
+        return this.updateStatus
+      } catch (error) {
+        this.updateError = error instanceof Error ? error.message : 'Unable to check for updates.'
+        return null
+      } finally {
+        this.updateLoading = false
+      }
     },
     async uploadLogo(file: File) {
       const body = new FormData()

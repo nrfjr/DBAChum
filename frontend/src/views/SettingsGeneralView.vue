@@ -38,6 +38,17 @@ async function load() {
   } catch (exc) {
     error.value = exc instanceof Error ? exc.message : 'Unable to load general settings.'
   }
+
+  await store.checkForUpdates()
+}
+
+async function refreshUpdateStatus() {
+  await store.checkForUpdates(true)
+}
+
+function openLatestRelease() {
+  if (!store.updateStatus?.release_url) return
+  window.open(store.updateStatus.release_url, '_blank', 'noopener,noreferrer')
 }
 
 function clearLogoPreview() {
@@ -225,6 +236,47 @@ onBeforeUnmount(clearLogoPreview)
         <div><span>API documentation</span><strong>{{ store.general.api_docs_enabled ? 'Enabled' : 'Disabled'
             }}</strong></div>
       </div>
+
+      <div class="release-update-card">
+        <div class="release-update-copy">
+          <strong v-if="store.updateLoading">Checking for updates…</strong>
+          <template v-else-if="store.updateError">
+            <strong>Update check unavailable</strong>
+            <span>{{ store.updateError }}</span>
+          </template>
+          <template v-else-if="store.updateStatus?.update_available">
+            <strong>DBAChum v{{ store.updateStatus.latest_version }} is available</strong>
+            <span>{{ store.updateStatus.release_name }}</span>
+          </template>
+          <template v-else-if="store.updateStatus">
+            <strong>You're up to date</strong>
+            <span>Latest stable release: v{{ store.updateStatus.latest_version ?? store.general.app_version }}</span>
+          </template>
+          <template v-else>
+            <strong>Update status not checked</strong>
+          </template>
+        </div>
+
+        <div class="release-update-actions">
+          <button
+            v-if="store.updateStatus?.update_available && store.updateStatus.release_url"
+            type="button"
+            class="secondary-button"
+            @click="openLatestRelease"
+          >
+            View release
+          </button>
+          <button
+            type="button"
+            class="secondary-button"
+            :disabled="store.updateLoading"
+            @click="refreshUpdateStatus"
+          >
+            {{ store.updateLoading ? 'Checking…' : 'Check again' }}
+          </button>
+        </div>
+      </div>
+
       <div class="settings-runtime-footer">
         <AppLegalFooter />
       </div>
@@ -348,5 +400,46 @@ onBeforeUnmount(clearLogoPreview)
   gap: 0.5rem;
   width: auto;
   overflow: visible;
+}
+
+.release-update-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-top: 1rem;
+  padding: 0.9rem 1rem;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: var(--color-surface-secondary);
+}
+
+.release-update-copy {
+  display: grid;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.release-update-copy span {
+  color: var(--text-muted);
+  font-size: 0.82rem;
+}
+
+.release-update-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 0 0 auto;
+}
+
+@media (max-width: 680px) {
+  .release-update-card {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .release-update-actions {
+    flex-wrap: wrap;
+  }
 }
 </style>
