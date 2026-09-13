@@ -16,6 +16,7 @@ The builder runs `release_check.ps1` by default, verifies that the Git working t
 
 ```text
 release\DBAChum-v2.0.0-dev-windows.zip
+release\DBAChum-v2.0.0-dev-windows.zip.sha256
 ```
 
 Use `-AllowDirty` only for disposable development packages. A dirty artifact is recorded as such in the manifest and should not be treated as a formal release.
@@ -55,6 +56,7 @@ DBAChum-vX.Y.Z-windows\
 │       ├── install_startup_task.ps1
 │       ├── preflight.ps1
 │       ├── smoke_test.ps1
+│       ├── update_dbachum.ps1
 │       ├── backup_mongodb.ps1
 │       └── restore_mongodb.ps1
 └── docs\
@@ -96,6 +98,23 @@ Finally:
 ```powershell
 .\scripts\windows\smoke_test.ps1 -Port 8080
 ```
+
+## Validating an update package
+
+Starting with the self-update capable release, every Windows ZIP is accompanied by a `.sha256` file. Before changing an installed server, the standalone updater can validate both the archive checksum and every file listed in `release-manifest.json`:
+
+```powershell
+.\scripts\windows\update_dbachum.ps1 `
+    -PackagePath .\DBAChum-v1.0.1-windows.zip `
+    -ChecksumPath .\DBAChum-v1.0.1-windows.zip.sha256 `
+    -ValidateOnly
+```
+
+`-ValidateOnly` never stops DBAChum or changes installed files.
+
+For a manual local-package update, run the same script from an elevated PowerShell without `-ValidateOnly`. The updater creates a runtime rollback snapshot, backs up MongoDB, preserves `backend\.env`, stops the scheduled task when it was running, installs the release, restarts the task, and runs the smoke test. If installation or health validation fails, the previous runtime is restored automatically.
+
+The updater in this stage accepts local package/checksum files only. Downloading a release from GitHub and triggering it from the web UI are separate later stages.
 
 ## Updating an existing deployment
 

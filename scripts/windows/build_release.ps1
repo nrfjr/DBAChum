@@ -45,6 +45,7 @@ else {
 $StagingRoot = Join-Path $ReleaseRoot '_staging'
 $StagingDir = Join-Path $StagingRoot $ReleaseName
 $ZipPath = Join-Path $ReleaseRoot "$ReleaseName.zip"
+$ChecksumPath = "$ZipPath.sha256"
 $ReleaseCheckScript = Join-Path $PSScriptRoot 'release_check.ps1'
 $Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
 
@@ -199,7 +200,8 @@ function Assert-ReleaseIsClean {
         'scripts\windows\run_dbachum_stack.ps1',
         'scripts\windows\install_startup_task.ps1',
         'scripts\windows\preflight.ps1',
-        'scripts\windows\smoke_test.ps1'
+        'scripts\windows\smoke_test.ps1',
+        'scripts\windows\update_dbachum.ps1'
     )
 
     foreach ($relativePath in $requiredFiles) {
@@ -341,6 +343,9 @@ if (Test-Path $StagingDir) {
 if (Test-Path $ZipPath) {
     Remove-Item $ZipPath -Force
 }
+if (Test-Path $ChecksumPath) {
+    Remove-Item $ChecksumPath -Force
+}
 New-Item -ItemType Directory -Force -Path $StagingDir | Out-Null
 
 Copy-RequiredItem 'backend\app' 'backend\app'
@@ -363,6 +368,7 @@ $runtimeScripts = @(
     'install_startup_task.ps1',
     'preflight.ps1',
     'smoke_test.ps1',
+    'update_dbachum.ps1',
     'backup_mongodb.ps1',
     'restore_mongodb.ps1'
 )
@@ -432,6 +438,11 @@ if (-not (Test-Path $ZipPath)) {
 }
 
 $zipHash = (Get-FileHash -Path $ZipPath -Algorithm SHA256).Hash.ToLowerInvariant()
+[System.IO.File]::WriteAllText(
+    $ChecksumPath,
+    "$zipHash  $(Split-Path $ZipPath -Leaf)`r`n",
+    $Utf8NoBom
+)
 $zipSizeMB = [Math]::Round((Get-Item $ZipPath).Length / 1MB, 2)
 
 if (-not $KeepStaging) {
@@ -447,6 +458,7 @@ Write-Host "      Version : $Version"
 Write-Host "      Archive : $ZipPath"
 Write-Host "      Size MB : $zipSizeMB"
 Write-Host "      SHA256  : $zipHash"
+Write-Host "      Checksum: $ChecksumPath"
 if ($gitDirty) {
     Write-Host '      Source  : DIRTY WORKTREE (development artifact)' -ForegroundColor Yellow
 }
