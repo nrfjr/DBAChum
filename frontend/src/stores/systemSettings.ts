@@ -31,6 +31,19 @@ export interface ReleaseUpdateStatus {
   checked_at: string
 }
 
+
+export interface UpdateInstallStatus {
+  update_id: string | null
+  state: 'idle' | 'queued' | 'running' | 'validated' | 'succeeded' | 'failed' | 'failed_rolled_back' | 'unknown'
+  requested_version: string | null
+  installed_version: string | null
+  created_at: string | null
+  started_at: string | null
+  finished_at: string | null
+  message: string
+  log_file: string | null
+}
+
 export interface MonitoringSettings {
   enabled: boolean
   database_interval_seconds: number
@@ -100,6 +113,9 @@ export const useSystemSettingsStore = defineStore('systemSettings', {
     updateStatus: null as ReleaseUpdateStatus | null,
     updateLoading: false,
     updateError: null as string | null,
+    updateInstallStatus: null as UpdateInstallStatus | null,
+    updateInstallLoading: false,
+    updateInstallError: null as string | null,
     monitoring: null as MonitoringSettings | null,
     data: null as DataSettings | null,
     maintenance: null as MaintenanceDiagnostics | null,
@@ -144,6 +160,26 @@ export const useSystemSettingsStore = defineStore('systemSettings', {
         return null
       } finally {
         this.updateLoading = false
+      }
+    },
+    async loadUpdateInstallStatus() {
+      this.updateInstallStatus = await request<UpdateInstallStatus>('/system/updates/install/status')
+      return this.updateInstallStatus
+    },
+    async installUpdate(version: string) {
+      this.updateInstallLoading = true
+      this.updateInstallError = null
+      try {
+        this.updateInstallStatus = await request<UpdateInstallStatus>('/system/updates/install', {
+          method: 'POST',
+          body: JSON.stringify({ version }),
+        })
+        return this.updateInstallStatus
+      } catch (error) {
+        this.updateInstallError = error instanceof Error ? error.message : 'Unable to start the DBAChum update.'
+        throw error
+      } finally {
+        this.updateInstallLoading = false
       }
     },
     async uploadLogo(file: File) {
