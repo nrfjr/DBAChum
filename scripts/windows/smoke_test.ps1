@@ -4,6 +4,9 @@ param(
 
     [string]$HostName = 'localhost',
 
+    [ValidateRange(10, 600)]
+    [int]$StartupTimeoutSeconds = 90,
+
     [switch]$SkipCollector
 )
 
@@ -14,16 +17,47 @@ $BackendDir = Join-Path $ProjectRoot 'backend'
 $PythonExe = Join-Path $BackendDir '.venv\Scripts\python.exe'
 $CollectorStatusScript = Join-Path $BackendDir 'scripts\collector_status.py'
 
-$root = Invoke-WebRequest -Uri "$BaseUrl/" -UseBasicParsing -TimeoutSec 10
-if ($root.StatusCode -ne 200 -or $root.Content -notmatch '<div id="app"') {
-    throw 'Frontend smoke check failed.'
-}
-Write-Host 'PASS  Production frontend' -ForegroundColor Green
+$startupDeadline = (Get-Date).AddSeconds($StartupTimeoutSeconds)
+$startupReady = $false
+$lastStartupError = ''
 
-$ready = Invoke-RestMethod -Uri "$BaseUrl/api/v1/health/ready" -TimeoutSec 10
-if (-not $ready.ready -or $ready.mongodb -ne 'healthy') {
-    throw "API readiness failed: $($ready | ConvertTo-Json -Compress)"
+do {
+    try {
+        $root = Invoke-WebRequest `
+            -Uri "$BaseUrl/" `
+            -UseBasicParsing `
+            -TimeoutSec 5 `
+            -ErrorAction Stop
+
+        if ($root.StatusCode -ne 200 -or $root.Content -notmatch '<div id="app"') {
+            throw 'Frontend response was not ready.'
+        }
+
+        $ready = Invoke-RestMethod `
+            -Uri "$BaseUrl/api/v1/health/ready" `
+            -TimeoutSec 5 `
+            -ErrorAction Stop
+
+        if (-not $ready.ready -or $ready.mongodb -ne 'healthy') {
+            throw "API readiness returned ready=$($ready.ready), mongodb=$($ready.mongodb)."
+        }
+
+        $startupReady = $true
+        break
+    }
+    catch {
+        $lastStartupError = $_.Exception.Message
+        if ((Get-Date) -lt $startupDeadline) {
+            Start-Sleep -Seconds 2
+        }
+    }
+} while ((Get-Date) -lt $startupDeadline)
+
+if (-not $startupReady) {
+    throw "DBAChum did not become ready within $StartupTimeoutSeconds seconds. Last error: $lastStartupError"
 }
+
+Write-Host 'PASS  Production frontend' -ForegroundColor Green
 Write-Host 'PASS  API readiness + MongoDB' -ForegroundColor Green
 
 if (-not $SkipCollector) {

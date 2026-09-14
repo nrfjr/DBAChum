@@ -14,6 +14,12 @@ param(
 
     [string]$TargetRoot = '',
 
+    [ValidateRange(0, 600)]
+    [int]$ShutdownGraceSeconds = 60,
+
+    [ValidateRange(10, 600)]
+    [int]$StartupTimeoutSeconds = 90,
+
     [switch]$ValidateOnly,
     [switch]$SkipDatabaseBackup,
     [switch]$SkipSmoke,
@@ -433,9 +439,91 @@ function Save-RollbackSnapshot([string]$Root, [string]$RollbackRoot, $Manifest) 
     }
 }
 
-function Start-TaskAndWait([string]$Name) {
+function Wait-ScheduledTaskStopped(
+    [string]$Name,
+    [int]$TimeoutSeconds = 30
+) {
+    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+
+    do {
+        $task = Get-ScheduledTask -TaskName $Name -ErrorAction SilentlyContinue
+        if ($null -eq $task -or $task.State -ne 'Running') {
+            return
+        }
+
+        Start-Sleep -Seconds 1
+    } while ((Get-Date) -lt $deadline)
+
+    throw "Scheduled task '$Name' did not stop within $TimeoutSeconds seconds."
+}
+
+function Stop-TaskForUpdate(
+    [string]$Name,
+    [int]$GraceSeconds
+) {
+    $task = Get-ScheduledTask -TaskName $Name -ErrorAction SilentlyContinue
+    if ($null -eq $task) {
+        return
+    }
+
+    # Prevent Task Scheduler's restart-on-failure policy from racing the updater.
+    Disable-ScheduledTask -TaskName $Name -ErrorAction Stop | Out-Null
+
+    $task = Get-ScheduledTask -TaskName $Name -ErrorAction SilentlyContinue
+    if ($null -ne $task -and $task.State -eq 'Running') {
+        Stop-ScheduledTask -TaskName $Name -ErrorAction Stop
+    }
+
+    Wait-ScheduledTaskStopped -Name $Name -TimeoutSeconds 30
+
+    if ($GraceSeconds -gt 0) {
+        Write-Host "Waiting $GraceSeconds seconds for DBAChum shutdown/restart state to settle..."
+        Start-Sleep -Seconds $GraceSeconds
+    }
+}
+
+function Wait-DBAChumReady(
+    [int]$Port,
+    [int]$TimeoutSeconds
+) {
+    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+    $readyUrl = "http://127.0.0.1:$Port/api/v1/health/ready"
+    $lastError = ''
+
+    do {
+        try {
+            $ready = Invoke-RestMethod `
+                -Uri $readyUrl `
+                -Method Get `
+                -TimeoutSec 3 `
+                -ErrorAction Stop
+
+            if ($ready.ready -and $ready.mongodb -eq 'healthy') {
+                return
+            }
+
+            $lastError = "Readiness endpoint returned ready=$($ready.ready), mongodb=$($ready.mongodb)."
+        }
+        catch {
+            $lastError = $_.Exception.Message
+        }
+
+        Start-Sleep -Seconds 2
+    } while ((Get-Date) -lt $deadline)
+
+    throw "DBAChum did not become ready on port $Port within $TimeoutSeconds seconds. Last error: $lastError"
+}
+
+function Start-TaskAndWait(
+    [string]$Name,
+    [int]$Port,
+    [int]$TimeoutSeconds
+) {
+    Enable-ScheduledTask -TaskName $Name -ErrorAction Stop | Out-Null
     Start-ScheduledTask -TaskName $Name
-    Start-Sleep -Seconds 3
+
+    Write-Host "Waiting up to $TimeoutSeconds seconds for DBAChum readiness..."
+    Wait-DBAChumReady -Port $Port -TimeoutSeconds $TimeoutSeconds
 }
 
 if ([string]::IsNullOrWhiteSpace($TargetRoot)) {
@@ -589,8 +677,7 @@ try {
 
     if ($taskWasRunning) {
         Write-Step "Stop scheduled task '$TaskName'"
-        Stop-ScheduledTask -TaskName $TaskName
-        Start-Sleep -Seconds 3
+        Stop-TaskForUpdate -Name $TaskName -GraceSeconds $ShutdownGraceSeconds
     }
 
     $installSucceeded = $false
@@ -607,7 +694,10 @@ try {
 
         if ($taskWasRunning) {
             Write-Step "Start scheduled task '$TaskName'"
-            Start-TaskAndWait $TaskName
+            Start-TaskAndWait `
+                -Name $TaskName `
+                -Port $Port `
+                -TimeoutSeconds $StartupTimeoutSeconds
         }
 
         if (-not $SkipSmoke -and $taskWasRunning) {
@@ -634,9 +724,8 @@ try {
 
         try {
             $currentTask = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
-            if ($null -ne $currentTask -and $currentTask.State -eq 'Running') {
-                Stop-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
-                Start-Sleep -Seconds 2
+            if ($null -ne $currentTask) {
+                Stop-TaskForUpdate -Name $TaskName -GraceSeconds $ShutdownGraceSeconds
             }
 
             Remove-ManagedFiles $TargetRoot $PackageManifest
@@ -649,7 +738,10 @@ try {
             }
 
             if ($taskWasRunning) {
-                Start-TaskAndWait $TaskName
+                Start-TaskAndWait `
+                    -Name $TaskName `
+                    -Port $Port `
+                    -TimeoutSeconds $StartupTimeoutSeconds
 
                 if (-not $SkipSmoke) {
                     $rollbackSmoke = Join-Path $TargetRoot 'scripts\windows\smoke_test.ps1'
