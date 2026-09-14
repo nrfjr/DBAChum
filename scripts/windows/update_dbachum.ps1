@@ -364,21 +364,36 @@ function Resolve-PackageRoot([string]$ExtractRoot) {
     return $candidate
 }
 
-function Resolve-PythonCommand([string]$Requested) {
+function Resolve-PythonCommand(
+    [string]$Requested,
+    [string]$RuntimeRoot
+) {
     if (-not [string]::IsNullOrWhiteSpace($Requested)) {
-        if (-not (Get-Command $Requested -ErrorAction SilentlyContinue)) {
-            throw "Python command '$Requested' was not found in PATH."
+        if (Test-Path $Requested -PathType Leaf) {
+            return (Resolve-Path $Requested).Path
         }
-        return $Requested
+
+        $requestedCommand = Get-Command $Requested -ErrorAction SilentlyContinue
+        if ($null -ne $requestedCommand) {
+            return $requestedCommand.Source
+        }
+
+        throw "Python command '$Requested' was not found."
+    }
+
+    $venvPython = Join-Path $RuntimeRoot 'backend\.venv\Scripts\python.exe'
+    if (Test-Path $venvPython -PathType Leaf) {
+        return $venvPython
     }
 
     foreach ($candidate in @('python', 'py')) {
-        if (Get-Command $candidate -ErrorAction SilentlyContinue) {
-            return $candidate
+        $command = Get-Command $candidate -ErrorAction SilentlyContinue
+        if ($null -ne $command) {
+            return $command.Source
         }
     }
 
-    throw 'Python was not found in PATH. Install Python or pass -PythonCommand explicitly.'
+    throw "Python runtime was not found. Expected '$venvPython' or a python/py command in PATH."
 }
 
 function Copy-RelativeFile([string]$SourceRoot, [string]$DestinationRoot, [string]$RelativePath) {
@@ -652,7 +667,9 @@ try {
         throw 'Run the updater from an elevated PowerShell window (Run as Administrator).'
     }
 
-    $resolvedPython = Resolve-PythonCommand $PythonCommand
+    $resolvedPython = Resolve-PythonCommand `
+    -Requested $PythonCommand `
+    -RuntimeRoot $TargetRoot
     $task = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
     $taskWasRunning = $null -ne $task -and $task.State -eq 'Running'
 
