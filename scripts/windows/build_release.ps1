@@ -201,7 +201,9 @@ function Assert-ReleaseIsClean {
         'scripts\windows\install_startup_task.ps1',
         'scripts\windows\preflight.ps1',
         'scripts\windows\smoke_test.ps1',
-        'scripts\windows\update_dbachum.ps1'
+        'scripts\windows\update_dbachum.ps1',
+        'scripts\windows\queue_dbachum_update.ps1',
+        'scripts\windows\run_update_task.ps1'
     )
 
     foreach ($relativePath in $requiredFiles) {
@@ -369,6 +371,8 @@ $runtimeScripts = @(
     'preflight.ps1',
     'smoke_test.ps1',
     'update_dbachum.ps1',
+    'queue_dbachum_update.ps1',
+    'run_update_task.ps1',
     'backup_mongodb.ps1',
     'restore_mongodb.ps1'
 )

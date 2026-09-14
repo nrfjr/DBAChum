@@ -329,6 +329,8 @@ function Assert-PackageManifest([string]$PackageRoot, $Manifest, [string]$Versio
         'frontend\dist\index.html',
         'scripts\windows\install_release.ps1',
         'scripts\windows\update_dbachum.ps1',
+        'scripts\windows\queue_dbachum_update.ps1',
+        'scripts\windows\run_update_task.ps1',
         'scripts\windows\smoke_test.ps1',
         'VERSION'
     )) {
