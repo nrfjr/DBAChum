@@ -1,9 +1,9 @@
 param(
-    [Parameter(Mandatory = $true)]
-    [string]$PackagePath,
+    [string]$PackagePath = '',
 
-    [Parameter(Mandatory = $true)]
-    [string]$ChecksumPath,
+    [string]$ChecksumPath = '',
+
+    [string]$ReleaseVersion = '',
 
     [ValidateRange(1, 65535)]
     [int]$Port = 8080,
@@ -119,6 +119,121 @@ function Compare-SemVer([string]$Left, [string]$Right) {
     }
 
     return Compare-PreRelease $a.Pre $b.Pre
+}
+
+function Get-OfficialGitHubRelease([string]$Version) {
+    $parsed = Get-SemVer $Version
+    if (-not [string]::IsNullOrWhiteSpace($parsed.Pre)) {
+        throw "Official in-app updates accept stable releases only, not prerelease '$Version'."
+    }
+
+    $stableVersion = $parsed.Raw
+    $tag = "v$stableVersion"
+    $apiUrl = "https://api.github.com/repos/nrfjr/DBAChum/releases/tags/$tag"
+    $headers = @{
+        Accept = 'application/vnd.github+json'
+        'User-Agent' = "DBAChum-Updater/$stableVersion"
+        'X-GitHub-Api-Version' = '2022-11-28'
+    }
+
+    try {
+        $release = Invoke-RestMethod -Uri $apiUrl -Headers $headers -Method Get
+    }
+    catch {
+        throw "Unable to retrieve official DBAChum release '$tag' from GitHub: $($_.Exception.Message)"
+    }
+
+    if ($null -eq $release) {
+        throw "GitHub returned an empty release response for '$tag'."
+    }
+    if ([bool]$release.draft) {
+        throw "Refusing GitHub draft release '$tag'."
+    }
+    if ([bool]$release.prerelease) {
+        throw "Refusing GitHub prerelease '$tag'."
+    }
+    if ([string]$release.tag_name -ne $tag) {
+        throw "GitHub returned unexpected tag '$($release.tag_name)' for requested release '$tag'."
+    }
+
+    $packageName = "DBAChum-$tag-windows.zip"
+    $checksumName = "$packageName.sha256"
+    $packageAsset = $null
+    $checksumAsset = $null
+
+    foreach ($asset in @($release.assets)) {
+        if ([string]$asset.name -eq $packageName) { $packageAsset = $asset }
+        if ([string]$asset.name -eq $checksumName) { $checksumAsset = $asset }
+    }
+
+    if ($null -eq $packageAsset) {
+        throw "Official release '$tag' does not contain required asset '$packageName'."
+    }
+    if ($null -eq $checksumAsset) {
+        throw "Official release '$tag' does not contain required asset '$checksumName'."
+    }
+
+    foreach ($assetInfo in @(
+        [pscustomobject]@{ Name = $packageName; Url = [string]$packageAsset.browser_download_url },
+        [pscustomobject]@{ Name = $checksumName; Url = [string]$checksumAsset.browser_download_url }
+    )) {
+        if ([string]::IsNullOrWhiteSpace($assetInfo.Url)) {
+            throw "GitHub release asset '$($assetInfo.Name)' does not have a download URL."
+        }
+
+        $uri = [Uri]$assetInfo.Url
+        $expectedPrefix = "/nrfjr/DBAChum/releases/download/$tag/"
+        if ($uri.Scheme -ne 'https' -or $uri.Host -ne 'github.com' -or -not $uri.AbsolutePath.StartsWith($expectedPrefix, [StringComparison]::Ordinal)) {
+            throw "Refusing unexpected download URL for '$($assetInfo.Name)': $($assetInfo.Url)"
+        }
+    }
+
+    return [pscustomobject]@{
+        Version = $stableVersion
+        Tag = $tag
+        PackageName = $packageName
+        PackageUrl = [string]$packageAsset.browser_download_url
+        ChecksumName = $checksumName
+        ChecksumUrl = [string]$checksumAsset.browser_download_url
+    }
+}
+
+function Download-OfficialGitHubRelease([string]$Version, [string]$DestinationRoot) {
+    $release = Get-OfficialGitHubRelease $Version
+    New-Item -ItemType Directory -Force -Path $DestinationRoot | Out-Null
+
+    $packagePath = Join-Path $DestinationRoot $release.PackageName
+    $checksumPath = Join-Path $DestinationRoot $release.ChecksumName
+
+    $previousProtocol = [Net.ServicePointManager]::SecurityProtocol
+    try {
+        [Net.ServicePointManager]::SecurityProtocol = $previousProtocol -bor [Net.SecurityProtocolType]::Tls12
+
+        Write-Host "Downloading $($release.PackageName)..."
+        Invoke-WebRequest -Uri $release.PackageUrl -OutFile $packagePath -Headers @{ 'User-Agent' = 'DBAChum-Updater' }
+
+        Write-Host "Downloading $($release.ChecksumName)..."
+        Invoke-WebRequest -Uri $release.ChecksumUrl -OutFile $checksumPath -Headers @{ 'User-Agent' = 'DBAChum-Updater' }
+    }
+    catch {
+        throw "Unable to download official DBAChum release '$($release.Tag)': $($_.Exception.Message)"
+    }
+    finally {
+        [Net.ServicePointManager]::SecurityProtocol = $previousProtocol
+    }
+
+    if (-not (Test-Path $packagePath -PathType Leaf)) {
+        throw "Release package download did not create: $packagePath"
+    }
+    if (-not (Test-Path $checksumPath -PathType Leaf)) {
+        throw "Release checksum download did not create: $checksumPath"
+    }
+
+    return [pscustomobject]@{
+        Version = $release.Version
+        PackagePath = $packagePath
+        ChecksumPath = $checksumPath
+    }
 }
 
 function Get-ExpectedSha256([string]$Path, [string]$ExpectedFileName) {
@@ -328,15 +443,6 @@ else {
     $TargetRoot = Resolve-FullPath $TargetRoot
 }
 
-$PackagePath = Resolve-FullPath $PackagePath
-$ChecksumPath = Resolve-FullPath $ChecksumPath
-
-if (-not (Test-Path $PackagePath -PathType Leaf)) {
-    throw "Release package was not found: $PackagePath"
-}
-if (-not (Test-Path $ChecksumPath -PathType Leaf)) {
-    throw "Release checksum was not found: $ChecksumPath"
-}
 if (-not (Test-Path $TargetRoot -PathType Container)) {
     throw "DBAChum target root was not found: $TargetRoot"
 }
@@ -357,9 +463,56 @@ $UpdateRoot = Join-Path $TargetRoot '.update'
 $RunId = [DateTime]::UtcNow.ToString('yyyyMMddTHHmmssZ') + '-' + [guid]::NewGuid().ToString('N').Substring(0, 8)
 $WorkRoot = Join-Path $UpdateRoot "work\$RunId"
 $ExtractRoot = Join-Path $WorkRoot 'extracted'
+$DownloadRoot = Join-Path $WorkRoot 'downloads'
 $RollbackRoot = Join-Path $UpdateRoot "rollback\$CurrentVersion-$RunId"
 
 New-Item -ItemType Directory -Force -Path $ExtractRoot | Out-Null
+
+$usingOfficialRelease = -not [string]::IsNullOrWhiteSpace($ReleaseVersion)
+$hasPackagePath = -not [string]::IsNullOrWhiteSpace($PackagePath)
+$hasChecksumPath = -not [string]::IsNullOrWhiteSpace($ChecksumPath)
+$RequestedReleaseVersion = ''
+
+if ($usingOfficialRelease) {
+    if ($hasPackagePath -or $hasChecksumPath) {
+        throw 'Use either -ReleaseVersion or -PackagePath/-ChecksumPath, not both.'
+    }
+
+    $requested = Get-SemVer $ReleaseVersion
+    if (-not [string]::IsNullOrWhiteSpace($requested.Pre)) {
+        throw 'Remote GitHub update mode supports stable DBAChum releases only.'
+    }
+    $RequestedReleaseVersion = $requested.Raw
+
+    $requestedComparison = Compare-SemVer $RequestedReleaseVersion $CurrentVersion
+    if ($requestedComparison -lt 0 -and -not $AllowDowngrade) {
+        throw "Refusing downgrade from $CurrentVersion to $RequestedReleaseVersion."
+    }
+    if ($requestedComparison -eq 0 -and -not $AllowSameVersion) {
+        throw "DBAChum $CurrentVersion is already installed. Use -AllowSameVersion only for intentional update testing."
+    }
+
+    Write-Step "Download official DBAChum v$RequestedReleaseVersion release"
+    $download = Download-OfficialGitHubRelease $RequestedReleaseVersion $DownloadRoot
+    $PackagePath = $download.PackagePath
+    $ChecksumPath = $download.ChecksumPath
+    Write-Host "PASS  Downloaded official release assets from nrfjr/DBAChum" -ForegroundColor Green
+}
+else {
+    if (-not $hasPackagePath -or -not $hasChecksumPath) {
+        throw 'Pass -ReleaseVersion for an official GitHub release, or pass both -PackagePath and -ChecksumPath for a local package.'
+    }
+
+    $PackagePath = Resolve-FullPath $PackagePath
+    $ChecksumPath = Resolve-FullPath $ChecksumPath
+}
+
+if (-not (Test-Path $PackagePath -PathType Leaf)) {
+    throw "Release package was not found: $PackagePath"
+}
+if (-not (Test-Path $ChecksumPath -PathType Leaf)) {
+    throw "Release checksum was not found: $ChecksumPath"
+}
 
 try {
     Write-Step 'Verify release archive checksum'
@@ -382,6 +535,10 @@ try {
     $PackageVersion = (Get-Content $PackageVersionFile -Raw).Trim()
     $PackageManifest = Get-Content $PackageManifestPath -Raw | ConvertFrom-Json
     Assert-PackageManifest $PackageRoot $PackageManifest $PackageVersion
+
+    if ($usingOfficialRelease -and $PackageVersion -ne $RequestedReleaseVersion) {
+        throw "Downloaded package version '$PackageVersion' does not match requested official release '$RequestedReleaseVersion'."
+    }
 
     $versionComparison = Compare-SemVer $PackageVersion $CurrentVersion
     if ($versionComparison -lt 0 -and -not $AllowDowngrade) {
