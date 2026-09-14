@@ -29,6 +29,7 @@ from app.api.v1.endpoints import (
     terminal_shortcuts,
     users,
     system_settings,
+    system_updates,
 )
 
 
@@ -62,3 +63,4 @@ api_router.include_router(ssh_access.router)
 api_router.include_router(terminal_shortcuts.router)
 api_router.include_router(users.router)
 api_router.include_router(system_settings.router)
+api_router.include_router(system_updates.router)

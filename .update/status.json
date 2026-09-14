@@ -1,0 +1,11 @@
+{
+    "update_id":  "34b5434521954e87",
+    "state":  "failed",
+    "requested_version":  "1.0.0",
+    "installed_version":  "",
+    "created_at":  "2026-09-14T08:58:19.9691284Z",
+    "started_at":  "2026-09-14T08:58:20.4613660Z",
+    "finished_at":  "2026-09-14T08:58:21.5440843Z",
+    "message":  "DBAChum v1.0.0 failed to install. Review the update log.",
+    "log_file":  ".update/logs/update-34b5434521954e87.log"
+}
