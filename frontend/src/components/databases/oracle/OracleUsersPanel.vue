@@ -30,6 +30,9 @@ import {
   type ProvisioningRunSummary,
   type OracleUserDeprovisionPreview,
   type OracleUserDeprovisionResult,
+  type OracleProvisionedDetails,
+  type OracleProvisionedDetailsPreview,
+  type OracleProvisionedDetailUpdate,
   type OracleMetadataSchema,
   type OracleMetadataTable,
   type OracleMetadataColumn,
@@ -258,6 +261,15 @@ const deprovisionExecuting = ref(false)
 const deprovisionConfirmation = ref('')
 const deprovisionRequestReference = ref('')
 const deprovisionResult = ref<OracleUserDeprovisionResult | null>(null)
+
+const provisionedDetailsTargetUsername = ref<string | null>(null)
+const provisionedDetailsLoading = ref(false)
+const provisionedDetailsExecuting = ref(false)
+const provisionedDetailsError = ref<string | null>(null)
+const provisionedDetailsState = ref<OracleProvisionedDetails | null>(null)
+const provisionedDetailsPreview = ref<OracleProvisionedDetailsPreview | null>(null)
+const provisionedDetailsValues = reactive<Record<string, string>>({})
+const provisionedDetailsRequestReference = ref('')
 
 const actionMenuUsername = ref<string | null>(null)
 
@@ -838,6 +850,139 @@ function closeAccountAction() {
   accountActionRequestReference.value = ''
   accountActionExecuting.value = false
   accountActionError.value = null
+}
+
+function provisionedDetailKey(profileId: string, stepIndex: number, columnName: string) {
+  return `${profileId}:${stepIndex}:${columnName.toUpperCase()}`
+}
+
+function provisionedDetailsUpdates(): OracleProvisionedDetailUpdate[] {
+  if (!provisionedDetailsState.value) return []
+  return provisionedDetailsState.value.steps.flatMap((step) =>
+    step.fields.map((field) => ({
+      profile_id: step.profile_id,
+      step_index: step.step_index,
+      column_name: field.column_name,
+      value: provisionedDetailsValues[
+        provisionedDetailKey(step.profile_id, step.step_index, field.column_name)
+      ] ?? '',
+    })),
+  )
+}
+
+async function openProvisionedDetails(user: OracleDatabaseUser) {
+  closeActionMenu()
+  provisionedDetailsTargetUsername.value = user.username
+  provisionedDetailsLoading.value = true
+  provisionedDetailsExecuting.value = false
+  provisionedDetailsError.value = null
+  provisionedDetailsState.value = null
+  provisionedDetailsPreview.value = null
+  provisionedDetailsRequestReference.value = ''
+  Object.keys(provisionedDetailsValues).forEach((key) => delete provisionedDetailsValues[key])
+
+  try {
+    const state = await provisioningStore.loadOracleUserProvisionedDetails(
+      props.connectionId,
+      user.username,
+    )
+    provisionedDetailsState.value = state
+    for (const step of state.steps) {
+      for (const field of step.fields) {
+        provisionedDetailsValues[
+          provisionedDetailKey(step.profile_id, step.step_index, field.column_name)
+        ] = field.value ?? ''
+      }
+    }
+  } catch (error) {
+    provisionedDetailsError.value = error instanceof Error
+      ? error.message
+      : 'Unable to load provisioned details.'
+  } finally {
+    provisionedDetailsLoading.value = false
+  }
+}
+
+async function previewProvisionedDetails() {
+  if (!provisionedDetailsTargetUsername.value || !provisionedDetailsState.value) return
+  provisionedDetailsLoading.value = true
+  provisionedDetailsError.value = null
+  try {
+    provisionedDetailsPreview.value = await provisioningStore.previewOracleUserProvisionedDetails(
+      props.connectionId,
+      provisionedDetailsTargetUsername.value,
+      provisionedDetailsUpdates(),
+    )
+  } catch (error) {
+    provisionedDetailsError.value = error instanceof Error
+      ? error.message
+      : 'Unable to preview provisioned detail changes.'
+  } finally {
+    provisionedDetailsLoading.value = false
+  }
+}
+
+async function executeProvisionedDetails() {
+  if (!provisionedDetailsTargetUsername.value || !provisionedDetailsPreview.value?.ready_to_execute) return
+  provisionedDetailsExecuting.value = true
+  provisionedDetailsError.value = null
+  try {
+    const result = await provisioningStore.executeOracleUserProvisionedDetails(
+      props.connectionId,
+      provisionedDetailsTargetUsername.value,
+      provisionedDetailsUpdates(),
+      provisionedDetailsRequestReference.value.trim() || null,
+    )
+    await oracleStore.loadUsers(props.connectionId)
+
+    if (result.status === 'succeeded') {
+      const username = result.username
+      const changes = result.changes_applied
+      closeProvisionedDetails()
+      showToast({
+        title: 'Provisioned details updated',
+        message: `${username} · ${changes} field change${changes === 1 ? '' : 's'}`,
+        tone: 'success',
+      })
+    } else {
+      showToast({
+        title: 'Provisioned details partially updated',
+        message: result.error ?? result.status,
+        tone: 'warning',
+      })
+      const state = await provisioningStore.loadOracleUserProvisionedDetails(
+        props.connectionId,
+        provisionedDetailsTargetUsername.value,
+      )
+      provisionedDetailsState.value = state
+      provisionedDetailsPreview.value = null
+      Object.keys(provisionedDetailsValues).forEach((key) => delete provisionedDetailsValues[key])
+      for (const step of state.steps) {
+        for (const field of step.fields) {
+          provisionedDetailsValues[
+            provisionedDetailKey(step.profile_id, step.step_index, field.column_name)
+          ] = field.value ?? ''
+        }
+      }
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unable to update provisioned details.'
+    provisionedDetailsError.value = message
+    showToast({ title: 'Unable to update provisioned details', message, tone: 'danger' })
+  } finally {
+    provisionedDetailsExecuting.value = false
+  }
+}
+
+function closeProvisionedDetails() {
+  provisionedDetailsTargetUsername.value = null
+  provisionedDetailsLoading.value = false
+  provisionedDetailsExecuting.value = false
+  provisionedDetailsError.value = null
+  provisionedDetailsState.value = null
+  provisionedDetailsPreview.value = null
+  provisionedDetailsRequestReference.value = ''
+  Object.keys(provisionedDetailsValues).forEach((key) => delete provisionedDetailsValues[key])
 }
 
 async function previewUserDeprovision(user: OracleDatabaseUser) {
@@ -1979,6 +2124,9 @@ onBeforeUnmount(() => {
                       <button type="button" role="menuitem" @click="openEditUser(user)">
                         Edit access
                       </button>
+                      <button type="button" role="menuitem" @click="openProvisionedDetails(user)">
+                        Edit provisioned details
+                      </button>
                       <button type="button" role="menuitem" @click="openPasswordReset(user)">
                         Change password
                       </button>
@@ -2028,7 +2176,7 @@ onBeforeUnmount(() => {
           <div class="oracle-user-pagination-controls">
             <label>
               Rows per page
-              <select v-model.number="userPageSize">
+              <select class="utility-select-input" v-model.number="userPageSize">
                 <option :value="10">10</option>
                 <option :value="25">25</option>
                 <option :value="50">50</option>
@@ -2721,6 +2869,180 @@ onBeforeUnmount(() => {
     </div>
 
     <div
+      v-if="provisionedDetailsTargetUsername"
+      class="modal-backdrop"
+      @click.self="closeProvisionedDetails"
+    >
+      <section
+        class="modal-panel oracle-user-modal provisioned-details-modal"
+        role="dialog"
+        aria-modal="true"
+        :aria-label="`Edit provisioned details for ${provisionedDetailsTargetUsername}`"
+      >
+        <div class="modal-header">
+          <div>
+            <h2>Edit provisioned details</h2>
+            <p v-if="!provisionedDetailsPreview">
+              {{ provisionedDetailsTargetUsername }} · edit application-table values linked by the immutable Oracle username.
+            </p>
+            <p v-else>Review the exact application-table changes before applying them.</p>
+          </div>
+          <button
+            type="button"
+            class="modal-close"
+            aria-label="Close"
+            :disabled="provisionedDetailsExecuting"
+            @click="closeProvisionedDetails"
+          >×</button>
+        </div>
+
+        <div v-if="provisionedDetailsLoading && !provisionedDetailsState" class="empty-state">
+          Loading linked provisioning rows...
+        </div>
+        <p v-if="provisionedDetailsError" class="login-error">{{ provisionedDetailsError }}</p>
+
+        <template v-if="provisionedDetailsState && !provisionedDetailsPreview">
+          <div class="provisioned-identity-lock">
+            <div>
+              <strong>Oracle username is locked</strong>
+              <span>{{ provisionedDetailsState.username }}</span>
+            </div>
+            <p>
+              Columns mapped to the generated username remain unchanged because they are the relationship back to DBA_USERS.
+            </p>
+          </div>
+
+          <div v-if="provisionedDetailsState.steps.length" class="provisioned-details-steps">
+            <article
+              v-for="step in provisionedDetailsState.steps"
+              :key="`${step.profile_id}-${step.step_index}`"
+              class="provisioned-details-step"
+            >
+              <header>
+                <div>
+                  <strong>{{ step.profile_name }} · {{ step.step_name }}</strong>
+                  <span>{{ step.connection_name }} · {{ step.owner }}.{{ step.table_name }}</span>
+                </div>
+                <span class="provisioned-link-badge">
+                  {{ step.username_column }} = {{ step.username_value }} · locked
+                </span>
+              </header>
+
+              <div class="provisioned-details-field-grid">
+                <label v-for="field in step.fields" :key="field.column_name">
+                  <span class="provisioned-field-heading">
+                    <span>
+                      <strong>{{ field.source_label }}</strong>
+                      <small>{{ field.column_name }}</small>
+                    </span>
+                    <em v-if="field.strict_unique">Strict unique</em>
+                  </span>
+                  <textarea
+                    v-if="field.source_key === 'remarks'"
+                    v-model="provisionedDetailsValues[provisionedDetailKey(step.profile_id, step.step_index, field.column_name)]"
+                    rows="3"
+                    maxlength="1000"
+                    autocomplete="on"
+                    @input="provisionedDetailsPreview = null"
+                  ></textarea>
+                  <input
+                    v-else
+                    v-model="provisionedDetailsValues[provisionedDetailKey(step.profile_id, step.step_index, field.column_name)]"
+                    type="text"
+                    autocomplete="on"
+                    @input="provisionedDetailsPreview = null"
+                  />
+                </label>
+              </div>
+            </article>
+          </div>
+          <div v-else class="empty-state">
+            No editable provisioning rows are linked to this Oracle username. A table step must contain exactly one generated-username mapping before DBAChum can safely edit it.
+          </div>
+
+          <div
+            v-for="warning in provisionedDetailsState.warnings"
+            :key="warning"
+            class="utility-warning"
+          >{{ warning }}</div>
+
+          <div class="connection-form-actions">
+            <button
+              type="button"
+              class="primary-button"
+              :disabled="provisionedDetailsLoading || provisionedDetailsState.editable_field_count === 0"
+              @click="previewProvisionedDetails"
+            >
+              {{ provisionedDetailsLoading ? 'Building preview...' : 'Review changes' }}
+            </button>
+            <button type="button" class="secondary-button" @click="closeProvisionedDetails">Cancel</button>
+          </div>
+        </template>
+
+        <template v-else-if="provisionedDetailsState && provisionedDetailsPreview">
+          <div v-if="provisionedDetailsPreview.changes.length" class="provisioned-change-list">
+            <article
+              v-for="change in provisionedDetailsPreview.changes"
+              :key="`${change.profile_id}-${change.step_index}-${change.column_name}`"
+              :class="{ 'provisioned-change-conflict': change.strict_conflict }"
+            >
+              <header>
+                <div>
+                  <strong>{{ change.source_label }}</strong>
+                  <span>{{ change.owner }}.{{ change.table_name }}.{{ change.column_name }}</span>
+                </div>
+                <em v-if="change.strict_unique">
+                  {{ change.strict_conflict ? `Conflict · ${change.strict_match_count}` : 'Strict · pass' }}
+                </em>
+              </header>
+              <p><span>{{ change.before_value ?? '—' }}</span><b>→</b><span>{{ change.after_value ?? '—' }}</span></p>
+            </article>
+          </div>
+          <div v-else class="empty-state">No changes are pending.</div>
+
+          <div
+            v-for="reason in provisionedDetailsPreview.blocked_reasons"
+            :key="reason"
+            class="utility-warning oracle-create-warning"
+          >{{ reason }}</div>
+          <div
+            v-for="warning in provisionedDetailsPreview.warnings"
+            :key="warning"
+            class="utility-warning"
+          >{{ warning }}</div>
+
+          <label class="user-edit-request-reference">
+            <span>Request / ticket <small>optional</small></span>
+            <input
+              v-model="provisionedDetailsRequestReference"
+              name="request_reference"
+              maxlength="100"
+              autocomplete="on"
+              placeholder="Change or ticket reference"
+            />
+          </label>
+
+          <div class="connection-form-actions">
+            <button
+              type="button"
+              class="primary-button"
+              :disabled="provisionedDetailsExecuting || !provisionedDetailsPreview.ready_to_execute"
+              @click="executeProvisionedDetails"
+            >
+              {{ provisionedDetailsExecuting ? 'Applying...' : 'Apply changes' }}
+            </button>
+            <button
+              type="button"
+              class="secondary-button"
+              :disabled="provisionedDetailsExecuting"
+              @click="provisionedDetailsPreview = null"
+            >Back</button>
+          </div>
+        </template>
+      </section>
+    </div>
+
+    <div
       v-if="passwordTargetUsername"
       class="modal-backdrop"
       @click.self="closePasswordReset"
@@ -3359,7 +3681,6 @@ onBeforeUnmount(() => {
           <section v-if="resultPassword" class="requester-result-summary">
             <div>
               <strong>Requester summary</strong>
-              <small>Copy this while the result is open. The password is not written to lifecycle audit/history.</small>
             </div>
             <pre>{{ requesterSummary }}</pre>
             <div class="requester-summary-actions">
@@ -3653,5 +3974,40 @@ onBeforeUnmount(() => {
 
 .strict-check--na {
   color: var(--text-muted);
+}
+
+.provisioned-details-modal { width: min(100%, 64rem); }
+.provisioned-identity-lock { display: grid; gap: .45rem; padding: .85rem; border: 1px solid var(--border-color); border-radius: .75rem; background: var(--color-surface-secondary); }
+.provisioned-identity-lock > div { display: flex; justify-content: space-between; gap: 1rem; align-items: center; }
+.provisioned-identity-lock > div span { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .86rem; }
+.provisioned-identity-lock p { margin: 0; font-size: .82rem; opacity: .76; }
+.provisioned-details-steps { display: grid; gap: .8rem; }
+.provisioned-details-step { border: 1px solid var(--border-color); border-radius: .75rem; overflow: hidden; }
+.provisioned-details-step > header { display: flex; justify-content: space-between; gap: .8rem; align-items: flex-start; padding: .75rem .85rem; border-bottom: 1px solid var(--border-color); background: var(--color-surface-secondary); }
+.provisioned-details-step > header > div { display: grid; gap: .15rem; }
+.provisioned-details-step > header span { font-size: .78rem; opacity: .72; }
+.provisioned-link-badge { padding: .25rem .45rem; border: 1px solid var(--border-color); border-radius: 999px; white-space: nowrap; }
+.provisioned-details-field-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .75rem; padding: .85rem; }
+.provisioned-details-field-grid > label { display: grid; gap: .35rem; }
+.provisioned-details-field-grid input, .provisioned-details-field-grid textarea { width: 100%; }
+.provisioned-field-heading { display: flex; justify-content: space-between; gap: .6rem; align-items: flex-start; }
+.provisioned-field-heading > span { display: grid; gap: .05rem; }
+.provisioned-field-heading small { opacity: .68; font-weight: 400; }
+.provisioned-field-heading em, .provisioned-change-list em { font-size: .72rem; font-style: normal; padding: .15rem .4rem; border: 1px solid var(--border-color); border-radius: 999px; white-space: nowrap; }
+.provisioned-change-list { display: grid; gap: .55rem; }
+.provisioned-change-list article { display: grid; gap: .5rem; padding: .75rem .85rem; border: 1px solid var(--border-color); border-radius: .7rem; }
+.provisioned-change-list article > header { display: flex; justify-content: space-between; gap: .8rem; align-items: flex-start; }
+.provisioned-change-list article > header > div { display: grid; gap: .12rem; }
+.provisioned-change-list article > header span { font-size: .78rem; opacity: .7; }
+.provisioned-change-list article > p { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); gap: .55rem; align-items: center; margin: 0; }
+.provisioned-change-list article > p span { padding: .45rem .55rem; border-radius: .5rem; background: var(--color-surface-secondary); overflow-wrap: anywhere; }
+.provisioned-change-list article > p b { opacity: .55; }
+.provisioned-change-conflict { border-color: var(--danger) !important; }
+.provisioned-change-conflict em { color: var(--danger); border-color: var(--danger); }
+@media (max-width: 760px) {
+  .provisioned-details-field-grid { grid-template-columns: 1fr; }
+  .provisioned-details-step > header, .provisioned-field-heading, .provisioned-change-list article > header, .provisioned-identity-lock > div { align-items: stretch; flex-direction: column; }
+  .provisioned-link-badge { white-space: normal; }
+  .provisioned-change-list article > p { grid-template-columns: 1fr; }
 }
 </style>

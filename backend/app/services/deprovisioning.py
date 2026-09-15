@@ -85,8 +85,25 @@ def _deprovision_match_values(
         for mapping in (step.get("mappings") or [])
         if str(mapping.get("column_name", "")).strip()
     }
-    match_columns = effective_match_columns(step)
 
+    # Generated username is the immutable relationship back to DBA_USERS. Prefer it
+    # over editable business identifiers such as employee ID so later detail edits do
+    # not break deprovision discovery.
+    username_columns = [
+        column
+        for column, mapping in mappings.items()
+        if mapping.get("value_kind") == "generated"
+        and mapping.get("value_key") == "username"
+    ]
+    if len(username_columns) == 1:
+        return {username_columns[0]: username}, None
+    if len(username_columns) > 1:
+        return None, (
+            "Multiple table columns map to the generated username. "
+            "A single immutable username relationship is required for safe lifecycle operations."
+        )
+
+    match_columns = effective_match_columns(step)
     configured_values: dict[str, object] = {}
     configured_has_identity = False
     configured_resolvable = bool(match_columns)
@@ -97,10 +114,7 @@ def _deprovision_match_values(
             break
         kind = mapping.get("value_kind")
         key = mapping.get("value_key")
-        if kind == "generated" and key == "username":
-            configured_values[column] = username
-            configured_has_identity = True
-        elif kind == "form" and key == "employee_id":
+        if kind == "form" and key == "employee_id":
             employee_id = lifecycle_inputs.get("employee_id")
             if employee_id in (None, ""):
                 configured_resolvable = False
@@ -115,20 +129,6 @@ def _deprovision_match_values(
 
     if configured_resolvable and configured_has_identity:
         return configured_values, None
-
-    username_columns = [
-        column
-        for column, mapping in mappings.items()
-        if mapping.get("value_kind") == "generated"
-        and mapping.get("value_key") == "username"
-    ]
-    if len(username_columns) == 1:
-        return {username_columns[0]: username}, None
-    if len(username_columns) > 1:
-        return None, (
-            "Multiple table columns map to the generated username and the configured match key "
-            "does not identify which one is the row identity. Review the provisioning profile."
-        )
 
     employee_columns = [
         column

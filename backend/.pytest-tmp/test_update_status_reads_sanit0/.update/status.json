@@ -1,1 +1,0 @@
-{"update_id": "abc123def456", "state": "running", "requested_version": "1.0.1", "message": "Installing.", "log_file": ".update/logs/update-abc123def456.log", "secret_internal_value": "do-not-return"}

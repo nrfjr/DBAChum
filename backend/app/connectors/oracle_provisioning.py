@@ -25,6 +25,41 @@ SENSITIVE_REFERENCE_ROLES = {
 }
 
 
+# Standard system privileges granted to every Oracle user/schema created or
+# reconciled by DBAChum. Deliberately excludes DELETE ANY TABLE and
+# DROP ANY TABLE because those are too destructive for the default baseline.
+DEFAULT_ORACLE_SYSTEM_PRIVILEGES = (
+    "CREATE SESSION",
+    "CREATE TABLE",
+    "CREATE PROCEDURE",
+    "CREATE VIEW",
+    "INSERT ANY TABLE",
+    "SELECT ANY TABLE",
+    "UPDATE ANY TABLE",
+    "SELECT ANY SEQUENCE",
+    "EXECUTE ANY PROCEDURE",
+    "CREATE ANY PROCEDURE",
+    "DROP ANY PROCEDURE",
+    "CREATE ANY TABLE",
+    "CREATE ANY CONTEXT",
+    "ALTER SESSION",
+    "ANALYZE ANY",
+    "CREATE ANY SYNONYM",
+    "CREATE ANY TYPE",
+    "CREATE DATABASE LINK",
+    "CREATE LIBRARY",
+    "CREATE MATERIALIZED VIEW",
+    "CREATE PUBLIC DATABASE LINK",
+    "CREATE PUBLIC SYNONYM",
+    "CREATE SEQUENCE",
+    "CREATE SYNONYM",
+    "CREATE TRIGGER",
+    "DROP ANY SYNONYM",
+    "EXECUTE ANY TYPE",
+    "QUERY REWRITE",
+)
+
+
 @dataclass
 class OracleUserProvisioningPartialError(Exception):
     message: str
@@ -77,6 +112,23 @@ def quote_oracle_password(password: str) -> str:
 
 def is_sensitive_reference_role(role: str) -> bool:
     return role.upper() in SENSITIVE_REFERENCE_ROLES
+
+
+async def grant_default_oracle_system_privileges(
+    oracle_connection,
+    username: str,
+) -> list[str]:
+    """Grant DBAChum's standard Oracle system-privilege baseline."""
+    quoted_username = quote_oracle_identifier(username)
+    applied: list[str] = []
+
+    for privilege in DEFAULT_ORACLE_SYSTEM_PRIVILEGES:
+        await oracle_connection.execute(
+            f"GRANT {privilege} TO {quoted_username}"
+        )
+        applied.append(privilege)
+
+    return applied
 
 
 async def oracle_user_exists(
@@ -472,6 +524,11 @@ async def create_oracle_user(
             )
             created = True
 
+            await grant_default_oracle_system_privileges(
+                oracle_connection,
+                username,
+            )
+
             for role in normalized_roles:
                 await oracle_connection.execute(
                     "GRANT "
@@ -609,6 +666,11 @@ async def reconcile_oracle_user(
                     ])
                 await oracle_connection.execute(" ".join(parts))
                 account_action = "altered"
+
+            await grant_default_oracle_system_privileges(
+                oracle_connection,
+                username,
+            )
 
             existing_role_rows = await oracle_connection.fetchall(
                 """
@@ -789,6 +851,124 @@ async def fetch_oracle_provisioning_row(
             raise AppError(
                 oracle_error_message(exc),
                 code="PROVISIONING_ROW_LOOKUP_FAILED",
+                status_code=400,
+            ) from exc
+
+
+async def update_oracle_provisioning_row(
+    connection: dict,
+    *,
+    owner: str,
+    table_name: str,
+    match_values: dict[str, object],
+    update_values: dict[str, object],
+) -> dict:
+    """Update exactly one existing provisioning row. Never inserts a missing row."""
+    owner = normalize_oracle_identifier(owner, field_name="Schema")
+    table_name = normalize_oracle_identifier(table_name, field_name="Table")
+    if not match_values:
+        raise AppError(
+            "At least one provisioning row match column is required.",
+            code="PROVISIONING_MATCH_REQUIRED",
+            status_code=400,
+        )
+
+    normalized_match = {
+        normalize_oracle_identifier(column, field_name="Provisioning row match column"): value
+        for column, value in match_values.items()
+    }
+    normalized_updates = {
+        normalize_oracle_identifier(column, field_name="Provisioning column"): value
+        for column, value in update_values.items()
+    }
+    normalized_updates = {
+        column: value
+        for column, value in normalized_updates.items()
+        if column not in normalized_match
+    }
+
+    if not normalized_updates:
+        return {
+            "action": "unchanged",
+            "existing_rows": 1,
+            "rowcount": 0,
+            "before_values": {},
+            "after_values": {},
+        }
+
+    owner_sql = quote_oracle_identifier(owner)
+    table_sql = quote_oracle_identifier(table_name)
+    match_sql, match_parameters = _build_match_clause(normalized_match)
+    tracked_columns = list(normalized_updates.keys())
+
+    async with open_oracle_connection(connection) as oracle_connection:
+        try:
+            count_row = await oracle_connection.fetchone(
+                f"SELECT COUNT(*) FROM {owner_sql}.{table_sql} WHERE {match_sql}",
+                match_parameters,
+            )
+            existing_rows = int(count_row[0]) if count_row else 0
+            if existing_rows == 0:
+                raise AppError(
+                    "The linked provisioning row no longer exists.",
+                    code="PROVISIONED_DETAILS_ROW_NOT_FOUND",
+                    status_code=409,
+                )
+            if existing_rows != 1:
+                raise AppError(
+                    f"The username relationship identifies {existing_rows} rows; exactly one row is required before provisioned details can be edited.",
+                    code="PROVISIONED_DETAILS_ROW_AMBIGUOUS",
+                    status_code=409,
+                )
+
+            selected = await oracle_connection.fetchone(
+                "SELECT "
+                + ", ".join(quote_oracle_identifier(column) for column in tracked_columns)
+                + f" FROM {owner_sql}.{table_sql} WHERE {match_sql}",
+                match_parameters,
+            )
+            before_values = {
+                column: selected[index] if selected else None
+                for index, column in enumerate(tracked_columns)
+            }
+
+            set_parts: list[str] = []
+            parameters = dict(match_parameters)
+            for index, (column, value) in enumerate(normalized_updates.items()):
+                bind_name = f"set_{index}"
+                set_parts.append(f"{quote_oracle_identifier(column)} = :{bind_name}")
+                parameters[bind_name] = value
+
+            rowcount = await oracle_connection.execute(
+                f"UPDATE {owner_sql}.{table_sql} SET "
+                + ", ".join(set_parts)
+                + f" WHERE {match_sql}",
+                parameters,
+            )
+            await oracle_connection.commit()
+            after_values = dict(before_values)
+            after_values.update(normalized_updates)
+            return {
+                "action": "updated",
+                "existing_rows": 1,
+                "rowcount": int(rowcount or 0),
+                "before_values": before_values,
+                "after_values": after_values,
+            }
+        except AppError:
+            try:
+                await oracle_connection.rollback()
+            except Exception:
+                pass
+            raise
+        except oracledb.Error as exc:
+            try:
+                await oracle_connection.rollback()
+            except Exception:
+                pass
+            raise AppError(
+                oracle_error_message(exc),
+                code="PROVISIONED_DETAILS_UPDATE_FAILED",
                 status_code=400,
             ) from exc
 

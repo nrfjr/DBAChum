@@ -127,7 +127,7 @@ const RowRenderer = defineComponent({
       <div class="reusable-table-pagination__controls">
         <label>
           Rows per page
-          <select v-model.number="pageSize">
+          <select class="utility-select-input" v-model.number="pageSize">
             <option v-for="size in pageSizes" :key="size" :value="size">{{ size }}</option>
           </select>
         </label>

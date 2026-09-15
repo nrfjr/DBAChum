@@ -61,6 +61,10 @@ from app.schemas.provisioning import (
     OracleUserDeprovisionPreviewResponse,
     OracleUserDeprovisionRequest,
     OracleUserDeprovisionResponse,
+    OracleProvisionedDetailsResponse,
+    OracleProvisionedDetailsEditRequest,
+    OracleProvisionedDetailsPreviewResponse,
+    OracleProvisionedDetailsEditResponse,
     BulkProvisionImportResponse,
     BulkProvisionRequest,
     BulkProvisionPreviewResponse,
@@ -119,6 +123,11 @@ from app.services.provisioning_execution import execute_provisioning_profile
 from app.services.deprovisioning import (
     build_oracle_user_deprovision_preview,
     execute_oracle_user_deprovision,
+)
+from app.services.provisioned_details import (
+    load_oracle_user_provisioned_details,
+    build_oracle_user_provisioned_details_preview,
+    execute_oracle_user_provisioned_details_edit,
 )
 from app.services.provisioning_lifecycle import (
     build_deprovision_preview,
@@ -922,6 +931,68 @@ async def preview_database_deprovision(
         request.app.state.database,
         connection_id,
         run_id,
+    )
+
+
+@router.get(
+    "/{connection_id}/oracle/users/{username}/provisioned-details",
+    response_model=OracleProvisionedDetailsResponse,
+)
+async def get_oracle_user_provisioned_details(
+    connection_id: str,
+    username: str,
+    request: Request,
+    current_user: UserResponse = Depends(
+        require_permission(Permission.DBA_OPERATE)
+    ),
+):
+    return await load_oracle_user_provisioned_details(
+        request.app.state.database,
+        connection_id,
+        username,
+    )
+
+
+@router.post(
+    "/{connection_id}/oracle/users/{username}/provisioned-details/preview",
+    response_model=OracleProvisionedDetailsPreviewResponse,
+)
+async def preview_oracle_user_provisioned_details(
+    connection_id: str,
+    username: str,
+    data: OracleProvisionedDetailsEditRequest,
+    request: Request,
+    current_user: UserResponse = Depends(
+        require_permission(Permission.DBA_OPERATE)
+    ),
+):
+    return await build_oracle_user_provisioned_details_preview(
+        request.app.state.database,
+        connection_id,
+        username,
+        data,
+    )
+
+
+@router.post(
+    "/{connection_id}/oracle/users/{username}/provisioned-details",
+    response_model=OracleProvisionedDetailsEditResponse,
+)
+async def edit_oracle_user_provisioned_details(
+    connection_id: str,
+    username: str,
+    data: OracleProvisionedDetailsEditRequest,
+    request: Request,
+    current_user: UserResponse = Depends(
+        require_permission(Permission.DBA_OPERATE)
+    ),
+):
+    return await execute_oracle_user_provisioned_details_edit(
+        request.app.state.database,
+        connection_id,
+        username,
+        data,
+        current_user,
     )
 
 

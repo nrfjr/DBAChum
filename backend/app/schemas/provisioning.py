@@ -565,6 +565,100 @@ class OracleUserDeprovisionResponse(BaseModel):
     error: str | None = None
 
 
+class OracleProvisionedDetailField(BaseModel):
+    column_name: str
+    source_key: str
+    source_label: str
+    value: str | None = None
+    strict_unique: bool = False
+
+
+class OracleProvisionedDetailStep(BaseModel):
+    profile_id: str
+    profile_name: str
+    step_index: int
+    step_name: str
+    connection_id: str
+    connection_name: str
+    owner: str
+    table_name: str
+    username_column: str
+    username_value: str
+    fields: list[OracleProvisionedDetailField] = Field(default_factory=list)
+
+
+class OracleProvisionedDetailsResponse(BaseModel):
+    username: str
+    generated_at: datetime
+    steps: list[OracleProvisionedDetailStep] = Field(default_factory=list)
+    editable_field_count: int = 0
+    warnings: list[str] = Field(default_factory=list)
+
+
+class OracleProvisionedDetailUpdate(BaseModel):
+    profile_id: str = Field(min_length=1, max_length=64)
+    step_index: int = Field(ge=1, le=32)
+    column_name: str = Field(min_length=1, max_length=128)
+    value: str | None = Field(default=None, max_length=2000)
+
+
+class OracleProvisionedDetailsEditRequest(BaseModel):
+    updates: list[OracleProvisionedDetailUpdate] = Field(default_factory=list, max_length=512)
+    request_reference: str | None = Field(default=None, max_length=100)
+
+
+class OracleProvisionedDetailsChange(BaseModel):
+    profile_id: str
+    profile_name: str
+    step_index: int
+    step_name: str
+    connection_id: str
+    connection_name: str
+    owner: str
+    table_name: str
+    username_column: str
+    column_name: str
+    source_key: str
+    source_label: str
+    before_value: str | None = None
+    after_value: str | None = None
+    strict_unique: bool = False
+    strict_match_count: int = 0
+    strict_conflict: bool = False
+
+
+class OracleProvisionedDetailsPreviewResponse(BaseModel):
+    username: str
+    generated_at: datetime
+    ready_to_execute: bool = False
+    changes: list[OracleProvisionedDetailsChange] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    blocked_reasons: list[str] = Field(default_factory=list)
+
+
+class OracleProvisionedDetailsExecutionStep(BaseModel):
+    profile_id: str
+    profile_name: str
+    step_index: int
+    step_name: str
+    connection_id: str
+    connection_name: str
+    owner: str
+    table_name: str
+    status: Literal["succeeded", "failed"]
+    affected_rows: int = 0
+    error: str | None = None
+
+
+class OracleProvisionedDetailsEditResponse(BaseModel):
+    audit_id: str
+    status: Literal["succeeded", "partial", "failed"]
+    username: str
+    changes_applied: int = 0
+    steps: list[OracleProvisionedDetailsExecutionStep] = Field(default_factory=list)
+    error: str | None = None
+
+
 class BulkProvisionImportRow(BaseModel):
     row_number: int
     employee_id: str

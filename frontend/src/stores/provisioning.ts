@@ -282,6 +282,96 @@ export interface OracleUserDeprovisionResult {
 }
 
 
+export interface OracleProvisionedDetailField {
+  column_name: string
+  source_key: string
+  source_label: string
+  value: string | null
+  strict_unique: boolean
+}
+
+export interface OracleProvisionedDetailStep {
+  profile_id: string
+  profile_name: string
+  step_index: number
+  step_name: string
+  connection_id: string
+  connection_name: string
+  owner: string
+  table_name: string
+  username_column: string
+  username_value: string
+  fields: OracleProvisionedDetailField[]
+}
+
+export interface OracleProvisionedDetails {
+  username: string
+  generated_at: string
+  steps: OracleProvisionedDetailStep[]
+  editable_field_count: number
+  warnings: string[]
+}
+
+export interface OracleProvisionedDetailUpdate {
+  profile_id: string
+  step_index: number
+  column_name: string
+  value: string | null
+}
+
+export interface OracleProvisionedDetailsChange {
+  profile_id: string
+  profile_name: string
+  step_index: number
+  step_name: string
+  connection_id: string
+  connection_name: string
+  owner: string
+  table_name: string
+  username_column: string
+  column_name: string
+  source_key: string
+  source_label: string
+  before_value: string | null
+  after_value: string | null
+  strict_unique: boolean
+  strict_match_count: number
+  strict_conflict: boolean
+}
+
+export interface OracleProvisionedDetailsPreview {
+  username: string
+  generated_at: string
+  ready_to_execute: boolean
+  changes: OracleProvisionedDetailsChange[]
+  warnings: string[]
+  blocked_reasons: string[]
+}
+
+export interface OracleProvisionedDetailsExecutionStep {
+  profile_id: string
+  profile_name: string
+  step_index: number
+  step_name: string
+  connection_id: string
+  connection_name: string
+  owner: string
+  table_name: string
+  status: 'succeeded' | 'failed'
+  affected_rows: number
+  error: string | null
+}
+
+export interface OracleProvisionedDetailsEditResult {
+  audit_id: string
+  status: 'succeeded' | 'partial' | 'failed'
+  username: string
+  changes_applied: number
+  steps: OracleProvisionedDetailsExecutionStep[]
+  error: string | null
+}
+
+
 export interface BulkProvisionImportRow {
   row_number: number
   employee_id: string
@@ -691,6 +781,44 @@ export const useProvisioningStore = defineStore('provisioning', {
     async loadDeprovisionPreview(connectionId: string, runId: string) {
       return apiRequest<ProvisioningDeprovisionPreview>(
         `/databases/${connectionId}/oracle/provisioning-runs/${runId}/deprovision-preview`,
+      )
+    },
+
+    async loadOracleUserProvisionedDetails(connectionId: string, username: string) {
+      return apiRequest<OracleProvisionedDetails>(
+        `/databases/${connectionId}/oracle/users/${encodeURIComponent(username)}/provisioned-details`,
+      )
+    },
+
+    async previewOracleUserProvisionedDetails(
+      connectionId: string,
+      username: string,
+      updates: OracleProvisionedDetailUpdate[],
+    ) {
+      return apiRequest<OracleProvisionedDetailsPreview>(
+        `/databases/${connectionId}/oracle/users/${encodeURIComponent(username)}/provisioned-details/preview`,
+        {
+          method: 'POST',
+          body: JSON.stringify({ updates, request_reference: null }),
+        },
+      )
+    },
+
+    async executeOracleUserProvisionedDetails(
+      connectionId: string,
+      username: string,
+      updates: OracleProvisionedDetailUpdate[],
+      requestReference: string | null = null,
+    ) {
+      return apiRequest<OracleProvisionedDetailsEditResult>(
+        `/databases/${connectionId}/oracle/users/${encodeURIComponent(username)}/provisioned-details`,
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            updates,
+            request_reference: requestReference,
+          }),
+        },
       )
     },
 
