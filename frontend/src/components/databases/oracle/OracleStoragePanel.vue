@@ -204,8 +204,7 @@ onMounted(() => {
             <td>{{ tablespace.used_percent }}%</td>
             <td>
               <button type="button" class="secondary-button" @click="inspectTablespace(tablespace.name)">
-                <FontAwesomeIcon icon="magnifying-glass" />
-                {{ selectedTablespaceName === tablespace.name ? ' Close' : ' Inspect' }}
+                {{ selectedTablespaceName === tablespace.name ? ' Close' : 'Inspect' }}
               </button>
             </td>
           </tr>

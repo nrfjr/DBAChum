@@ -17,10 +17,11 @@ import {
   type OracleUserEditPreview,
   type OracleUserAccessInspector,
   type OracleAccessGrantSource,
+  type OracleUserListColumn,
+  type OracleUserListColumnsPreview,
 } from '@/stores/oracleDba'
 import OracleBulkProvisionModal from '@/components/databases/oracle/OracleBulkProvisionModal.vue'
 import ScrollableDataTable from '@/components/common/ScrollableDataTable.vue'
-import FloatingActionMenu from '@/components/common/FloatingActionMenu.vue'
 
 import {
   useProvisioningStore,
@@ -29,6 +30,9 @@ import {
   type ProvisioningRunSummary,
   type OracleUserDeprovisionPreview,
   type OracleUserDeprovisionResult,
+  type OracleMetadataSchema,
+  type OracleMetadataTable,
+  type OracleMetadataColumn,
 } from '@/stores/provisioning'
 import { useAuthStore } from '@/stores/auth'
 import { hasPermission } from '@/core/permissions'
@@ -96,6 +100,7 @@ const filteredUsers = computed(() => {
         user.default_tablespace,
         user.temporary_tablespace,
         user.profile,
+        ...Object.values(user.extra_values ?? {}),
       ]
         .filter(Boolean)
         .some((value) =>
@@ -203,7 +208,38 @@ const createFieldErrors = reactive<Record<string, string>>({})
 const usernameChecking = ref(false)
 const bulkCreateOpen = ref(false)
 const createActionsOpen = ref(false)
+const secondaryActionsOpen = ref(false)
 const resultPassword = ref('')
+
+const addColumnOpen = ref(false)
+const addColumnLoading = ref(false)
+const addColumnSaving = ref(false)
+const addColumnError = ref<string | null>(null)
+const addColumnSchemas = ref<OracleMetadataSchema[]>([])
+const addColumnTables = ref<OracleMetadataTable[]>([])
+const addColumnColumns = ref<OracleMetadataColumn[]>([])
+const addColumnPreview = ref<OracleUserListColumnsPreview | null>(null)
+const addColumnSourceKey = ref('new')
+type AddColumnSelection = { displayColumn: string; label: string }
+const addColumnSelections = ref<AddColumnSelection[]>([])
+const addColumnForm = reactive({
+  owner: '',
+  tableName: '',
+  joinColumn: '',
+})
+
+watch(
+  () => [
+    addColumnSourceKey.value,
+    addColumnForm.owner,
+    addColumnForm.tableName,
+    addColumnForm.joinColumn,
+    JSON.stringify(addColumnSelections.value),
+  ],
+  () => {
+    addColumnPreview.value = null
+  },
+)
 
 const historyOpen = ref(false)
 const historyLoading = ref(false)
@@ -223,6 +259,7 @@ const deprovisionConfirmation = ref('')
 const deprovisionRequestReference = ref('')
 const deprovisionResult = ref<OracleUserDeprovisionResult | null>(null)
 
+const actionMenuUsername = ref<string | null>(null)
 
 const inspectorTargetUsername = ref<string | null>(null)
 const inspectorLoading = ref(false)
@@ -268,6 +305,63 @@ const provisioningRuns = computed(() =>
 const canClearProvisioningHistory = computed(() =>
   hasPermission(authStore.user, 'provisioning:manage'),
 )
+
+const canManageUserListColumns = computed(() =>
+  hasPermission(authStore.user, 'provisioning:manage'),
+)
+
+const extraUserListColumns = computed(() => users.value?.extra_columns ?? [])
+
+function userListSourceKey(column: Pick<OracleUserListColumn, 'owner' | 'table_name' | 'join_column'>) {
+  return `${column.owner}|${column.table_name}|${column.join_column}`
+}
+
+const existingUserListSources = computed(() => {
+  const sources = new Map<string, {
+    key: string
+    owner: string
+    tableName: string
+    joinColumn: string
+    columns: OracleUserListColumn[]
+  }>()
+
+  for (const column of extraUserListColumns.value) {
+    const key = userListSourceKey(column)
+    const existing = sources.get(key)
+    if (existing) {
+      existing.columns.push(column)
+      continue
+    }
+    sources.set(key, {
+      key,
+      owner: column.owner,
+      tableName: column.table_name,
+      joinColumn: column.join_column,
+      columns: [column],
+    })
+  }
+
+  return [...sources.values()]
+})
+
+const selectedExistingUserListSource = computed(() =>
+  existingUserListSources.value.find((source) => source.key === addColumnSourceKey.value) ?? null,
+)
+
+const currentMappedDisplayColumns = computed(() => {
+  const owner = addColumnForm.owner.trim().toUpperCase()
+  const tableName = addColumnForm.tableName.trim().toUpperCase()
+  const joinColumn = addColumnForm.joinColumn.trim().toUpperCase()
+  return new Set(
+    extraUserListColumns.value
+      .filter((column) =>
+        column.owner === owner
+        && column.table_name === tableName
+        && column.join_column === joinColumn,
+      )
+      .map((column) => column.display_column),
+  )
+})
 
 const clearableProvisioningRuns = computed(() =>
   provisioningRuns.value.filter((run) => run.status !== 'running'),
@@ -432,8 +526,21 @@ function cancelRetryPassword() {
   retryShowPassword.value = false
 }
 
-function documentClickClosesCreateActions() {
+function closeActionMenu() {
+  actionMenuUsername.value = null
+}
+
+function toggleActionMenu(user: OracleDatabaseUser, event: Event) {
+  event.stopPropagation()
+  actionMenuUsername.value = actionMenuUsername.value === user.username
+    ? null
+    : user.username
+}
+
+function documentClickClosesActionMenu() {
+  closeActionMenu()
   createActionsOpen.value = false
+  secondaryActionsOpen.value = false
 }
 
 function formatAccessSource(source: OracleAccessGrantSource) {
@@ -462,6 +569,7 @@ const filteredInspectorObjectPrivileges = computed(() => {
 })
 
 async function openAccessInspector(user: OracleDatabaseUser) {
+  closeActionMenu()
   inspectorTargetUsername.value = user.username
   inspectorLoading.value = true
   inspectorError.value = null
@@ -535,6 +643,7 @@ function editPayload() {
 }
 
 async function openEditUser(user: OracleDatabaseUser) {
+  closeActionMenu()
   editTargetUsername.value = user.username
   editLoading.value = true
   editError.value = null
@@ -620,6 +729,7 @@ function generatedPassword() {
 }
 
 function openPasswordReset(user: OracleDatabaseUser) {
+  closeActionMenu()
   passwordTargetUsername.value = user.username
   passwordValue.value = ''
   passwordConfirm.value = ''
@@ -684,6 +794,7 @@ function closePasswordReset() {
 }
 
 function openAccountAction(user: OracleDatabaseUser, action: AccountAction) {
+  closeActionMenu()
   accountActionTargetUsername.value = user.username
   accountAction.value = action
   accountActionRequestReference.value = ''
@@ -839,6 +950,279 @@ function resetCreate() {
 function toggleCreateActions(event: Event) {
   event.stopPropagation()
   createActionsOpen.value = !createActionsOpen.value
+  secondaryActionsOpen.value = false
+}
+
+function toggleSecondaryActions(event: Event) {
+  event.stopPropagation()
+  secondaryActionsOpen.value = !secondaryActionsOpen.value
+  createActionsOpen.value = false
+}
+
+function resetAddColumn() {
+  addColumnError.value = null
+  addColumnSchemas.value = []
+  addColumnTables.value = []
+  addColumnColumns.value = []
+  addColumnPreview.value = null
+  addColumnSourceKey.value = 'new'
+  addColumnSelections.value = []
+  addColumnForm.owner = ''
+  addColumnForm.tableName = ''
+  addColumnForm.joinColumn = ''
+}
+
+function defaultListHeading(columnName: string) {
+  return columnName
+    .toLowerCase()
+    .split('_')
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ')
+}
+
+function selectedAddColumn(displayColumn: string) {
+  return addColumnSelections.value.find((item) => item.displayColumn === displayColumn) ?? null
+}
+
+function toggleAddColumnSelection(column: OracleMetadataColumn, event: Event) {
+  const checked = (event.target as HTMLInputElement).checked
+  const displayColumn = column.name.toUpperCase()
+  if (checked) {
+    if (!selectedAddColumn(displayColumn)) {
+      addColumnSelections.value.push({
+        displayColumn,
+        label: defaultListHeading(displayColumn),
+      })
+    }
+  } else {
+    addColumnSelections.value = addColumnSelections.value.filter(
+      (item) => item.displayColumn !== displayColumn,
+    )
+  }
+}
+
+function updateAddColumnLabel(displayColumn: string, event: Event) {
+  const selected = selectedAddColumn(displayColumn.toUpperCase())
+  if (selected) {
+    selected.label = (event.target as HTMLInputElement).value
+  }
+}
+
+async function loadColumnsForCurrentSource() {
+  addColumnColumns.value = []
+  addColumnSelections.value = []
+  const owner = addColumnForm.owner.trim().toUpperCase()
+  const tableName = addColumnForm.tableName.trim().toUpperCase()
+  if (!owner || !tableName) return
+
+  addColumnLoading.value = true
+  try {
+    addColumnColumns.value = await provisioningStore.columns(
+      props.connectionId,
+      owner,
+      tableName,
+    )
+  } catch (error) {
+    addColumnError.value = error instanceof Error
+      ? error.message
+      : 'Unable to load columns for this table.'
+  } finally {
+    addColumnLoading.value = false
+  }
+}
+
+async function selectAddColumnSource() {
+  addColumnPreview.value = null
+  addColumnError.value = null
+  addColumnSelections.value = []
+
+  if (addColumnSourceKey.value === 'new') {
+    addColumnTables.value = []
+    addColumnColumns.value = []
+    addColumnForm.owner = ''
+    addColumnForm.tableName = ''
+    addColumnForm.joinColumn = ''
+    return
+  }
+
+  const source = selectedExistingUserListSource.value
+  if (!source) return
+  addColumnForm.owner = source.owner
+  addColumnForm.tableName = source.tableName
+  addColumnForm.joinColumn = source.joinColumn
+  await loadColumnsForCurrentSource()
+}
+
+async function openAddColumn() {
+  secondaryActionsOpen.value = false
+  resetAddColumn()
+  addColumnOpen.value = true
+  addColumnLoading.value = true
+  try {
+    addColumnSchemas.value = await provisioningStore.schemas(props.connectionId)
+  } catch (error) {
+    addColumnError.value = error instanceof Error
+      ? error.message
+      : 'Unable to load Oracle schemas.'
+  } finally {
+    addColumnLoading.value = false
+  }
+}
+
+function closeAddColumn() {
+  addColumnOpen.value = false
+  resetAddColumn()
+}
+
+async function loadAddColumnTables() {
+  addColumnPreview.value = null
+  addColumnError.value = null
+  addColumnTables.value = []
+  addColumnColumns.value = []
+  addColumnSelections.value = []
+  addColumnForm.tableName = ''
+  addColumnForm.joinColumn = ''
+
+  const owner = addColumnForm.owner.trim().toUpperCase()
+  addColumnForm.owner = owner
+  if (!owner) return
+
+  addColumnLoading.value = true
+  try {
+    addColumnTables.value = await provisioningStore.tables(props.connectionId, owner)
+  } catch (error) {
+    addColumnError.value = error instanceof Error
+      ? error.message
+      : 'Unable to load tables for this schema.'
+  } finally {
+    addColumnLoading.value = false
+  }
+}
+
+async function loadAddColumnColumns() {
+  addColumnPreview.value = null
+  addColumnError.value = null
+  addColumnColumns.value = []
+  addColumnSelections.value = []
+  addColumnForm.joinColumn = ''
+
+  const owner = addColumnForm.owner.trim().toUpperCase()
+  const tableName = addColumnForm.tableName.trim().toUpperCase()
+  addColumnForm.owner = owner
+  addColumnForm.tableName = tableName
+  if (!owner || !tableName) return
+
+  await loadColumnsForCurrentSource()
+}
+
+function reuseExistingSourceIfMapped() {
+  if (addColumnSourceKey.value !== 'new') return
+  const owner = addColumnForm.owner.trim().toUpperCase()
+  const tableName = addColumnForm.tableName.trim().toUpperCase()
+  const joinColumn = addColumnForm.joinColumn.trim().toUpperCase()
+  const existing = existingUserListSources.value.find((source) =>
+    source.owner === owner
+    && source.tableName === tableName
+    && source.joinColumn === joinColumn,
+  )
+  if (existing) {
+    addColumnSourceKey.value = existing.key
+  }
+}
+
+function addColumnsPayload() {
+  return {
+    owner: addColumnForm.owner.trim().toUpperCase(),
+    table_name: addColumnForm.tableName.trim().toUpperCase(),
+    join_column: addColumnForm.joinColumn.trim().toUpperCase(),
+    columns: addColumnSelections.value.map((item) => ({
+      display_column: item.displayColumn,
+      label: item.label.trim(),
+    })),
+  }
+}
+
+function addColumnSelectionReady() {
+  return addColumnSelections.value.length > 0
+    && addColumnSelections.value.every((item) => item.label.trim().length > 0)
+}
+
+async function previewAdditionalColumn() {
+  addColumnError.value = null
+  addColumnPreview.value = null
+  addColumnLoading.value = true
+  try {
+    addColumnPreview.value = await oracleStore.previewUserListColumns(
+      props.connectionId,
+      addColumnsPayload(),
+    )
+  } catch (error) {
+    addColumnError.value = error instanceof Error
+      ? error.message
+      : 'Unable to preview these user-list columns.'
+  } finally {
+    addColumnLoading.value = false
+  }
+}
+
+async function saveAdditionalColumn() {
+  if (!addColumnPreview.value) return
+  addColumnSaving.value = true
+  addColumnError.value = null
+  try {
+    const created = await oracleStore.addUserListColumns(
+      props.connectionId,
+      addColumnsPayload(),
+    )
+    showToast({
+      title: created.items.length === 1 ? 'Column added to user list' : 'Columns added to user list',
+      message: created.items.map((item) => item.label).join(', '),
+      tone: 'success',
+    })
+    closeAddColumn()
+  } catch (error) {
+    addColumnError.value = error instanceof Error
+      ? error.message
+      : 'Unable to add these user-list columns.'
+  } finally {
+    addColumnSaving.value = false
+  }
+}
+
+async function removeAdditionalColumn(column: OracleUserListColumn) {
+  const confirmed = await confirmDialog({
+    title: 'Remove user-list column',
+    message: `Remove “${column.label}” from this database user list? The source table is not changed.`,
+    confirmLabel: 'Remove column',
+    destructive: true,
+    tone: 'danger',
+  })
+  if (!confirmed) return
+
+  addColumnError.value = null
+  try {
+    await oracleStore.removeUserListColumn(props.connectionId, column.id)
+    showToast({
+      title: 'Column removed',
+      message: column.label,
+      tone: 'success',
+    })
+  } catch (error) {
+    addColumnError.value = error instanceof Error
+      ? error.message
+      : 'Unable to remove this user-list column.'
+  }
+}
+
+async function refreshUsersFromMenu() {
+  secondaryActionsOpen.value = false
+  await oracleStore.loadUsers(props.connectionId)
+}
+
+function toggleProvisioningHistoryFromMenu() {
+  secondaryActionsOpen.value = false
+  toggleProvisioningHistory()
 }
 
 function openCreate() {
@@ -1345,7 +1729,7 @@ async function createUser() {
 }
 
 onMounted(() => {
-  document.addEventListener('click', documentClickClosesCreateActions)
+  document.addEventListener('click', documentClickClosesActionMenu)
   oracleStore.loadUsers(
     props.connectionId,
   )
@@ -1354,7 +1738,7 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
-  document.removeEventListener('click', documentClickClosesCreateActions)
+  document.removeEventListener('click', documentClickClosesActionMenu)
 })
 
 </script>
@@ -1383,27 +1767,47 @@ onBeforeUnmount(() => {
           </div>
         </div>
 
-        <button
-          type="button"
-          class="secondary-button"
-          @click="toggleProvisioningHistory"
-        >
-          {{ historyOpen ? 'Hide provisioning history' : 'Provisioning history' }}
-        </button>
-
-        <button
-          type="button"
-          class="secondary-button refresh-button"
-          :disabled="oracleStore.loadingUsers"
-          @click="oracleStore.loadUsers(connectionId)"
-        >
-          {{
-            oracleStore.loadingUsers
-              ? 'Refreshing'
-              : 'Refresh'
-          }}
-          <p v-if="oracleStore.loadingUsers" class="loading"></p>
-        </button>
+        <div class="toolbar-create-dropdown">
+          <button
+            type="button"
+            class="secondary-button"
+            aria-haspopup="menu"
+            :aria-expanded="secondaryActionsOpen"
+            @click="toggleSecondaryActions"
+          >
+            More ▾
+          </button>
+          <div
+            v-if="secondaryActionsOpen"
+            class="toolbar-create-menu toolbar-secondary-menu"
+            role="menu"
+            @click.stop
+          >
+            <button
+              type="button"
+              role="menuitem"
+              :disabled="oracleStore.loadingUsers"
+              @click="refreshUsersFromMenu"
+            >
+              {{ oracleStore.loadingUsers ? 'Refreshing...' : 'Refresh' }}
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              @click="toggleProvisioningHistoryFromMenu"
+            >
+              {{ historyOpen ? 'Hide provisioning history' : 'Provisioning history' }}
+            </button>
+            <button
+              v-if="canManageUserListColumns"
+              type="button"
+              role="menuitem"
+              @click="openAddColumn"
+            >
+              Add column to list
+            </button>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -1476,7 +1880,7 @@ onBeforeUnmount(() => {
             <input
               v-model="search"
               type="search"
-              placeholder="Find username, status, tablespace or profile"
+              placeholder="Find username, status, tablespace, profile or added value"
             />
           </label>
 
@@ -1499,6 +1903,13 @@ onBeforeUnmount(() => {
                 <th>Profile</th>
                 <th>Created</th>
                 <th>Expiry</th>
+                <th
+                  v-for="column in extraUserListColumns"
+                  :key="column.id"
+                  :title="column.warning ? `Source unavailable: ${column.warning}` : `${column.owner}.${column.table_name}.${column.display_column}`"
+                >
+                  {{ column.label }}<span v-if="column.warning"> ⚠</span>
+                </th>
                 <th class="user-actions-column">Actions</th>
               </tr>
             </thead>
@@ -1536,54 +1947,73 @@ onBeforeUnmount(() => {
                   {{ formatDate(user.expiry_date) }}
                 </td>
 
+                <td
+                  v-for="column in extraUserListColumns"
+                  :key="`${user.username}-${column.id}`"
+                  :title="column.warning ? `Source unavailable: ${column.warning}` : column.duplicate_matches ? `${column.duplicate_matches} user match(es) have duplicate source rows` : undefined"
+                >
+                  {{ user.extra_values?.[column.id] ?? '—' }}
+                </td>
+
                 <td class="user-actions-cell">
-                  <FloatingActionMenu :label="`Actions for ${user.username}`">
-                    <button type="button" role="menuitem" @click="openAccessInspector(user)">
-                      <FontAwesomeIcon icon="magnifying-glass" />
-                      Inspect access
-                    </button>
-                    <button type="button" role="menuitem" @click="openEditUser(user)">
-                      <FontAwesomeIcon icon="pen" />
-                      Edit access
-                    </button>
-                    <button type="button" role="menuitem" @click="openPasswordReset(user)">
-                      <FontAwesomeIcon icon="key" />
-                      Change password
-                    </button>
+                  <div class="user-action-menu-wrap" @click.stop>
                     <button
                       type="button"
-                      role="menuitem"
-                      @click="openAccountAction(user, user.status.toUpperCase().includes('LOCKED') ? 'unlock' : 'lock')"
+                      class="user-action-button user-menu-button"
+                      :aria-expanded="actionMenuUsername === user.username"
+                      :aria-label="`Actions for ${user.username}`"
+                      :title="`Actions for ${user.username}`"
+                      @click="toggleActionMenu(user, $event)"
                     >
-                      <FontAwesomeIcon :icon="user.status.toUpperCase().includes('LOCKED') ? 'lock-open' : 'lock'" />
-                      {{ user.status.toUpperCase().includes('LOCKED') ? 'Unlock account' : 'Lock account' }}
+                      <FontAwesomeIcon icon="ellipsis-vertical" />
                     </button>
-                    <button
-                      type="button"
-                      role="menuitem"
-                      :disabled="user.status.toUpperCase().includes('EXPIRED')"
-                      @click="openAccountAction(user, 'expire_password')"
+
+                    <div
+                      v-if="actionMenuUsername === user.username"
+                      class="user-action-dropdown"
+                      role="menu"
                     >
-                      <FontAwesomeIcon icon="clock" />
-                      Expire password
-                    </button>
-                    <div class="user-action-divider"></div>
-                    <button
-                      type="button"
-                      role="menuitem"
-                      class="danger-menu-item"
-                      :disabled="deprovisionTargetUsername === user.username && deprovisionLoadingRunId !== null"
-                      @click="previewUserDeprovision(user)"
-                    >
-                      <FontAwesomeIcon icon="trash-can" />
-                      Deprovision
-                    </button>
-                  </FloatingActionMenu>
+                      <button type="button" role="menuitem" @click="openAccessInspector(user)">
+                        Inspect access
+                      </button>
+                      <button type="button" role="menuitem" @click="openEditUser(user)">
+                        Edit access
+                      </button>
+                      <button type="button" role="menuitem" @click="openPasswordReset(user)">
+                        Change password
+                      </button>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        @click="openAccountAction(user, user.status.toUpperCase().includes('LOCKED') ? 'unlock' : 'lock')"
+                      >
+                        {{ user.status.toUpperCase().includes('LOCKED') ? 'Unlock account' : 'Lock account' }}
+                      </button>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        :disabled="user.status.toUpperCase().includes('EXPIRED')"
+                        @click="openAccountAction(user, 'expire_password')"
+                      >
+                        Expire password
+                      </button>
+                      <div class="user-action-divider"></div>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        class="danger-menu-item"
+                        :disabled="deprovisionTargetUsername === user.username && deprovisionLoadingRunId !== null"
+                        @click="previewUserDeprovision(user); closeActionMenu()"
+                      >
+                        Deprovision
+                      </button>
+                    </div>
+                  </div>
                 </td>
               </tr>
 
               <tr v-if="filteredUsers.length === 0">
-                <td colspan="8">
+                <td :colspan="8 + extraUserListColumns.length">
                   No matching database accounts.
                 </td>
               </tr>
@@ -1782,6 +2212,243 @@ onBeforeUnmount(() => {
     </section>
 
     <div
+      v-if="addColumnOpen"
+      class="modal-backdrop"
+      @click.self="closeAddColumn"
+    >
+      <section
+        class="modal-panel oracle-user-modal user-list-column-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Add columns to user list"
+      >
+        <div class="modal-header">
+          <div>
+            <h2>Add column to list</h2>
+          </div>
+          <button type="button" class="modal-close" aria-label="Close" @click="closeAddColumn">×</button>
+        </div>
+
+        <p v-if="addColumnError" class="login-error">{{ addColumnError }}</p>
+
+        <div class="user-list-column-form">
+          <label>
+            <span>Source mapping</span>
+            <select class="utility-select-input" v-model="addColumnSourceKey" :disabled="addColumnLoading" @change="selectAddColumnSource">
+              <option value="new">New table relationship</option>
+              <option
+                v-for="source in existingUserListSources"
+                :key="source.key"
+                :value="source.key"
+              >
+                {{ source.owner }}.{{ source.tableName }} · {{ source.joinColumn }} ({{ source.columns.length }} column{{ source.columns.length === 1 ? '' : 's' }})
+              </option>
+            </select>
+          </label>
+
+          <template v-if="addColumnSourceKey === 'new'">
+            <label>
+              <span>Schema</span>
+              <input
+                v-model="addColumnForm.owner"
+                :list="`user-list-schema-${connectionId}`"
+                type="text"
+                autocomplete="off"
+                placeholder="Search schema"
+                @change="loadAddColumnTables"
+                class="utility-search-input"
+              />
+              <datalist :id="`user-list-schema-${connectionId}`">
+                <option v-for="schema in addColumnSchemas" :key="schema.name" :value="schema.name" />
+              </datalist>
+            </label>
+
+            <label>
+              <span>Table</span>
+              <input
+                v-model="addColumnForm.tableName"
+                :list="`user-list-table-${connectionId}`"
+                type="text"
+                autocomplete="off"
+                placeholder="Search table"
+                :disabled="!addColumnForm.owner || addColumnLoading"
+                @change="loadAddColumnColumns"
+                class="utility-search-input"
+              />
+              <datalist :id="`user-list-table-${connectionId}`">
+                <option v-for="table in addColumnTables" :key="`${table.owner}.${table.name}`" :value="table.name" />
+              </datalist>
+            </label>
+          </template>
+
+          <div v-else-if="selectedExistingUserListSource" class="user-list-column-source-summary">
+            <span>Reusing mapped source</span>
+            <strong>{{ selectedExistingUserListSource.owner }}.{{ selectedExistingUserListSource.tableName }}</strong>
+            <small>DBA_USERS.USERNAME = {{ selectedExistingUserListSource.joinColumn }} · {{ selectedExistingUserListSource.columns.length }} column{{ selectedExistingUserListSource.columns.length === 1 ? '' : 's' }} already displayed.</small>
+          </div>
+
+          <div class="user-list-relationship">
+            <div>
+              <span>Main list</span>
+              <strong>DBA_USERS.USERNAME</strong>
+            </div>
+            <span class="user-list-relationship-equals">=</span>
+            <label>
+              <span>Source relationship column</span>
+              <select
+                v-model="addColumnForm.joinColumn"
+                :disabled="addColumnColumns.length === 0 || addColumnSourceKey !== 'new'"
+                @change="reuseExistingSourceIfMapped"
+                class="utility-select-input"
+              >
+                <option value="">Select column</option>
+                <option
+                  v-for="column in addColumnColumns.filter((item) => ['CHAR', 'NCHAR', 'VARCHAR2', 'NVARCHAR2'].includes(item.data_type.toUpperCase()))"
+                  :key="column.name"
+                  :value="column.name"
+                >
+                  {{ column.name }} · {{ column.data_type }}
+                </option>
+              </select>
+            </label>
+          </div>
+
+          <section v-if="addColumnForm.joinColumn && addColumnColumns.length" class="user-list-column-picker">
+            <div class="user-list-column-picker-heading">
+              <div>
+                <strong>Columns to include</strong>
+                <small>Select several columns from this relationship. They will be fetched together.</small>
+              </div>
+              <span>{{ addColumnSelections.length }} selected</span>
+            </div>
+
+            <div class="user-list-column-picker-list">
+              <article
+                v-for="column in addColumnColumns"
+                :key="column.name"
+                :class="{ 'already-added': currentMappedDisplayColumns.has(column.name.toUpperCase()) }"
+              >
+                <label class="user-list-column-check">
+                  <input
+                    type="checkbox"
+                    :checked="Boolean(selectedAddColumn(column.name.toUpperCase()))"
+                    :disabled="currentMappedDisplayColumns.has(column.name.toUpperCase())"
+                    @change="toggleAddColumnSelection(column, $event)"
+                  />
+                  <span>
+                    <strong>{{ column.name }}</strong>
+                    <small>{{ column.data_type }}</small>
+                  </span>
+                </label>
+
+                <span v-if="currentMappedDisplayColumns.has(column.name.toUpperCase())" class="user-list-column-added-badge">
+                  Already added
+                </span>
+                <label v-else-if="selectedAddColumn(column.name.toUpperCase())" class="user-list-column-heading-input">
+                  <span>List heading</span>
+                  <input
+                    :value="selectedAddColumn(column.name.toUpperCase())?.label ?? ''"
+                    type="text"
+                    maxlength="40"
+                    autocomplete="off"
+                    @input="updateAddColumnLabel(column.name, $event)"
+                  />
+                </label>
+              </article>
+            </div>
+          </section>
+
+          <div class="user-list-column-source-summary">
+            <span>Source connection</span>
+            <strong>Current database connection</strong>
+          </div>
+        </div>
+
+        <section v-if="addColumnPreview" class="user-list-column-preview">
+          <div class="user-list-column-preview-heading">
+            <strong>One-row preview</strong>
+            <span>{{ addColumnForm.owner }}.{{ addColumnForm.tableName }} · {{ addColumnForm.joinColumn }}</span>
+          </div>
+          <div class="utility-table-wrap">
+            <table class="utility-table">
+              <thead>
+                <tr>
+                  <th>Username</th>
+                  <th>Oracle status</th>
+                  <th v-for="value in addColumnPreview.values" :key="value.display_column">{{ value.label }}</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><strong>{{ addColumnPreview.username }}</strong></td>
+                  <td>{{ addColumnPreview.status }}</td>
+                  <td v-for="value in addColumnPreview.values" :key="value.display_column">{{ value.value ?? '—' }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p v-if="addColumnPreview.warning" class="utility-warning compact">
+            {{ addColumnPreview.warning }}
+          </p>
+          <p v-else class="user-list-column-preview-ok">Mapping preview succeeded.</p>
+        </section>
+
+        <section v-if="existingUserListSources.length" class="user-list-existing-columns">
+          <div>
+            <strong>Mapped sources</strong>
+            <span>{{ extraUserListColumns.length }} column{{ extraUserListColumns.length === 1 ? '' : 's' }} across {{ existingUserListSources.length }} source{{ existingUserListSources.length === 1 ? '' : 's' }}</span>
+          </div>
+          <article v-for="source in existingUserListSources" :key="source.key" class="user-list-existing-source">
+            <div class="user-list-existing-source-heading">
+              <div>
+                <strong>{{ source.owner }}.{{ source.tableName }}</strong>
+                <small>DBA_USERS.USERNAME = {{ source.joinColumn }}</small>
+              </div>
+              <span>{{ source.columns.length }} column{{ source.columns.length === 1 ? '' : 's' }}</span>
+            </div>
+            <div class="user-list-existing-source-columns">
+              <div v-for="column in source.columns" :key="column.id">
+                <span>
+                  <strong>{{ column.label }}</strong>
+                  <small>{{ column.display_column }}</small>
+                  <small v-if="column.warning" class="user-list-column-duplicate">Source unavailable: {{ column.warning }}</small>
+                  <small v-else-if="column.duplicate_matches" class="user-list-column-duplicate">
+                    {{ column.duplicate_matches }} user match(es) currently have duplicate source rows.
+                  </small>
+                </span>
+                <button type="button" class="secondary-button compact-button" @click="removeAdditionalColumn(column)">
+                  Remove
+                </button>
+              </div>
+            </div>
+          </article>
+        </section>
+
+        <div class="connection-form-actions user-list-column-actions">
+          <button type="button" class="secondary-button" :disabled="addColumnSaving" @click="closeAddColumn">
+            Cancel
+          </button>
+          <button
+            type="button"
+            class="secondary-button"
+            :disabled="addColumnLoading || !addColumnForm.owner || !addColumnForm.tableName || !addColumnForm.joinColumn || !addColumnSelectionReady()"
+            @click="previewAdditionalColumn"
+          >
+            {{ addColumnLoading ? 'Checking...' : 'Preview mapping' }}
+          </button>
+          <button
+            type="button"
+            class="primary-button"
+            :disabled="addColumnSaving || !addColumnPreview"
+            @click="saveAdditionalColumn"
+          >
+            {{ addColumnSaving ? 'Adding...' : addColumnSelections.length === 1 ? 'Add column' : `Add ${addColumnSelections.length} columns` }}
+          </button>
+        </div>
+      </section>
+    </div>
+
+    <div
       v-if="inspectorTargetUsername"
       class="modal-backdrop"
       @click.self="closeAccessInspector"
@@ -1795,6 +2462,7 @@ onBeforeUnmount(() => {
         <div class="modal-header">
           <div>
             <h2>Access inspector · {{ inspectorTargetUsername }}</h2>
+            <p>Read-only view of direct and inherited Oracle access. No grants are changed from this screen.</p>
           </div>
           <button type="button" class="modal-close" aria-label="Close" @click="closeAccessInspector">×</button>
         </div>
@@ -1923,8 +2591,7 @@ onBeforeUnmount(() => {
         <div class="modal-header">
           <div>
             <h2>Edit {{ editTargetUsername }}</h2>
-            <p v-if="!editPreview">Manage Oracle account settings and role grants. Direct system privileges stay review-only.</p>
-            <p v-else>Review the exact Oracle changes before applying them.</p>
+            <p>Review the exact Oracle changes before applying them.</p>
           </div>
           <button type="button" class="modal-close" aria-label="Close" :disabled="editExecuting" @click="closeEditUser">×</button>
         </div>
@@ -1958,7 +2625,7 @@ onBeforeUnmount(() => {
               <label class="user-edit-lock-toggle">
                 <span>Account state</span>
                 <span class="checkbox-row">
-                  <input v-model="editForm.locked" type="checkbox" @change="editPreview = null" />
+                  <input v-model="editForm.locked" type="checkbox" @change="editPreview = null" class="toggle-switch"/>
                   Keep account locked
                 </span>
               </label>
@@ -1969,9 +2636,8 @@ onBeforeUnmount(() => {
             <div class="user-edit-section-heading">
               <div>
                 <h3>Roles</h3>
-                <p>Existing roles appear first. New sensitive roles are blocked; existing sensitive roles can be revoked after preview.</p>
               </div>
-              <input v-model="editRoleSearch" type="search" placeholder="Find role" />
+              <input v-model="editRoleSearch" type="search" class="utility-search-input" placeholder="Find role" />
             </div>
 
             <div class="user-edit-role-list">
@@ -1986,6 +2652,7 @@ onBeforeUnmount(() => {
                   :checked="editRoleSelected(role.name)"
                   :disabled="role.sensitive && !editRoleSelected(role.name)"
                   @change="handleEditRoleToggle(role.name, $event)"
+                  class="toggle-switch"
                 />
                 <span>
                   <strong>{{ role.name }}</strong>
@@ -2062,7 +2729,7 @@ onBeforeUnmount(() => {
         <div class="modal-header">
           <div>
             <h2>Change password</h2>
-            <p>{{ passwordTargetUsername }} · the password is used only for this Oracle ALTER USER operation and is not stored in DBAChum.</p>
+            <p>{{ passwordTargetUsername }}</p>
           </div>
           <button type="button" class="modal-close" aria-label="Close" :disabled="passwordExecuting" @click="closePasswordReset">×</button>
         </div>
@@ -2105,7 +2772,7 @@ onBeforeUnmount(() => {
         <div class="modal-header">
           <div>
             <h2>{{ accountActionLabel }}</h2>
-            <p v-if="accountAction === 'expire_password'">{{ accountActionTargetUsername }} will be required to change the password at the next Oracle login.</p>
+            <p v-if="accountAction === 'expire_password'">{{ accountActionTargetUsername }}</p>
             <p v-else>{{ accountActionTargetUsername }} will be {{ accountAction === 'lock' ? 'prevented from logging in' : 'allowed to log in again, subject to its password state' }}.</p>
           </div>
           <button type="button" class="modal-close" aria-label="Close" :disabled="accountActionExecuting" @click="closeAccountAction">×</button>
@@ -2113,7 +2780,7 @@ onBeforeUnmount(() => {
 
         <label class="user-edit-request-reference">
           <span>Request / ticket <small>optional</small></span>
-          <input v-model="accountActionRequestReference" maxlength="100" placeholder="Change or ticket reference" />
+          <input v-model="accountActionRequestReference" maxlength="100" class="utility-search-input" placeholder="Change or ticket reference" />
         </label>
         <p v-if="accountActionError" class="login-error">{{ accountActionError }}</p>
         <div class="connection-form-actions">
@@ -2139,7 +2806,6 @@ onBeforeUnmount(() => {
         <div class="modal-header">
           <div>
             <h2>Deprovision {{ deprovisionTargetUsername }}</h2>
-            <p>Review the Oracle schema and any linked rows found through enabled provisioning profiles.</p>
           </div>
           <button
             type="button"
@@ -2249,6 +2915,7 @@ onBeforeUnmount(() => {
                 :placeholder="deprovisionPreview.confirmation_text"
                 :disabled="deprovisionExecuting"
                 @keyup.enter="executeUserDeprovision"
+                class="utility-search-input"
               />
             </label>
 
@@ -2260,17 +2927,12 @@ onBeforeUnmount(() => {
                 maxlength="100"
                 placeholder="Change or ticket reference"
                 :disabled="deprovisionExecuting"
+                class="utility-search-input"
               />
             </label>
           </div>
 
           <div class="deprovision-preview-footer">
-            <p v-if="deprovisionPreview.lifecycle_run_count">
-              {{ deprovisionPreview.lifecycle_run_count }} DBAChum provisioning run(s) found; lifecycle history will be retained.
-            </p>
-            <p v-else>
-              No DBAChum provisioning history is required to delete this schema.
-            </p>
             <div class="deprovision-footer-actions">
               <button
                 v-if="deprovisionPreview.execution_ready"
@@ -2460,8 +3122,9 @@ onBeforeUnmount(() => {
             Reference user (Optional)
             <input
               v-model="createForm.referenceUsername"
+              name="same_access"
               maxlength="30"
-              autocomplete="off"
+              autocomplete="on"
               placeholder="Existing user whose roles should be reviewed"
               @input="referenceInput"
             />
@@ -2528,10 +3191,10 @@ onBeforeUnmount(() => {
           </div>
           <label>Profile (Optional)<input v-model="createForm.profile" maxlength="30" placeholder="Uses reference/default when blank" /></label>
           <div class="connection-form-row">
-            <label>Requestor (Optional)<input v-model="createForm.requestorName" maxlength="200" placeholder="Requestor full name" /></label>
+            <label>Requestor (Optional)<input v-model="createForm.requestorName" name="requestor" maxlength="200" autocomplete="on" placeholder="Requestor full name" /></label>
             <label>Request / ticket reference (Optional)<input v-model="createForm.requestReference" maxlength="100" placeholder="REQ-12345" /></label>
           </div>
-          <label>Remarks (Optional)<textarea v-model="createForm.remarks" rows="3" maxlength="1000" placeholder="Reason, access note, or provisioning remarks"></textarea></label>
+          <label>Remarks (Optional)<textarea v-model="createForm.remarks" name="remarks" rows="3" maxlength="1000" autocomplete="on" placeholder="Reason, access note, or provisioning remarks"></textarea></label>
 
           <p v-if="createError" class="login-error">{{ createError }}</p>
           <div class="connection-form-actions">
@@ -2606,13 +3269,20 @@ onBeforeUnmount(() => {
                 <div class="preview-table-wrap">
                   <table>
                     <thead>
-                      <tr><th>Column</th><th>Source</th><th>Resolved preview</th></tr>
+                      <tr><th>Column</th><th>Source</th><th>Resolved preview</th><th>Strict check</th></tr>
                     </thead>
                     <tbody>
                       <tr v-for="column in step.columns" :key="column.column_name">
                         <td>{{ column.column_name }}</td>
                         <td>{{ column.source }}</td>
                         <td><code>{{ column.display_value ?? 'NULL / blank' }}</code></td>
+                        <td>
+                          <span v-if="!column.strict_unique" class="strict-check strict-check--na">—</span>
+                          <strong v-else-if="column.strict_conflict" class="strict-check strict-check--conflict">
+                            Conflict · {{ column.strict_match_count }} existing row{{ column.strict_match_count === 1 ? '' : 's' }}
+                          </strong>
+                          <strong v-else class="strict-check strict-check--pass">Pass · unique</strong>
+                        </td>
                       </tr>
                     </tbody>
                   </table>
@@ -2904,4 +3574,84 @@ onBeforeUnmount(() => {
   .provisioning-history-actions { justify-content: flex-start; }
 }
 
+
+.toolbar-secondary-menu { min-width: 13.5rem; }
+.toolbar-create-menu button:disabled { opacity: .55; cursor: not-allowed; }
+
+.user-list-column-modal { width: min(100%, 54rem); }
+.user-list-column-form { display: grid; gap: .85rem; }
+.user-list-column-form > label,
+.user-list-relationship > label { display: grid; gap: .35rem; }
+.user-list-column-form input,
+.user-list-column-form select { width: 100%; }
+.user-list-column-form label > small { opacity: .72; }
+.user-list-relationship { display: grid; grid-template-columns: minmax(0, .9fr) auto minmax(0, 1.3fr); gap: .7rem; align-items: end; padding: .8rem; border: 1px solid var(--border-color); border-radius: .7rem; }
+.user-list-relationship > div { display: grid; gap: .25rem; }
+.user-list-relationship > div span,
+.user-list-column-source-summary span { font-size: .78rem; opacity: .7; }
+.user-list-relationship-equals { align-self: center; font-weight: 800; opacity: .7; }
+.user-list-column-source-summary { display: grid; gap: .2rem; padding: .75rem .85rem; border: 1px dashed var(--border-color); border-radius: .7rem; }
+.user-list-column-source-summary small { opacity: .72; }
+.user-list-column-picker { display: grid; gap: .6rem; padding: .75rem; border: 1px solid var(--border-color); border-radius: .7rem; }
+.user-list-column-picker-heading { display: flex; justify-content: space-between; gap: .8rem; align-items: flex-start; }
+.user-list-column-picker-heading > div { display: grid; gap: .15rem; }
+.user-list-column-picker-heading small,
+.user-list-column-picker-heading > span { font-size: .78rem; opacity: .72; }
+.user-list-column-picker-list { display: grid; gap: .45rem; max-height: 19rem; overflow: auto; padding-right: .2rem; }
+.user-list-column-picker-list > article { display: grid; grid-template-columns: minmax(0, 1fr) minmax(12rem, .9fr); gap: .7rem; align-items: center; padding: .6rem .7rem; border: 1px solid var(--border-color); border-radius: .6rem; }
+.user-list-column-picker-list > article.already-added { opacity: .65; }
+.user-list-column-check { display: flex; gap: .55rem; align-items: center; min-width: 0; }
+.user-list-column-check input { width: auto; flex: 0 0 auto; }
+.user-list-column-check > span { display: grid; gap: .1rem; min-width: 0; }
+.user-list-column-check small { opacity: .7; }
+.user-list-column-heading-input { display: grid; gap: .25rem; }
+.user-list-column-heading-input span { font-size: .75rem; opacity: .7; }
+.user-list-column-added-badge { justify-self: end; font-size: .75rem; opacity: .72; }
+.user-list-column-preview { display: grid; gap: .65rem; margin-top: 1rem; padding: .85rem; border: 1px solid var(--border-color); border-radius: .75rem; }
+.user-list-column-preview-heading { display: flex; justify-content: space-between; gap: .8rem; align-items: center; }
+.user-list-column-preview-heading span { font-size: .78rem; opacity: .7; overflow-wrap: anywhere; }
+.user-list-column-preview-ok { margin: 0; font-size: .82rem; color: var(--success); }
+.user-list-existing-columns { display: grid; gap: .55rem; margin-top: 1rem; }
+.user-list-existing-columns > div:first-child { display: flex; align-items: center; justify-content: space-between; gap: .8rem; }
+.user-list-existing-columns > div:first-child span { font-size: .8rem; opacity: .7; }
+.user-list-existing-source { display: grid; gap: .55rem; padding: .7rem .8rem; border: 1px solid var(--border-color); border-radius: .65rem; }
+.user-list-existing-source-heading { display: flex; justify-content: space-between; gap: .8rem; align-items: flex-start; }
+.user-list-existing-source-heading > div { display: grid; gap: .15rem; min-width: 0; }
+.user-list-existing-source-heading > span { font-size: .78rem; opacity: .72; }
+.user-list-existing-source-columns { display: grid; gap: .35rem; }
+.user-list-existing-source-columns > div { display: flex; justify-content: space-between; gap: .8rem; align-items: center; padding-top: .4rem; border-top: 1px solid var(--border-color); }
+.user-list-existing-source-columns > div > span { display: grid; gap: .1rem; min-width: 0; }
+.user-list-existing-columns small { opacity: .72; overflow-wrap: anywhere; }
+.user-list-column-duplicate { color: var(--warning, #d9a441); opacity: 1 !important; }
+.user-list-column-actions { margin-top: 1rem; justify-content: flex-end; }
+.utility-warning.compact { margin: 0; padding: .6rem .7rem; }
+
+@media (max-width: 700px) {
+  .user-list-relationship,
+  .user-list-column-picker-list > article { grid-template-columns: 1fr; }
+  .user-list-relationship-equals { display: none; }
+  .user-list-column-preview-heading,
+  .user-list-column-picker-heading,
+  .user-list-existing-source-heading,
+  .user-list-existing-source-columns > div { align-items: stretch; flex-direction: column; }
+  .user-list-column-added-badge { justify-self: start; }
+}
+
+
+.strict-check {
+  white-space: nowrap;
+  font-size: 0.78rem;
+}
+
+.strict-check--pass {
+  color: var(--success);
+}
+
+.strict-check--conflict {
+  color: var(--danger);
+}
+
+.strict-check--na {
+  color: var(--text-muted);
+}
 </style>

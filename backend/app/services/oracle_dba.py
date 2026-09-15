@@ -40,6 +40,7 @@ from app.services.ldap_ldif import (
     render_ldif,
 )
 from app.services.provisioning import get_ldap_profile_document
+from app.services.oracle_user_list_columns import enrich_oracle_user_list
 
 
 async def get_oracle_target(
@@ -119,9 +120,20 @@ async def load_oracle_users(
         connection_id,
     )
 
-    return await get_oracle_users(
-        connection
+    result = await get_oracle_users(connection)
+    if not result.get("available"):
+        result.setdefault("extra_columns", [])
+        return result
+
+    items, extra_columns = await enrich_oracle_user_list(
+        database,
+        connection_id,
+        connection=connection,
+        items=result.get("items") or [],
     )
+    result["items"] = items
+    result["extra_columns"] = extra_columns
+    return result
 
 async def load_oracle_reference_user(
     database,

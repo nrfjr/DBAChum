@@ -13,6 +13,12 @@ from app.schemas.oracle_dba import (
     OracleSessionsResponse,
     OracleStorageResponse,
     OracleDatabaseUsersResponse,
+    OracleUserListColumnRequest,
+    OracleUserListColumnsRequest,
+    OracleUserListColumnResponse,
+    OracleUserListColumnPreviewResponse,
+    OracleUserListColumnsPreviewResponse,
+    OracleUserListColumnsCreateResponse,
     OracleReferenceUserResponse,
     OracleCreateUserRequest,
     OracleCreateUserResponse,
@@ -73,6 +79,7 @@ from app.services.oracle_dba import (
 )
 from app.services.provisioning import list_provisioning_profiles_for_connection
 from app.connectors.oracle_provisioning import normalize_oracle_identifier, oracle_user_exists
+from app.connectors.oracle_users import get_oracle_users
 from app.services.oracle_access_inspector import load_oracle_user_access_inspector
 from app.services.oracle_access_lookup import load_oracle_access_lookup
 from app.services.oracle_access_compare import load_oracle_access_compare
@@ -85,6 +92,13 @@ from app.services.oracle_role_management import (
     execute_oracle_role_change,
     build_oracle_role_drop_preview,
     execute_oracle_role_drop,
+)
+from app.services.oracle_user_list_columns import (
+    create_oracle_user_list_column,
+    create_oracle_user_list_columns,
+    delete_oracle_user_list_column,
+    preview_oracle_user_list_column,
+    preview_oracle_user_list_columns,
 )
 from app.services.oracle_user_lifecycle import (
     load_oracle_user_lifecycle_state,
@@ -114,6 +128,7 @@ from app.services.provisioning_lifecycle import (
     list_provisioning_runs,
     retry_provisioning_run,
 )
+from app.core.exceptions import AppError
 from app.core.permissions import Permission
 from app.dependencies.permissions import require_permission
 
@@ -183,6 +198,142 @@ async def get_database_users(
         request.app.state.database,
         connection_id,
     )
+
+@router.post(
+    "/{connection_id}/oracle/user-list-columns/preview",
+    response_model=OracleUserListColumnPreviewResponse,
+)
+async def preview_user_list_column(
+    connection_id: str,
+    data: OracleUserListColumnRequest,
+    request: Request,
+    current_user: UserResponse = Depends(
+        require_permission(Permission.PROVISIONING_MANAGE)
+    ),
+):
+    connection = await get_oracle_target(
+        request.app.state.database,
+        connection_id,
+    )
+    users = await get_oracle_users(connection)
+    if not users.get("available"):
+        raise AppError(
+            users.get("warning") or "Oracle user inventory is unavailable.",
+            code="ORACLE_USER_LIST_PREVIEW_UNAVAILABLE",
+            status_code=400,
+        )
+    return await preview_oracle_user_list_column(
+        request.app.state.database,
+        connection_id,
+        owner=data.owner,
+        table_name=data.table_name,
+        join_column=data.join_column,
+        display_column=data.display_column,
+        label=data.label,
+        base_users=users.get("items") or [],
+    )
+
+
+@router.post(
+    "/{connection_id}/oracle/user-list-columns/preview-batch",
+    response_model=OracleUserListColumnsPreviewResponse,
+)
+async def preview_user_list_columns(
+    connection_id: str,
+    data: OracleUserListColumnsRequest,
+    request: Request,
+    current_user: UserResponse = Depends(
+        require_permission(Permission.PROVISIONING_MANAGE)
+    ),
+):
+    connection = await get_oracle_target(
+        request.app.state.database,
+        connection_id,
+    )
+    users = await get_oracle_users(connection)
+    if not users.get("available"):
+        raise AppError(
+            users.get("warning") or "Oracle user inventory is unavailable.",
+            code="ORACLE_USER_LIST_PREVIEW_UNAVAILABLE",
+            status_code=400,
+        )
+    return await preview_oracle_user_list_columns(
+        request.app.state.database,
+        connection_id,
+        owner=data.owner,
+        table_name=data.table_name,
+        join_column=data.join_column,
+        columns=[item.model_dump() for item in data.columns],
+        base_users=users.get("items") or [],
+    )
+
+
+@router.post(
+    "/{connection_id}/oracle/user-list-columns/batch",
+    response_model=OracleUserListColumnsCreateResponse,
+)
+async def add_user_list_columns(
+    connection_id: str,
+    data: OracleUserListColumnsRequest,
+    request: Request,
+    current_user: UserResponse = Depends(
+        require_permission(Permission.PROVISIONING_MANAGE)
+    ),
+):
+    items = await create_oracle_user_list_columns(
+        request.app.state.database,
+        connection_id,
+        owner=data.owner,
+        table_name=data.table_name,
+        join_column=data.join_column,
+        columns=[item.model_dump() for item in data.columns],
+        created_by=current_user.username,
+    )
+    return {"items": items}
+
+
+@router.post(
+    "/{connection_id}/oracle/user-list-columns",
+    response_model=OracleUserListColumnResponse,
+)
+async def add_user_list_column(
+    connection_id: str,
+    data: OracleUserListColumnRequest,
+    request: Request,
+    current_user: UserResponse = Depends(
+        require_permission(Permission.PROVISIONING_MANAGE)
+    ),
+):
+    return await create_oracle_user_list_column(
+        request.app.state.database,
+        connection_id,
+        owner=data.owner,
+        table_name=data.table_name,
+        join_column=data.join_column,
+        display_column=data.display_column,
+        label=data.label,
+        created_by=current_user.username,
+    )
+
+
+@router.delete(
+    "/{connection_id}/oracle/user-list-columns/{column_id}",
+)
+async def remove_user_list_column(
+    connection_id: str,
+    column_id: str,
+    request: Request,
+    current_user: UserResponse = Depends(
+        require_permission(Permission.PROVISIONING_MANAGE)
+    ),
+):
+    await delete_oracle_user_list_column(
+        request.app.state.database,
+        connection_id,
+        column_id,
+    )
+    return {"deleted": True}
+
 
 @router.get(
     "/{connection_id}/oracle/users/{username}/availability",

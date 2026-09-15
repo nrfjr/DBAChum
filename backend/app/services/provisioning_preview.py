@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 
 from app.connectors.oracle_provisioning import (
     count_oracle_rows_by_match,
+    count_oracle_unique_conflicts,
     get_oracle_reference_user,
     is_sensitive_reference_role,
     normalize_oracle_identifier,
@@ -215,6 +216,7 @@ async def build_provisioning_preview(
                         column_name=column_name,
                         source=f"Form · {key}",
                         display_value=_display_value(value),
+                        strict_unique=bool(mapping.get("strict_unique")),
                     )
                 )
             elif kind == "generated":
@@ -232,6 +234,7 @@ async def build_provisioning_preview(
                             else _display_value(value)
                         ),
                         sensitive=sensitive,
+                        strict_unique=bool(mapping.get("strict_unique")),
                     )
                 )
             elif kind == "sequence":
@@ -242,6 +245,7 @@ async def build_provisioning_preview(
                         source="Oracle sequence",
                         display_value=f'{step["owner"]}.{sequence}.NEXTVAL',
                         expression=True,
+                        strict_unique=bool(mapping.get("strict_unique")),
                     )
                 )
             elif kind == "custom":
@@ -252,6 +256,7 @@ async def build_provisioning_preview(
                         column_name=column_name,
                         source="Custom literal",
                         display_value=value,
+                        strict_unique=bool(mapping.get("strict_unique")),
                     )
                 )
             elif kind == "null":
@@ -261,6 +266,7 @@ async def build_provisioning_preview(
                         source="NULL",
                         display_value="NULL",
                         expression=True,
+                        strict_unique=bool(mapping.get("strict_unique")),
                     )
                 )
 
@@ -282,16 +288,54 @@ async def build_provisioning_preview(
             table_name=step["table_name"],
             match_values=match_values,
         )
-        if existing_rows == 0:
-            planned_action = "insert"
+
+        strict_conflict = False
+        preview_column_by_name = {column.column_name: column for column in columns}
+        for mapping in step.get("mappings") or []:
+            if not mapping.get("strict_unique"):
+                continue
+
+            column_name = str(mapping.get("column_name", "")).strip().upper()
+            value = raw_values.get(column_name)
+            if value is None or (isinstance(value, str) and not value.strip()):
+                raise AppError(
+                    f'Strict unique column "{column_name}" in table step {index} has no resolved value.',
+                    code="PROVISIONING_STRICT_VALUE_REQUIRED",
+                    status_code=400,
+                )
+
+            strict_match_count = await count_oracle_unique_conflicts(
+                step_connection,
+                owner=step["owner"],
+                table_name=step["table_name"],
+                column_name=column_name,
+                value=value,
+                exclude_match_values=match_values,
+            )
+            preview_column = preview_column_by_name.get(column_name)
+            if preview_column is not None:
+                preview_column.strict_match_count = strict_match_count
+                preview_column.strict_conflict = strict_match_count > 0
+
+            if strict_match_count > 0:
+                strict_conflict = True
+                has_conflict = True
+                warnings.append(
+                    f'Table step {index} strict check found {strict_match_count} existing row'
+                    f'{"s" if strict_match_count != 1 else ""} using {column_name}; provisioning is blocked.'
+                )
+
+        if existing_rows > 1 or strict_conflict:
+            planned_action = "conflict"
+            has_conflict = True
+            if existing_rows > 1:
+                warnings.append(
+                    f'Table step {index} matched {existing_rows} rows; execution must stop until the duplicate identity is resolved.'
+                )
         elif existing_rows == 1:
             planned_action = "update"
         else:
-            planned_action = "conflict"
-            has_conflict = True
-            warnings.append(
-                f'Table step {index} matched {existing_rows} rows; execution must stop until the duplicate identity is resolved.'
-            )
+            planned_action = "insert"
 
         table_steps.append(
             ProvisioningPreviewTableStep(

@@ -13,6 +13,7 @@ export interface ProvisioningColumnMapping {
   value_kind: ProvisioningValueKind
   value_key: string | null
   custom_value: string | null
+  strict_unique?: boolean
 }
 
 export interface ProvisioningTableStep {
@@ -68,6 +69,9 @@ export interface ProvisioningPreviewColumn {
   display_value: string | null
   sensitive: boolean
   expression: boolean
+  strict_unique?: boolean
+  strict_match_count?: number
+  strict_conflict?: boolean
 }
 
 export interface ProvisioningPreviewTableStep {

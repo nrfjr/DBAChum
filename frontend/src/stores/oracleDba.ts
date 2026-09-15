@@ -127,6 +127,67 @@ export interface OracleDatabaseUser {
   created_at: string | null
   lock_date: string | null
   expiry_date: string | null
+  extra_values: Record<string, string | null>
+}
+
+export interface OracleUserListColumn {
+  id: string
+  label: string
+  owner: string
+  table_name: string
+  join_column: string
+  display_column: string
+  duplicate_matches: number
+  warning: string | null
+}
+
+export interface OracleUserListColumnInput {
+  owner: string
+  table_name: string
+  join_column: string
+  display_column: string
+  label: string
+}
+
+export interface OracleUserListColumnSelectionInput {
+  display_column: string
+  label: string
+}
+
+export interface OracleUserListColumnsInput {
+  owner: string
+  table_name: string
+  join_column: string
+  columns: OracleUserListColumnSelectionInput[]
+}
+
+export interface OracleUserListColumnPreview {
+  label: string
+  username: string
+  status: string
+  value: string | null
+  matched: boolean
+  duplicate_match: boolean
+  warning: string | null
+}
+
+export interface OracleUserListColumnPreviewValue {
+  display_column: string
+  label: string
+  value: string | null
+}
+
+export interface OracleUserListColumnsPreview {
+  username: string
+  status: string
+  values: OracleUserListColumnPreviewValue[]
+  matched: boolean
+  duplicate_match: boolean
+  warning: string | null
+}
+
+export interface OracleUserListColumnsCreateResult {
+  items: OracleUserListColumn[]
 }
 
 export interface OracleUsernameAvailability {
@@ -144,6 +205,7 @@ export interface OracleDatabaseUsersResponse {
   expired: number
 
   items: OracleDatabaseUser[]
+  extra_columns: OracleUserListColumn[]
 
   warning: string | null
   checked_at: string
@@ -653,6 +715,70 @@ export const useOracleDbaStore =
         } finally {
           this.loadingUsers = false
         }
+      },
+
+      async previewUserListColumn(
+        id: string,
+        data: OracleUserListColumnInput,
+      ) {
+        return apiRequest<OracleUserListColumnPreview>(
+          `/databases/${id}/oracle/user-list-columns/preview`,
+          {
+            method: 'POST',
+            body: JSON.stringify(data),
+          },
+        )
+      },
+
+      async previewUserListColumns(
+        id: string,
+        data: OracleUserListColumnsInput,
+      ) {
+        return apiRequest<OracleUserListColumnsPreview>(
+          `/databases/${id}/oracle/user-list-columns/preview-batch`,
+          {
+            method: 'POST',
+            body: JSON.stringify(data),
+          },
+        )
+      },
+
+      async addUserListColumns(
+        id: string,
+        data: OracleUserListColumnsInput,
+      ) {
+        const result = await apiRequest<OracleUserListColumnsCreateResult>(
+          `/databases/${id}/oracle/user-list-columns/batch`,
+          {
+            method: 'POST',
+            body: JSON.stringify(data),
+          },
+        )
+        await this.loadUsers(id)
+        return result
+      },
+
+      async addUserListColumn(
+        id: string,
+        data: OracleUserListColumnInput,
+      ) {
+        const result = await apiRequest<OracleUserListColumn>(
+          `/databases/${id}/oracle/user-list-columns`,
+          {
+            method: 'POST',
+            body: JSON.stringify(data),
+          },
+        )
+        await this.loadUsers(id)
+        return result
+      },
+
+      async removeUserListColumn(id: string, columnId: string) {
+        await apiRequest<{ deleted: boolean }>(
+          `/databases/${id}/oracle/user-list-columns/${encodeURIComponent(columnId)}`,
+          { method: 'DELETE' },
+        )
+        await this.loadUsers(id)
       },
 
       async checkUsernameAvailability(id: string, username: string) {

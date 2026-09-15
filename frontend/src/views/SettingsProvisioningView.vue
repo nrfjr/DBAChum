@@ -140,6 +140,7 @@ async function openEdit(profile: ProvisioningProfile) {
         value_kind: mapping.value_kind,
         value_key: mapping.value_key,
         custom_value: mapping.custom_value,
+        strict_unique: mapping.strict_unique ?? false,
       })),
       match_columns: [...(step.match_columns ?? [])],
     })),
@@ -244,6 +245,7 @@ function mergeColumnMappings(
     value_kind: 'omit',
     value_key: null,
     custom_value: null,
+    strict_unique: false,
   })
 }
 
@@ -329,6 +331,11 @@ function mappingCanMatch(mapping: ProvisioningColumnMapping) {
   return mapping.value_kind === 'form' && mapping.value_key === 'employee_id'
 }
 
+function mappingCanBeStrict(mapping: ProvisioningColumnMapping) {
+  if (mapping.value_kind === 'omit' || mapping.value_kind === 'null' || mapping.value_kind === 'sequence') return false
+  return !(mapping.value_kind === 'generated' && mapping.value_key === 'password')
+}
+
 function setMappingSource(
   stepIndex: number,
   mapping: ProvisioningColumnMapping,
@@ -343,6 +350,10 @@ function setMappingSource(
     mapping.value_kind = value as ProvisioningValueKind
     mapping.value_key = null
     mapping.custom_value = null
+  }
+
+  if (!mappingCanBeStrict(mapping)) {
+    mapping.strict_unique = false
   }
 
   const step = form.table_steps[stepIndex]
@@ -443,6 +454,7 @@ async function save() {
           value_kind: mapping.value_kind,
           value_key: mapping.value_key,
           custom_value: mapping.custom_value,
+          strict_unique: mapping.strict_unique ?? false,
         })),
         match_columns: [...step.match_columns],
       })),
@@ -636,9 +648,9 @@ onMounted(async () => {
               <div class="provisioning-step-toolbar">
                 <strong>Step {{ index + 1 }}</strong>
                 <div>
-                  <button type="button" class="text-button" :disabled="index === 0" @click="moveTableStep(index, -1)">↑</button>
-                  <button type="button" class="text-button" :disabled="index === form.table_steps.length - 1" @click="moveTableStep(index, 1)">↓</button>
-                  <button type="button" class="text-button danger" @click="removeTableStep(index)">Remove</button>
+                  <button type="button" class="text-button secondary-button" :disabled="index === 0" @click="moveTableStep(index, -1)">↑</button>
+                  <button type="button" class="text-button secondary-button" :disabled="index === form.table_steps.length - 1" @click="moveTableStep(index, 1)">↓</button>
+                  <button type="button" class="text-button danger secondary-button" @click="removeTableStep(index)">Remove</button>
                 </div>
               </div>
 
@@ -700,6 +712,19 @@ onMounted(async () => {
                       · {{ columnInfo(index, mapping.column_name)?.nullable ? 'nullable' : 'required' }}
                       <template v-if="columnInfo(index, mapping.column_name)?.data_default"> · default exists</template>
                     </small>
+                    <label
+                      class="connection-checkbox provisioning-strict-column"
+                      :class="{ disabled: !mappingCanBeStrict(mapping) }"
+                      title="Block provisioning when another row already uses this resolved value."
+                    >
+                      <input
+                        v-model="mapping.strict_unique"
+                        type="checkbox"
+                        :disabled="!mappingCanBeStrict(mapping)"
+                        class="toggle-switch"
+                      />
+                      Strict unique
+                    </label>
                   </div>
 
                   <select
@@ -777,6 +802,7 @@ onMounted(async () => {
                       :checked="matchColumnSelected(index, mapping.column_name)"
                       :disabled="!mappingCanMatch(mapping)"
                       @change="handleMatchColumnToggle(index, mapping.column_name, $event)"
+                      class="toggle-switch"
                     />
                     {{ mapping.column_name }}
                   </label>

@@ -23,6 +23,7 @@ class ProvisioningColumnMapping(BaseModel):
     value_kind: ProvisioningValueKind = "omit"
     value_key: str | None = Field(default=None, max_length=128)
     custom_value: str | None = Field(default=None, max_length=2000)
+    strict_unique: bool = False
 
     @model_validator(mode="after")
     def validate_mapping(self):
@@ -49,6 +50,18 @@ class ProvisioningColumnMapping(BaseModel):
 
         if self.value_kind in {"custom", "null", "omit"}:
             self.value_key = None
+
+        if self.strict_unique and self.value_kind in {"sequence", "null", "omit"}:
+            raise ValueError(
+                "Strict uniqueness requires a resolved value, not sequence, NULL, or omitted mappings."
+            )
+
+        if (
+            self.strict_unique
+            and self.value_kind == "generated"
+            and self.value_key == "password"
+        ):
+            raise ValueError("Provisioned passwords cannot be used for strict uniqueness checks.")
 
         return self
 
@@ -305,6 +318,9 @@ class ProvisioningPreviewColumn(BaseModel):
     display_value: str | None = None
     sensitive: bool = False
     expression: bool = False
+    strict_unique: bool = False
+    strict_match_count: int = 0
+    strict_conflict: bool = False
 
 
 class ProvisioningPreviewTableStep(BaseModel):

@@ -141,6 +141,67 @@ class OracleDatabaseUserItem(BaseModel):
     created_at: datetime | None = None
     lock_date: datetime | None = None
     expiry_date: datetime | None = None
+    extra_values: dict[str, str | None] = Field(default_factory=dict)
+
+
+class OracleUserListColumnResponse(BaseModel):
+    id: str
+    label: str
+    owner: str
+    table_name: str
+    join_column: str
+    display_column: str
+    duplicate_matches: int = 0
+    warning: str | None = None
+
+
+class OracleUserListColumnRequest(BaseModel):
+    owner: str
+    table_name: str
+    join_column: str
+    display_column: str
+    label: str
+
+
+class OracleUserListColumnSelection(BaseModel):
+    display_column: str
+    label: str
+
+
+class OracleUserListColumnsRequest(BaseModel):
+    owner: str
+    table_name: str
+    join_column: str
+    columns: list[OracleUserListColumnSelection] = Field(min_length=1, max_length=8)
+
+
+class OracleUserListColumnPreviewValue(BaseModel):
+    display_column: str
+    label: str
+    value: str | None = None
+
+
+class OracleUserListColumnsPreviewResponse(BaseModel):
+    username: str
+    status: str
+    values: list[OracleUserListColumnPreviewValue] = Field(default_factory=list)
+    matched: bool
+    duplicate_match: bool = False
+    warning: str | None = None
+
+
+class OracleUserListColumnsCreateResponse(BaseModel):
+    items: list[OracleUserListColumnResponse] = Field(default_factory=list)
+
+
+class OracleUserListColumnPreviewResponse(BaseModel):
+    label: str
+    username: str
+    status: str
+    value: str | None = None
+    matched: bool
+    duplicate_match: bool = False
+    warning: str | None = None
 
 
 class OracleDatabaseUsersResponse(BaseModel):
@@ -152,6 +213,9 @@ class OracleDatabaseUsersResponse(BaseModel):
     expired: int = 0
 
     items: list[OracleDatabaseUserItem] = Field(
+        default_factory=list
+    )
+    extra_columns: list[OracleUserListColumnResponse] = Field(
         default_factory=list
     )
 

@@ -199,6 +199,72 @@ async def count_oracle_rows_by_match(
     return int(row[0]) if row else 0
 
 
+async def count_oracle_unique_conflicts(
+    connection: dict,
+    *,
+    owner: str,
+    table_name: str,
+    column_name: str,
+    value: object,
+    exclude_match_values: dict[str, object] | None = None,
+) -> int:
+    """Count rows that reuse a strict value outside the current upsert identity.
+
+    The exclusion keeps a legitimate update from conflicting with its own existing
+    row. If the step is an insert, the exclusion simply matches no row.
+    """
+    owner = normalize_oracle_identifier(owner, field_name="Schema")
+    table_name = normalize_oracle_identifier(table_name, field_name="Table")
+    column = normalize_oracle_identifier(column_name, field_name="Strict unique column")
+
+    if value is None or (isinstance(value, str) and not value.strip()):
+        raise AppError(
+            f'Strict unique column "{column}" requires a non-blank resolved value.',
+            code="PROVISIONING_STRICT_VALUE_REQUIRED",
+            status_code=400,
+        )
+
+    predicates = [f"{quote_oracle_identifier(column)} = :strict_value"]
+    parameters: dict[str, object] = {"strict_value": value}
+
+    exclusions: list[str] = []
+    for index, (match_column_name, match_value) in enumerate(
+        (exclude_match_values or {}).items()
+    ):
+        match_column = normalize_oracle_identifier(
+            match_column_name,
+            field_name="Upsert match column",
+        )
+        quoted_match_column = quote_oracle_identifier(match_column)
+        if match_value is None:
+            exclusions.append(f"{quoted_match_column} IS NULL")
+        else:
+            bind_name = f"exclude_{index}"
+            exclusions.append(f"{quoted_match_column} = :{bind_name}")
+            parameters[bind_name] = match_value
+
+    if exclusions:
+        predicates.append("NOT (" + " AND ".join(exclusions) + ")")
+
+    sql = (
+        "SELECT COUNT(*) FROM "
+        f"{quote_oracle_identifier(owner)}.{quote_oracle_identifier(table_name)} "
+        "WHERE " + " AND ".join(predicates)
+    )
+
+    async with open_oracle_connection(connection) as oracle_connection:
+        try:
+            row = await oracle_connection.fetchone(sql, parameters)
+        except oracledb.Error as exc:
+            raise AppError(
+                oracle_error_message(exc),
+                code="PROVISIONING_STRICT_LOOKUP_FAILED",
+                status_code=400,
+            ) from exc
+
+    return int(row[0]) if row else 0
+
+
 async def get_oracle_reference_user(
     connection: dict,
     username: str,
