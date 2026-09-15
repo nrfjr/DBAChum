@@ -81,7 +81,7 @@ test('shows Oracle users and schemas with filtering', async ({ page }) => {
   await expect(page.getByText('LOCKED_USER', { exact: true })).toBeVisible()
   await expect(page.getByText('APP_USER', { exact: true })).not.toBeVisible()
 
-  await page.getByPlaceholder('Find username, status, tablespace or profile').fill('archive')
+  await page.getByPlaceholder('Find username, status, tablespace, profile or added value').fill('archive')
   await page.getByRole('button', { name: /Expired/ }).click()
 
   await expect(page.getByText('OLD_USER', { exact: true })).toBeVisible()
