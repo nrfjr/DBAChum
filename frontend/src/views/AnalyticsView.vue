@@ -37,6 +37,7 @@ const sizeColumn = ref('')
 const unitColumn = ref('')
 const defaultUnit = ref('GB')
 const databaseMap = ref<Record<string, string>>({})
+const growthDatabase = ref('')
 
 type SizeUnitChoice = 'auto' | 'MB' | 'GB' | 'TB'
 type SizeChartKey = 'databaseSize' | 'growth' | 'backupSize' | 'oracleMemory' | 'serverDisk' | 'serverMemory'
@@ -220,23 +221,42 @@ const backupSizeOption = computed(() => {
   }
 })
 
-const growthOption = computed(() => {
+const growthDatabaseOptions = computed(() => {
+  const ids = new Set((databaseData.value?.growth ?? []).map((point) => point.connection_id))
+  return (databaseData.value?.items ?? [])
+    .filter((item) => ids.has(item.connection_id))
+    .map((item) => ({ value: item.connection_id, label: item.name }))
+    .sort((a, b) => a.label.localeCompare(b.label))
+})
+
+const growthSelectedIds = computed(() => {
   const points = databaseData.value?.growth ?? []
+  const ids = [...new Set(points.map((point) => point.connection_id))]
+  if (growthDatabase.value === '__all__') return ids
+  if (growthDatabase.value) return ids.includes(growthDatabase.value) ? [growthDatabase.value] : []
   const currentSizes = new Map((databaseData.value?.items ?? []).map((item) => [item.connection_id, Number(item.database_size_bytes ?? 0)]))
-  const selectedIds = [...new Set(points.map((point) => point.connection_id))]
+  return ids
     .sort((a, b) => (currentSizes.get(b) ?? 0) - (currentSizes.get(a) ?? 0))
     .slice(0, 10)
-  const monthsFound = [...new Set(points.filter((point) => selectedIds.includes(point.connection_id)).map((point) => point.month))].sort()
+})
+
+const growthVisiblePoints = computed(() => {
+  const selected = new Set(growthSelectedIds.value)
+  return (databaseData.value?.growth ?? []).filter((point) => selected.has(point.connection_id))
+})
+
+const growthOption = computed(() => {
+  const points = growthVisiblePoints.value
+  const selectedIds = growthSelectedIds.value
+  const monthsFound = [...new Set(points.map((point) => point.month))].sort()
   const byTarget = new Map<string, Map<string, number>>()
   for (const point of points) {
-    if (!selectedIds.includes(point.connection_id)) continue
     if (!byTarget.has(point.connection_id)) byTarget.set(point.connection_id, new Map())
     byTarget.get(point.connection_id)?.set(point.month, point.size_bytes)
   }
   const names = new Map(points.map((point) => [point.connection_id, point.name]))
   const engines = new Map((databaseData.value?.items ?? []).map((item) => [item.connection_id, item.engine]))
-  const values = points.filter((point) => selectedIds.includes(point.connection_id)).map((point) => point.size_bytes)
-  const unit = resolveSizeUnit(sizeUnits.growth, values)
+  const unit = resolveSizeUnit(sizeUnits.growth, points.map((point) => point.size_bytes))
   return {
     ...chartBase(false),
     tooltip: { trigger: 'axis', valueFormatter: (value: number) => sizeInUnit(value, unit) },
@@ -463,6 +483,9 @@ async function submitImport() {
 }
 
 watch([mode, engine, osFamily, months], () => { void load() })
+watch(growthDatabaseOptions, (options) => {
+  if (growthDatabase.value && growthDatabase.value !== '__all__' && !options.some((option) => option.value === growthDatabase.value)) growthDatabase.value = ''
+})
 watch([() => uiStore.accent, () => uiStore.resolvedTheme], syncAccentColor, { immediate: true })
 
 onMounted(async () => {
@@ -526,8 +549,8 @@ onMounted(async () => {
         </article>
 
         <article class="analytics-chart-card analytics-chart-card--wide">
-          <header><div title="Month-end size from DBAChum daily snapshots and imported history."><h2>Database Growth</h2></div><label class="analytics-unit-select">Unit<select class="utility-select-input" v-model="sizeUnits.growth"><option v-for="option in sizeUnitOptions" :key="option.value" :value="option.value">{{ option.label }}</option></select><button v-if="mode === 'databases' && canImport" type="button" class="secondary-button" @click="importOpen = true">Import</button></label></header>
-          <VChart v-if="databaseData.growth.length" class="analytics-chart analytics-chart--tall" :option="growthOption" autoresize @click="openDatabaseFromChart" />
+          <header><div title="Month-end size from DBAChum daily snapshots and imported history."><h2>Database Growth</h2></div><div class="analytics-chart-controls"><label class="analytics-unit-select">Database<select class="utility-select-input" v-model="growthDatabase"><option value="">Top 10 by size</option><option value="__all__">All databases</option><option v-for="option in growthDatabaseOptions" :key="option.value" :value="option.value">{{ option.label }}</option></select></label><label class="analytics-unit-select">Unit<select class="utility-select-input" v-model="sizeUnits.growth"><option v-for="option in sizeUnitOptions" :key="option.value" :value="option.value">{{ option.label }}</option></select></label><button v-if="mode === 'databases' && canImport" type="button" class="secondary-button" @click="importOpen = true">Import</button></div></header>
+          <VChart v-if="growthVisiblePoints.length" class="analytics-chart analytics-chart--tall" :option="growthOption" autoresize @click="openDatabaseFromChart" />
           <p v-else class="empty-state">Growth history begins after snapshots are collected or historical data is imported.</p>
         </article>
 
@@ -690,6 +713,7 @@ onMounted(async () => {
 .analytics-report__identity { display: grid; gap: .15rem; }
 .analytics-report__identity strong { font-size: 1rem; }
 .analytics-report__identity span { color: var(--text-muted); font-size: .75rem; }
+.analytics-chart-controls { display: flex; align-items: center; justify-content: flex-end; gap: .5rem; flex-wrap: wrap; }
 .analytics-unit-select { display: flex; align-items: center; gap: .4rem; color: var(--text-muted); font-size: .72rem; white-space: nowrap; }
 .analytics-unit-select select { min-width: 5rem; min-height: 2rem; }
 .analytics-report__filters { display: flex; align-items: end; justify-content: flex-end; gap: .65rem; flex-wrap: wrap; }

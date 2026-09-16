@@ -22,6 +22,7 @@ import {
 } from '@/stores/oracleDba'
 import OracleBulkProvisionModal from '@/components/databases/oracle/OracleBulkProvisionModal.vue'
 import ScrollableDataTable from '@/components/common/ScrollableDataTable.vue'
+import FloatingActionMenu from '@/components/common/FloatingActionMenu.vue'
 
 import {
   useProvisioningStore,
@@ -275,7 +276,6 @@ const provisionedDetailsPreview = ref<OracleProvisionedDetailsPreview | null>(nu
 const provisionedDetailsValues = reactive<Record<string, string>>({})
 const provisionedDetailsRequestReference = ref('')
 
-const actionMenuUsername = ref<string | null>(null)
 
 const inspectorTargetUsername = ref<string | null>(null)
 const inspectorLoading = ref(false)
@@ -542,19 +542,7 @@ function cancelRetryPassword() {
   retryShowPassword.value = false
 }
 
-function closeActionMenu() {
-  actionMenuUsername.value = null
-}
-
-function toggleActionMenu(user: OracleDatabaseUser, event: Event) {
-  event.stopPropagation()
-  actionMenuUsername.value = actionMenuUsername.value === user.username
-    ? null
-    : user.username
-}
-
 function documentClickClosesActionMenu() {
-  closeActionMenu()
   createActionsOpen.value = false
   secondaryActionsOpen.value = false
 }
@@ -585,7 +573,6 @@ const filteredInspectorObjectPrivileges = computed(() => {
 })
 
 async function openAccessInspector(user: OracleDatabaseUser) {
-  closeActionMenu()
   inspectorTargetUsername.value = user.username
   inspectorLoading.value = true
   inspectorError.value = null
@@ -659,7 +646,6 @@ function editPayload() {
 }
 
 async function openEditUser(user: OracleDatabaseUser) {
-  closeActionMenu()
   editTargetUsername.value = user.username
   editLoading.value = true
   editError.value = null
@@ -745,7 +731,6 @@ function generatedPassword() {
 }
 
 function openPasswordReset(user: OracleDatabaseUser) {
-  closeActionMenu()
   passwordTargetUsername.value = user.username
   passwordValue.value = ''
   passwordConfirm.value = ''
@@ -810,7 +795,6 @@ function closePasswordReset() {
 }
 
 function openAccountAction(user: OracleDatabaseUser, action: AccountAction) {
-  closeActionMenu()
   accountActionTargetUsername.value = user.username
   accountAction.value = action
   accountActionRequestReference.value = ''
@@ -875,7 +859,6 @@ function provisionedDetailsUpdates(): OracleProvisionedDetailUpdate[] {
 }
 
 async function openProvisionedDetails(user: OracleDatabaseUser) {
-  closeActionMenu()
   provisionedDetailsTargetUsername.value = user.username
   provisionedDetailsLoading.value = true
   provisionedDetailsExecuting.value = false
@@ -2180,62 +2163,48 @@ onBeforeUnmount(() => {
                 </td>
 
                 <td class="user-actions-cell">
-                  <div class="user-action-menu-wrap" @click.stop>
+                  <FloatingActionMenu
+                    :label="`Actions for ${user.username}`"
+                    :width="190"
+                  >
+                    <button type="button" role="menuitem" @click="openAccessInspector(user)">
+                      Inspect access
+                    </button>
+                    <button type="button" role="menuitem" @click="openEditUser(user)">
+                      Edit access
+                    </button>
+                    <button type="button" role="menuitem" @click="openProvisionedDetails(user)">
+                      Edit provisioned details
+                    </button>
+                    <button type="button" role="menuitem" @click="openPasswordReset(user)">
+                      Change password
+                    </button>
                     <button
                       type="button"
-                      class="user-action-button user-menu-button"
-                      :aria-expanded="actionMenuUsername === user.username"
-                      :aria-label="`Actions for ${user.username}`"
-                      :title="`Actions for ${user.username}`"
-                      @click="toggleActionMenu(user, $event)"
+                      role="menuitem"
+                      @click="openAccountAction(user, user.status.toUpperCase().includes('LOCKED') ? 'unlock' : 'lock')"
                     >
-                      <FontAwesomeIcon icon="ellipsis-vertical" />
+                      {{ user.status.toUpperCase().includes('LOCKED') ? 'Unlock account' : 'Lock account' }}
                     </button>
-
-                    <div
-                      v-if="actionMenuUsername === user.username"
-                      class="user-action-dropdown"
-                      role="menu"
+                    <button
+                      type="button"
+                      role="menuitem"
+                      :disabled="user.status.toUpperCase().includes('EXPIRED')"
+                      @click="openAccountAction(user, 'expire_password')"
                     >
-                      <button type="button" role="menuitem" @click="openAccessInspector(user)">
-                        Inspect access
-                      </button>
-                      <button type="button" role="menuitem" @click="openEditUser(user)">
-                        Edit access
-                      </button>
-                      <button type="button" role="menuitem" @click="openProvisionedDetails(user)">
-                        Edit provisioned details
-                      </button>
-                      <button type="button" role="menuitem" @click="openPasswordReset(user)">
-                        Change password
-                      </button>
-                      <button
-                        type="button"
-                        role="menuitem"
-                        @click="openAccountAction(user, user.status.toUpperCase().includes('LOCKED') ? 'unlock' : 'lock')"
-                      >
-                        {{ user.status.toUpperCase().includes('LOCKED') ? 'Unlock account' : 'Lock account' }}
-                      </button>
-                      <button
-                        type="button"
-                        role="menuitem"
-                        :disabled="user.status.toUpperCase().includes('EXPIRED')"
-                        @click="openAccountAction(user, 'expire_password')"
-                      >
-                        Expire password
-                      </button>
-                      <div class="user-action-divider"></div>
-                      <button
-                        type="button"
-                        role="menuitem"
-                        class="danger-menu-item"
-                        :disabled="deprovisionTargetUsername === user.username && deprovisionLoadingRunId !== null"
-                        @click="openUserDeprovision(user); closeActionMenu()"
-                      >
-                        Deprovision
-                      </button>
-                    </div>
-                  </div>
+                      Expire password
+                    </button>
+                    <div class="user-action-divider"></div>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      class="danger-menu-item"
+                      :disabled="deprovisionTargetUsername === user.username && deprovisionLoadingRunId !== null"
+                      @click="openUserDeprovision(user)"
+                    >
+                      Deprovision
+                    </button>
+                  </FloatingActionMenu>
                 </td>
               </tr>
 
@@ -2407,6 +2376,7 @@ onBeforeUnmount(() => {
       <div v-if="retryPasswordRun" class="provisioning-retry-password">
         <div>
           <strong>Retry {{ retryPasswordRun.username }}</strong>
+          <p>Only the remaining step(s) need the original provisioning password. It will be used in memory for this retry and will not be persisted.</p>
         </div>
         <label>
           <span>Original provisioning password</span>
@@ -2688,6 +2658,7 @@ onBeforeUnmount(() => {
         <div class="modal-header">
           <div>
             <h2>Access inspector · {{ inspectorTargetUsername }}</h2>
+            <p>Read-only view of direct and inherited Oracle access. No grants are changed from this screen.</p>
           </div>
           <button type="button" class="modal-close" aria-label="Close" @click="closeAccessInspector">×</button>
         </div>
@@ -2713,6 +2684,7 @@ onBeforeUnmount(() => {
           <details v-if="inspector.powerful_findings.length" class="access-inspector-section access-powerful-section">
             <summary>Elevated access · {{ inspector.powerful_findings.length }}</summary>
             <div class="access-powerful-body">
+              <p>Explicit flags only — this is not a security score.</p>
               <div class="access-finding-scroll">
                 <div class="access-finding-list">
                   <article v-for="finding in inspector.powerful_findings" :key="`${finding.kind}-${finding.name}-${finding.source}`">
@@ -2815,6 +2787,7 @@ onBeforeUnmount(() => {
         <div class="modal-header">
           <div>
             <h2>Edit {{ editTargetUsername }}</h2>
+            <p>Review the exact Oracle changes before applying them.</p>
           </div>
           <button type="button" class="modal-close" aria-label="Close" :disabled="editExecuting" @click="closeEditUser">×</button>
         </div>
@@ -2982,6 +2955,9 @@ onBeforeUnmount(() => {
               <strong>Oracle username is locked</strong>
               <span>{{ provisionedDetailsState.username }}</span>
             </div>
+            <p>
+              Columns mapped to the generated username remain unchanged because they are the relationship back to DBA_USERS.
+            </p>
           </div>
 
           <div v-if="provisionedDetailsState.steps.length" class="provisioned-details-steps">
@@ -3220,6 +3196,7 @@ onBeforeUnmount(() => {
           <div class="deprovision-profile-selector">
             <div>
               <strong>Select what to deprovision</strong>
+              <p>Only provisioning profiles previously used by this Oracle account are shown. One profile is reversed at a time.</p>
             </div>
 
             <label
@@ -3251,6 +3228,7 @@ onBeforeUnmount(() => {
               />
               <span>
                 <strong>Oracle account only</strong>
+                <small>Skip application provisioning tables and LDAP. Drop only the Oracle schema/user.</small>
               </span>
             </label>
 
@@ -3539,6 +3517,7 @@ onBeforeUnmount(() => {
                 {{ profile.name }}{{ profile.ready ? '' : ' · Needs attention' }}
               </option>
             </select>
+            <small>Only profiles enabled for this parent Oracle database appear here.</small>
           </label>
 
           <div v-if="selectedProvisioningProfile && !selectedProvisioningProfile.ready" class="utility-warning oracle-create-warning">
@@ -3589,6 +3568,7 @@ onBeforeUnmount(() => {
           <section v-if="reference" class="oracle-role-review access-role-selection">
             <div>
               <h3>Reference roles</h3>
+              <p>Select the roles to copy before moving to Preview. ADMIN OPTION is intentionally not copied.</p>
             </div>
             <div v-if="reference.roles.length === 0" class="empty-state">Reference user has no role grants.</div>
             <template v-else>
@@ -3622,6 +3602,7 @@ onBeforeUnmount(() => {
 
           <section v-if="reference?.system_privileges.length" class="oracle-system-privileges access-system-privileges">
             <h3>Direct system privileges — review only</h3>
+            <p>Visible for comparison only; DBAChum will not grant these automatically.</p>
             <div class="oracle-privilege-list">
               <span v-for="privilege in reference.system_privileges" :key="privilege.name">
                 {{ privilege.name }}<template v-if="privilege.admin_option"> · ADMIN OPTION</template>
@@ -3673,6 +3654,7 @@ onBeforeUnmount(() => {
             <section class="oracle-role-review">
             <div>
               <h3>Roles to grant</h3>
+              <p>The role selection was made in Access. Go Back if it needs to change.</p>
             </div>
             <div v-if="selectedRoles.length === 0" class="empty-state">No reference roles selected.</div>
             <div v-else class="oracle-privilege-list">
@@ -3740,7 +3722,7 @@ onBeforeUnmount(() => {
               <section class="preview-section">
               <h3>LDAP</h3>
               <p>
-                {{ provisioningPreview.ldap.profile_name }} · LDIF validated as
+                {{ provisioningPreview.ldap.profile_name }} · directory entry will be added automatically · LDIF validated as
                 <strong>{{ provisioningPreview.ldap.filename }}</strong>
               </p>
               </section>

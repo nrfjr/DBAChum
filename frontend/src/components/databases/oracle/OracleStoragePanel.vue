@@ -324,7 +324,7 @@ onMounted(() => {
           </div>
         </div>
 
-        <div class="utility-summary">
+        <div class="tablespace-detailed-summary">
           <div><span>Used</span><strong>{{ formatBytes(selectedTablespace.used_bytes) }}</strong></div>
           <div><span>Allocated</span><strong>{{ formatBytes(selectedAllocatedBytes || selectedTablespace.capacity_bytes) }}</strong></div>
           <div><span>Hard max</span><strong>{{ formatBytes(selectedHardMaxBytes || selectedTablespace.capacity_bytes) }}</strong></div>
@@ -335,7 +335,7 @@ onMounted(() => {
         <section class="oracle-tablespace-trend">
           <div class="utility-toolbar">
             <div>
-              <h4>Growth trend</h4>
+              <h4>Tablespace growth</h4>
             </div>
             <select v-model.number="trendDays" aria-label="Tablespace growth history range">
               <option :value="30">30 days</option>

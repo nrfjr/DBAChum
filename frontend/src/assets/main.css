@@ -1758,6 +1758,49 @@ button {
   font-size: 1.15rem;
 }
 
+.tablespace-detailed-summary {
+  display: grid;
+  grid-template-columns:
+    repeat(auto-fit, minmax(130px, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 1.25rem;
+}
+
+.tablespace-detailed-summary > div,
+.tablespace-detailed-summary > button {
+  display: grid;
+  gap: 0.35rem;
+  padding: 1rem;
+  border: 1px solid
+    color-mix(
+      in srgb,
+      currentColor 15%,
+      transparent
+    );
+  border-radius: 0.8rem;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+}
+
+.tablespace-detailed-summary > button {
+  cursor: pointer;
+}
+
+.tablespace-detailed-summary > button.active {
+  border-color: currentColor;
+}
+
+.tablespace-detailed-summary span {
+  opacity: 0.7;
+  font-size: 0.8rem;
+}
+
+.tablespace-detailed-summary strong {
+  font-size: 1.15rem;
+}
+
+
 .utility-section {
   margin-bottom: 1.25rem;
 }
@@ -1840,6 +1883,11 @@ button {
 
 .database-workspace .utility-summary {
   grid-template-columns:
+    repeat(4, minmax(0, 1fr));
+}
+
+.database-workspace .tablespace-detailed-summary {
+  grid-template-columns:
     repeat(5, minmax(0, 1fr));
 }
 
@@ -1852,6 +1900,19 @@ button {
 
 @media (max-width: 550px) {
   .database-workspace .utility-summary {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 900px) {
+  .database-workspace .tablespace-detailed-summary  {
+    grid-template-columns:
+      repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 550px) {
+  .database-workspace .tablespace-detailed-summary  {
     grid-template-columns: 1fr;
   }
 }
