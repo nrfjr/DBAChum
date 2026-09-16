@@ -32,6 +32,10 @@ class MonitoringSettingsUpdate(BaseModel):
         return self
 
 
+class SecuritySettingsUpdate(BaseModel):
+    session_idle_timeout_minutes: int = Field(default=30, ge=5, le=1440)
+
+
 class DataSettingsUpdate(BaseModel):
     analytics_retention_days: int = Field(default=730, ge=30, le=3650)
     action_audit_retention_days: int = Field(default=365, ge=30, le=3650)

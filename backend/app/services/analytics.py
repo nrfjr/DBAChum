@@ -64,6 +64,27 @@ def _storage_from_sample(sample: dict) -> dict[str, Any]:
             "sga_bytes": int(memory.get("sga_bytes") or 0) or None,
             "pga_allocated_bytes": int(memory.get("pga_allocated_bytes") or 0) or None,
             "pga_target_bytes": int(memory.get("pga_target_bytes") or 0) or None,
+            "tablespace_storage": [
+                {
+                    "name": item.get("name"),
+                    "contents": item.get("contents"),
+                    "used_bytes": int(item.get("used_bytes") or 0),
+                    "capacity_bytes": int(item.get("capacity_bytes") or 0),
+                    "allocated_bytes": (
+                        int(item.get("allocated_bytes"))
+                        if item.get("allocated_bytes") is not None
+                        else None
+                    ),
+                    "max_bytes": (
+                        int(item.get("max_bytes"))
+                        if item.get("max_bytes") is not None
+                        else None
+                    ),
+                    "used_percent": item.get("used_percent"),
+                }
+                for item in tablespaces
+                if item.get("name")
+            ],
         }
 
     if engine == "sqlserver":
@@ -367,6 +388,70 @@ async def get_database_analytics(database, *, engine: str | None = None, months:
         ],
         "items": items,
         "growth": _monthly_growth(history_docs, {key: value.get("name") for key, value in ids.items()}),
+    }
+
+
+async def get_oracle_tablespace_growth(
+    database,
+    connection_id: str,
+    *,
+    days: int = 90,
+) -> dict:
+    from app.services.database_connections import get_database_connection
+
+    connection = await get_database_connection(database, connection_id)
+    if connection.get("engine") != "oracle":
+        raise AppError(
+            "Tablespace growth is only available for Oracle database connections.",
+            code="ORACLE_TABLESPACE_GROWTH_REQUIRES_ORACLE",
+            status_code=400,
+        )
+
+    safe_days = max(7, min(int(days), 730))
+    from_at = _utcnow() - timedelta(days=safe_days)
+    docs = await database[ANALYTICS_DAILY_COLLECTION_NAME].find(
+        {
+            "target_type": "database",
+            "target_id": connection_id,
+            "collected_at": {"$gte": from_at},
+            "tablespace_storage": {"$exists": True},
+        },
+        {"_id": 0, "day": 1, "collected_at": 1, "tablespace_storage": 1},
+    ).sort("collected_at", 1).to_list(None)
+
+    series: dict[str, dict] = {}
+    for doc in docs:
+        collected_at = doc.get("collected_at")
+        for item in doc.get("tablespace_storage") or []:
+            name = str(item.get("name") or "").strip()
+            if not name:
+                continue
+            bucket = series.setdefault(
+                name,
+                {
+                    "name": name,
+                    "contents": item.get("contents"),
+                    "points": [],
+                },
+            )
+            bucket["points"].append(
+                {
+                    "day": doc.get("day"),
+                    "collected_at": collected_at,
+                    "used_bytes": item.get("used_bytes"),
+                    "capacity_bytes": item.get("capacity_bytes"),
+                    "allocated_bytes": item.get("allocated_bytes"),
+                    "max_bytes": item.get("max_bytes"),
+                    "used_percent": item.get("used_percent"),
+                }
+            )
+
+    return {
+        "connection_id": connection_id,
+        "connection_name": connection.get("name"),
+        "generated_at": _utcnow(),
+        "days": safe_days,
+        "series": sorted(series.values(), key=lambda item: item["name"]),
     }
 
 

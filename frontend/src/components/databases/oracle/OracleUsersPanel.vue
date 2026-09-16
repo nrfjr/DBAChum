@@ -28,6 +28,7 @@ import {
   type ProvisioningExecutionResult,
   type ProvisioningPreviewResult,
   type ProvisioningRunSummary,
+  type OracleUserDeprovisionProfileOption,
   type OracleUserDeprovisionPreview,
   type OracleUserDeprovisionResult,
   type OracleProvisionedDetails,
@@ -256,6 +257,9 @@ const retryShowPassword = ref(false)
 const deprovisionLoadingRunId = ref<string | null>(null)
 const deprovisionTargetUsername = ref<string | null>(null)
 const deprovisionError = ref<string | null>(null)
+const deprovisionProfileOptions = ref<OracleUserDeprovisionProfileOption[]>([])
+const deprovisionSelectedProfileId = ref('')
+const deprovisionAccountOnly = ref(false)
 const deprovisionPreview = ref<OracleUserDeprovisionPreview | null>(null)
 const deprovisionExecuting = ref(false)
 const deprovisionConfirmation = ref('')
@@ -985,19 +989,76 @@ function closeProvisionedDetails() {
   Object.keys(provisionedDetailsValues).forEach((key) => delete provisionedDetailsValues[key])
 }
 
-async function previewUserDeprovision(user: OracleDatabaseUser) {
+async function openUserDeprovision(user: OracleDatabaseUser) {
   deprovisionTargetUsername.value = user.username
   deprovisionPreview.value = null
   deprovisionError.value = null
   deprovisionResult.value = null
   deprovisionConfirmation.value = ''
   deprovisionRequestReference.value = ''
-  deprovisionLoadingRunId.value = `preview:${user.username}`
+  deprovisionProfileOptions.value = []
+  deprovisionSelectedProfileId.value = ''
+  deprovisionAccountOnly.value = false
+  deprovisionLoadingRunId.value = `profiles:${user.username}`
+
+  try {
+    const options = await provisioningStore.loadOracleUserDeprovisionProfiles(
+      props.connectionId,
+      user.username,
+    )
+    deprovisionProfileOptions.value = options
+    if (options.length === 1) {
+      deprovisionSelectedProfileId.value = options[0]?.profile_id ?? ''
+    }
+  } catch (error) {
+    deprovisionError.value = error instanceof Error
+      ? error.message
+      : 'Unable to load this account\'s provisioning history.'
+  } finally {
+    deprovisionLoadingRunId.value = null
+  }
+}
+
+function resetDeprovisionPreview() {
+  deprovisionPreview.value = null
+  deprovisionResult.value = null
+  deprovisionConfirmation.value = ''
+  deprovisionError.value = null
+}
+
+function selectDeprovisionProfile(profileId: string) {
+  deprovisionSelectedProfileId.value = profileId
+  deprovisionAccountOnly.value = false
+  resetDeprovisionPreview()
+}
+
+function selectAccountOnlyDeprovision() {
+  deprovisionSelectedProfileId.value = ''
+  deprovisionAccountOnly.value = true
+  resetDeprovisionPreview()
+}
+
+async function buildUserDeprovisionPreview() {
+  const username = deprovisionTargetUsername.value
+  if (!username) return
+  if (!deprovisionAccountOnly.value && !deprovisionSelectedProfileId.value) {
+    deprovisionError.value = 'Select one previously used provisioning profile or choose Oracle account only.'
+    return
+  }
+
+  deprovisionLoadingRunId.value = `preview:${username}`
+  deprovisionError.value = null
+  deprovisionPreview.value = null
+  deprovisionConfirmation.value = ''
 
   try {
     deprovisionPreview.value = await provisioningStore.previewOracleUserDeprovision(
       props.connectionId,
-      user.username,
+      username,
+      {
+        profileId: deprovisionAccountOnly.value ? null : deprovisionSelectedProfileId.value,
+        accountOnly: deprovisionAccountOnly.value,
+      },
     )
   } catch (error) {
     deprovisionError.value = error instanceof Error
@@ -1027,6 +1088,10 @@ async function executeUserDeprovision() {
       deprovisionPreview.value.username,
       deprovisionConfirmation.value.trim(),
       deprovisionRequestReference.value.trim() || null,
+      {
+        profileId: deprovisionPreview.value.selected_profile_id,
+        accountOnly: deprovisionPreview.value.account_only,
+      },
     )
     deprovisionResult.value = result
 
@@ -1036,12 +1101,23 @@ async function executeUserDeprovision() {
     }
 
     if (result.status === 'succeeded') {
+      const executedPreview = deprovisionPreview.value
       closeDeprovisionPreview()
-      showToast({ title: 'Oracle user deprovisioned', message: result.username, tone: 'success' })
+      showToast({
+        title: executedPreview.account_only || executedPreview.remaining_profile_count === 0
+          ? 'Oracle user deprovisioned'
+          : 'Provisioning profile deprovisioned',
+        message: executedPreview.selected_profile_name ?? result.username,
+        tone: 'success',
+      })
     } else {
       deprovisionPreview.value = await provisioningStore.previewOracleUserDeprovision(
         props.connectionId,
         result.username,
+        {
+          profileId: deprovisionPreview.value.selected_profile_id,
+          accountOnly: deprovisionPreview.value.account_only,
+        },
       )
       deprovisionConfirmation.value = ''
       showToast({ title: 'Deprovisioning completed with warnings', message: result.error ?? result.status, tone: 'warning' })
@@ -1059,6 +1135,9 @@ function closeDeprovisionPreview() {
   deprovisionTargetUsername.value = null
   deprovisionError.value = null
   deprovisionPreview.value = null
+  deprovisionProfileOptions.value = []
+  deprovisionSelectedProfileId.value = ''
+  deprovisionAccountOnly.value = false
   deprovisionConfirmation.value = ''
   deprovisionRequestReference.value = ''
   deprovisionResult.value = null
@@ -2151,7 +2230,7 @@ onBeforeUnmount(() => {
                         role="menuitem"
                         class="danger-menu-item"
                         :disabled="deprovisionTargetUsername === user.username && deprovisionLoadingRunId !== null"
-                        @click="previewUserDeprovision(user); closeActionMenu()"
+                        @click="openUserDeprovision(user); closeActionMenu()"
                       >
                         Deprovision
                       </button>
@@ -2328,7 +2407,6 @@ onBeforeUnmount(() => {
       <div v-if="retryPasswordRun" class="provisioning-retry-password">
         <div>
           <strong>Retry {{ retryPasswordRun.username }}</strong>
-          <p>Only the remaining step(s) need the original provisioning password. It will be used in memory for this retry and will not be persisted.</p>
         </div>
         <label>
           <span>Original provisioning password</span>
@@ -2610,7 +2688,6 @@ onBeforeUnmount(() => {
         <div class="modal-header">
           <div>
             <h2>Access inspector · {{ inspectorTargetUsername }}</h2>
-            <p>Read-only view of direct and inherited Oracle access. No grants are changed from this screen.</p>
           </div>
           <button type="button" class="modal-close" aria-label="Close" @click="closeAccessInspector">×</button>
         </div>
@@ -2636,7 +2713,6 @@ onBeforeUnmount(() => {
           <details v-if="inspector.powerful_findings.length" class="access-inspector-section access-powerful-section">
             <summary>Elevated access · {{ inspector.powerful_findings.length }}</summary>
             <div class="access-powerful-body">
-              <p>Explicit flags only — this is not a security score.</p>
               <div class="access-finding-scroll">
                 <div class="access-finding-list">
                   <article v-for="finding in inspector.powerful_findings" :key="`${finding.kind}-${finding.name}-${finding.source}`">
@@ -2739,7 +2815,6 @@ onBeforeUnmount(() => {
         <div class="modal-header">
           <div>
             <h2>Edit {{ editTargetUsername }}</h2>
-            <p>Review the exact Oracle changes before applying them.</p>
           </div>
           <button type="button" class="modal-close" aria-label="Close" :disabled="editExecuting" @click="closeEditUser">×</button>
         </div>
@@ -2907,9 +2982,6 @@ onBeforeUnmount(() => {
               <strong>Oracle username is locked</strong>
               <span>{{ provisionedDetailsState.username }}</span>
             </div>
-            <p>
-              Columns mapped to the generated username remain unchanged because they are the relationship back to DBA_USERS.
-            </p>
           </div>
 
           <div v-if="provisionedDetailsState.steps.length" class="provisioned-details-steps">
@@ -3141,12 +3213,65 @@ onBeforeUnmount(() => {
         </div>
 
         <div v-if="deprovisionLoadingRunId" class="empty-state">
-          Building live deprovision preview...
+          {{ deprovisionLoadingRunId.startsWith('profiles:') ? 'Loading provisioning history...' : 'Building live deprovision preview...' }}
         </div>
 
-        <div v-else-if="deprovisionError" class="utility-warning oracle-create-warning">
-          {{ deprovisionError }}
-        </div>
+        <template v-else>
+          <div class="deprovision-profile-selector">
+            <div>
+              <strong>Select what to deprovision</strong>
+            </div>
+
+            <label
+              v-for="profile in deprovisionProfileOptions"
+              :key="profile.profile_id"
+              class="deprovision-profile-option"
+            >
+              <input
+                type="radio"
+                name="deprovision-profile"
+                :value="profile.profile_id"
+                :checked="!deprovisionAccountOnly && deprovisionSelectedProfileId === profile.profile_id"
+                :disabled="deprovisionExecuting"
+                @change="selectDeprovisionProfile(profile.profile_id)"
+              />
+              <span>
+                <strong>{{ profile.profile_name }}</strong>
+                <small>Used {{ profile.run_count }} time{{ profile.run_count === 1 ? '' : 's' }}<template v-if="profile.last_used_at"> · last {{ formatDate(profile.last_used_at) }}</template></small>
+              </span>
+            </label>
+
+            <label class="deprovision-profile-option deprovision-profile-option--account">
+              <input
+                type="radio"
+                name="deprovision-profile"
+                :checked="deprovisionAccountOnly"
+                :disabled="deprovisionExecuting"
+                @change="selectAccountOnlyDeprovision"
+              />
+              <span>
+                <strong>Oracle account only</strong>
+              </span>
+            </label>
+
+            <div v-if="deprovisionProfileOptions.length === 0" class="utility-warning">
+              No active DBAChum provisioning profile history was found for this account. Oracle account only is still available.
+            </div>
+
+            <button
+              type="button"
+              class="secondary-button"
+              :disabled="deprovisionExecuting || (!deprovisionAccountOnly && !deprovisionSelectedProfileId)"
+              @click="buildUserDeprovisionPreview"
+            >
+              Build preview
+            </button>
+          </div>
+
+          <div v-if="deprovisionError" class="utility-warning oracle-create-warning">
+            {{ deprovisionError }}
+          </div>
+        </template>
 
         <template v-if="deprovisionPreview">
           <div v-if="deprovisionResult" class="preview-callout provisioning-retry-result">
@@ -3263,7 +3388,7 @@ onBeforeUnmount(() => {
                 :disabled="!deprovisionConfirmationMatches || deprovisionExecuting"
                 @click="executeUserDeprovision"
               >
-                {{ deprovisionExecuting ? 'Deprovisioning...' : 'Deprovision schema' }}
+                {{ deprovisionExecuting ? 'Deprovisioning...' : deprovisionPreview.account_only || deprovisionPreview.remaining_profile_count === 0 ? 'Deprovision schema' : 'Deprovision selected profile' }}
               </button>
               <button
                 type="button"
@@ -3414,7 +3539,6 @@ onBeforeUnmount(() => {
                 {{ profile.name }}{{ profile.ready ? '' : ' · Needs attention' }}
               </option>
             </select>
-            <small>Only profiles enabled for this parent Oracle database appear here.</small>
           </label>
 
           <div v-if="selectedProvisioningProfile && !selectedProvisioningProfile.ready" class="utility-warning oracle-create-warning">
@@ -3465,7 +3589,6 @@ onBeforeUnmount(() => {
           <section v-if="reference" class="oracle-role-review access-role-selection">
             <div>
               <h3>Reference roles</h3>
-              <p>Select the roles to copy before moving to Preview. ADMIN OPTION is intentionally not copied.</p>
             </div>
             <div v-if="reference.roles.length === 0" class="empty-state">Reference user has no role grants.</div>
             <template v-else>
@@ -3499,7 +3622,6 @@ onBeforeUnmount(() => {
 
           <section v-if="reference?.system_privileges.length" class="oracle-system-privileges access-system-privileges">
             <h3>Direct system privileges — review only</h3>
-            <p>Visible for comparison only; DBAChum will not grant these automatically.</p>
             <div class="oracle-privilege-list">
               <span v-for="privilege in reference.system_privileges" :key="privilege.name">
                 {{ privilege.name }}<template v-if="privilege.admin_option"> · ADMIN OPTION</template>
@@ -3551,7 +3673,6 @@ onBeforeUnmount(() => {
             <section class="oracle-role-review">
             <div>
               <h3>Roles to grant</h3>
-              <p>The role selection was made in Access. Go Back if it needs to change.</p>
             </div>
             <div v-if="selectedRoles.length === 0" class="empty-state">No reference roles selected.</div>
             <div v-else class="oracle-privilege-list">
@@ -3619,7 +3740,7 @@ onBeforeUnmount(() => {
               <section class="preview-section">
               <h3>LDAP</h3>
               <p>
-                {{ provisioningPreview.ldap.profile_name }} · directory entry will be added automatically · LDIF validated as
+                {{ provisioningPreview.ldap.profile_name }} · LDIF validated as
                 <strong>{{ provisioningPreview.ldap.filename }}</strong>
               </p>
               </section>

@@ -78,7 +78,6 @@ onMounted(() => {
     <div class="utility-toolbar">
       <div>
         <h2>Operational health</h2>
-        <p>Database state, transaction log, workload, tempdb, and SQL Server Agent.</p>
       </div>
 
       <button
@@ -173,7 +172,6 @@ onMounted(() => {
         <div class="sqlserver-health-section-header">
           <div>
             <h3>SQL Server Agent jobs · instance</h3>
-            <p>Latest job outcome visible to the DBAChum login. Run timestamps are SQL Server local time.</p>
           </div>
         </div>
 

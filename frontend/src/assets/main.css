@@ -1840,7 +1840,7 @@ button {
 
 .database-workspace .utility-summary {
   grid-template-columns:
-    repeat(4, minmax(0, 1fr));
+    repeat(5, minmax(0, 1fr));
 }
 
 @media (max-width: 900px) {
@@ -7696,4 +7696,169 @@ button {
   align-items: center;
   justify-content: center;
   gap: 0.45rem;
+}
+/* deprovision profile selection */
+.deprovision-profile-selector {
+  display: grid;
+  gap: .7rem;
+  margin-bottom: 1rem;
+  padding: .9rem;
+  border: 1px solid var(--border);
+  border-radius: .75rem;
+  background: var(--surface-muted);
+}
+
+.deprovision-profile-selector > div:first-child p {
+  margin: .2rem 0 0;
+  color: var(--text-muted);
+  font-size: .82rem;
+}
+
+.deprovision-profile-option {
+  display: flex;
+  align-items: flex-start;
+  gap: .65rem;
+  padding: .7rem .8rem;
+  border: 1px solid var(--border);
+  border-radius: .65rem;
+  background: var(--surface);
+  cursor: pointer;
+}
+
+.deprovision-profile-option input {
+  margin-top: .2rem;
+}
+
+.deprovision-profile-option > span {
+  display: grid;
+  gap: .18rem;
+}
+
+.deprovision-profile-option small {
+  color: var(--text-muted);
+}
+
+.deprovision-profile-option--account {
+  border-style: dashed;
+}
+
+/* Records: multiple purpose-specific credentials */
+.records-credentials-section .utility-toolbar {
+  align-items: flex-start;
+}
+
+.record-credential-editor {
+  display: grid;
+  gap: .8rem;
+  padding: .9rem;
+  border: 1px solid var(--border);
+  border-radius: .75rem;
+  background: var(--surface-muted);
+}
+
+.record-credential-editor > .utility-toolbar {
+  margin: 0;
+}
+
+.record-credential-editor > .utility-toolbar > div {
+  display: grid;
+  gap: .12rem;
+}
+
+.record-credential-editor > .utility-toolbar small {
+  color: var(--accent);
+  font-size: .74rem;
+}
+
+.record-credential-flags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.record-credential-flags label {
+  display: inline-flex;
+  align-items: center;
+  gap: .4rem;
+}
+
+.record-credentials-card {
+  grid-column: 1 / -1;
+}
+
+.record-credential-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(290px, 1fr));
+  gap: .75rem;
+}
+
+.record-credential-card {
+  display: grid;
+  gap: .7rem;
+  padding: .85rem;
+  border: 1px solid var(--border);
+  border-radius: .7rem;
+  background: var(--surface-muted);
+}
+
+.record-credential-card--inactive {
+  opacity: .72;
+}
+
+.record-credential-card > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: .75rem;
+}
+
+.record-credential-card > header > div {
+  display: grid;
+  gap: .15rem;
+}
+
+.record-credential-card > header small {
+  color: var(--text-muted);
+}
+
+/* Oracle tablespace growth */
+.oracle-tablespace-trend {
+  display: grid;
+  gap: .75rem;
+  margin: .9rem 0;
+  padding: .9rem;
+  border: 1px solid var(--border);
+  border-radius: .75rem;
+  background: var(--surface-muted);
+}
+
+.oracle-tablespace-trend h4,
+.oracle-tablespace-trend p {
+  margin: 0;
+}
+
+.oracle-tablespace-trend p {
+  margin-top: .2rem;
+  color: var(--text-muted);
+  font-size: .8rem;
+}
+
+.oracle-tablespace-trend select {
+  min-width: 8rem;
+}
+
+.oracle-tablespace-trend-chart {
+  width: 100%;
+  height: 320px;
+}
+
+@media (max-width: 760px) {
+  .record-credential-list,
+  .records-form-grid--three {
+    grid-template-columns: 1fr;
+  }
+
+  .records-form-span-two {
+    grid-column: auto;
+  }
 }

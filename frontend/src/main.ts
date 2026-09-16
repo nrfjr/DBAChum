@@ -11,8 +11,11 @@ import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome'
 import { fas } from '@fortawesome/free-solid-svg-icons'
 
 import { useUiStore } from './stores/ui'
+import { installSessionFetchInterceptor } from './core/session'
 
 library.add(fas)
+
+installSessionFetchInterceptor()
 
 const app = createApp(App)
 const pinia = createPinia()

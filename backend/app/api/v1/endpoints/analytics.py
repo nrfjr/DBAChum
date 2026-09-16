@@ -7,6 +7,7 @@ from app.dependencies.permissions import require_permission
 from app.schemas.user import UserResponse
 from app.services.analytics import (
     get_database_analytics,
+    get_oracle_tablespace_growth,
     get_server_analytics,
     growth_import_preview,
     import_database_growth,
@@ -27,6 +28,20 @@ async def database_analytics(
         request.app.state.database,
         engine=engine,
         months=months,
+    )
+
+
+@router.get("/databases/{connection_id}/oracle/tablespace-growth")
+async def oracle_tablespace_growth(
+    connection_id: str,
+    request: Request,
+    days: int = Query(default=90, ge=7, le=730),
+    current_user: UserResponse = Depends(require_permission(Permission.MONITOR_READ)),
+):
+    return await get_oracle_tablespace_growth(
+        request.app.state.database,
+        connection_id,
+        days=days,
     )
 
 

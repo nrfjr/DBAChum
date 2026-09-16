@@ -317,9 +317,6 @@ onMounted(async () => {
           <section v-else class="email-provider-card">
             <div>
               <strong>Generic SMTP</strong>
-              <p>
-                Use a company relay, Microsoft/Google SMTP, or another SMTP service. External-recipient policy is controlled by that SMTP server.
-              </p>
             </div>
 
             <div class="connection-form-row email-smtp-host-row">

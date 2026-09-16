@@ -153,6 +153,13 @@ export function showToast(options: {
   tone?: FeedbackTone
   durationMs?: number
 }) {
+  if (
+    options.title !== 'Session expired'
+    && options.message === 'Session expired. Please log in again.'
+  ) {
+    return -1
+  }
+
   const item: ToastItem = {
     id: nextToastId++,
     title: options.title,

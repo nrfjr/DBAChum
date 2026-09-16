@@ -490,7 +490,6 @@ onUnmounted(() => {
               <div class="server-card-heading">
                 <div>
                   <h2>Filesystems</h2>
-                  <p>Highest utilization first.</p>
                 </div><span class="count-badge">{{ health.filesystems.length }}</span>
               </div>
               <ScrollableDataTable :empty="health.filesystems.length === 0"

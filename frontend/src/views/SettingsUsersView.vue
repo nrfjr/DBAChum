@@ -306,10 +306,6 @@ onMounted(() => {
             <div class="modal-header">
                 <div>
                     <h2>Add user</h2>
-
-                    <p>
-                        Create a local DBAChum account.
-                    </p>
                 </div>
 
                 <button type="button" class="modal-close" @click="

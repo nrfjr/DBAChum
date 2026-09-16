@@ -138,7 +138,6 @@ onMounted(() => {
         <button type="button" class="mysql-elevated-toggle" @click="elevatedOpen = !elevatedOpen">
           <span>
             <strong>Elevated Access</strong>
-            <small>Broad privileges and account patterns worth a DBA review.</small>
           </span>
           <span class="mysql-elevated-count">{{ security.elevated_findings.length }}</span>
           <span>{{ elevatedOpen ? '▾' : '▸' }}</span>

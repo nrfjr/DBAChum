@@ -13,6 +13,7 @@ from app.schemas.system_settings import (
     DataSettingsUpdate,
     GeneralSettingsUpdate,
     MonitoringSettingsUpdate,
+    SecuritySettingsUpdate,
 )
 
 
@@ -46,6 +47,9 @@ def _defaults() -> dict[str, Any]:
             "concurrency": settings.metrics_collector_concurrency,
             "stale_threshold_seconds": settings.alert_collector_stale_seconds,
         },
+        "security": {
+            "session_idle_timeout_minutes": 30,
+        },
         "data": {
             "analytics_retention_days": 730,
             "action_audit_retention_days": 365,
@@ -59,7 +63,7 @@ def _merge_settings(document: dict | None) -> dict[str, Any]:
     merged = _defaults()
     if not document:
         return merged
-    for section in ("general", "monitoring", "data"):
+    for section in ("general", "monitoring", "security", "data"):
         values = document.get(section)
         if isinstance(values, dict):
             merged[section].update(values)
@@ -146,6 +150,23 @@ async def update_monitoring_settings(database, payload: MonitoringSettingsUpdate
     return await monitoring_settings_response(database)
 
 
+async def update_security_settings(database, payload: SecuritySettingsUpdate, *, username: str) -> dict:
+    values = payload.model_dump()
+    await database[APP_SETTINGS_COLLECTION].update_one(
+        {"_id": APP_SETTINGS_ID},
+        {
+            "$set": {
+                "security": values,
+                "updated_at": _utcnow(),
+                "updated_by": username,
+            },
+            "$setOnInsert": {"created_at": _utcnow()},
+        },
+        upsert=True,
+    )
+    return await security_settings_response(database)
+
+
 async def update_data_settings(database, payload: DataSettingsUpdate, *, username: str) -> dict:
     values = payload.model_dump()
     await database[APP_SETTINGS_COLLECTION].update_one(
@@ -228,6 +249,14 @@ async def data_settings_response(database) -> dict:
         "telemetry_retention_hours": settings.metrics_retention_hours,
         "collections": stats,
     }
+
+
+async def security_settings_response(database) -> dict:
+    return (await get_system_settings(database))["security"]
+
+
+async def runtime_security_settings(database) -> dict[str, Any]:
+    return (await get_system_settings(database))["security"]
 
 
 async def runtime_monitoring_settings(database) -> dict[str, Any]:

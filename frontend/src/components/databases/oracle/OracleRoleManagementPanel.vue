@@ -557,7 +557,7 @@ watch(
 
     <div v-if="showAction && detail" class="role-modal-backdrop" @click.self="closeRoleAction">
       <section class="role-modal" role="dialog" aria-modal="true" :aria-label="`${operationLabel(actionOperation)} for ${detail.name}`">
-        <header><div><h3>{{ operationLabel(actionOperation) }}</h3><p>{{ detail.name }} · changes are rebuilt and validated against live Oracle state before execution.</p></div><button type="button" @click="closeRoleAction">×</button></header>
+        <header><div><h3>{{ operationLabel(actionOperation) }}</h3><p>{{ detail.name }}</p></div><button type="button" @click="closeRoleAction">×</button></header>
 
         <label>Action<select v-model="actionOperation" :disabled="Boolean(actionPreview)" @change="resetActionFields">
           <option value="grant_to_user">Grant role to user</option>
@@ -605,7 +605,7 @@ watch(
 
     <div v-if="showDrop && detail" class="role-modal-backdrop" @click.self="closeDropRole">
       <section class="role-modal role-drop-modal" role="dialog" aria-modal="true" :aria-label="`Drop Oracle role ${detail.name}`">
-        <header><div><h3>Drop role · {{ detail.name }}</h3><p>This removes the role and all grants attached to it. Live impact is rebuilt before execution.</p></div><button type="button" @click="closeDropRole">×</button></header>
+        <header><div><h3>Drop role · {{ detail.name }}</h3></div><button type="button" @click="closeDropRole">×</button></header>
         <div v-if="dropLoading && !dropPreview" class="role-empty-state">Building live drop preview...</div>
         <div v-if="dropError" class="utility-warning">{{ dropError }}</div>
         <template v-if="dropPreview">

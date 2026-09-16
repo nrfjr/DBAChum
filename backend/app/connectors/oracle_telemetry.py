@@ -208,9 +208,42 @@ async def _collect_storage(db, warnings: list[str]) -> dict:
             "used_bytes": int(row[3] or 0),
             "capacity_bytes": int(row[4] or 0),
             "used_percent": float(row[5] or 0),
+            "allocated_bytes": None,
+            "max_bytes": None,
         }
         for row in tablespace_rows
     ]
+
+    file_capacity_rows = await _fetchall_optional(
+        db,
+        """
+        SELECT tablespace_name,
+               SUM(bytes) AS allocated_bytes,
+               SUM(CASE
+                     WHEN autoextensible = 'YES' AND NVL(maxbytes, 0) > bytes THEN maxbytes
+                     ELSE bytes
+                   END) AS max_bytes
+        FROM (
+            SELECT tablespace_name, bytes, autoextensible, maxbytes FROM dba_data_files
+            UNION ALL
+            SELECT tablespace_name, bytes, autoextensible, maxbytes FROM dba_temp_files
+        )
+        GROUP BY tablespace_name
+        """,
+        warnings,
+        "Tablespace datafile capacity telemetry",
+    )
+    file_capacity = {
+        str(row[0]): {
+            "allocated_bytes": int(row[1] or 0),
+            "max_bytes": int(row[2] or 0),
+        }
+        for row in file_capacity_rows
+    }
+    for item in tablespaces:
+        capacity = file_capacity.get(str(item["name"]))
+        if capacity:
+            item.update(capacity)
 
     fra_row = await _fetchone_optional(
         db,

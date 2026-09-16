@@ -58,6 +58,7 @@ from app.schemas.provisioning import (
     ProvisioningRunDetail,
     ProvisioningRunSummary,
     ProvisioningDeprovisionPreviewResponse,
+    OracleUserDeprovisionProfileOption,
     OracleUserDeprovisionPreviewResponse,
     OracleUserDeprovisionRequest,
     OracleUserDeprovisionResponse,
@@ -123,6 +124,7 @@ from app.services.provisioning_execution import execute_provisioning_profile
 from app.services.deprovisioning import (
     build_oracle_user_deprovision_preview,
     execute_oracle_user_deprovision,
+    list_oracle_user_deprovision_profiles,
 )
 from app.services.provisioned_details import (
     load_oracle_user_provisioned_details,
@@ -997,6 +999,25 @@ async def edit_oracle_user_provisioned_details(
 
 
 @router.get(
+    "/{connection_id}/oracle/users/{username}/deprovision-profiles",
+    response_model=list[OracleUserDeprovisionProfileOption],
+)
+async def get_oracle_user_deprovision_profiles(
+    connection_id: str,
+    username: str,
+    request: Request,
+    current_user: UserResponse = Depends(
+        require_permission(Permission.DATABASE_INSPECT)
+    ),
+):
+    return await list_oracle_user_deprovision_profiles(
+        request.app.state.database,
+        connection_id,
+        username,
+    )
+
+
+@router.get(
     "/{connection_id}/oracle/users/{username}/deprovision-preview",
     response_model=OracleUserDeprovisionPreviewResponse,
 )
@@ -1004,6 +1025,8 @@ async def preview_oracle_user_deprovision(
     connection_id: str,
     username: str,
     request: Request,
+    profile_id: str | None = Query(default=None, max_length=64),
+    account_only: bool = Query(default=False),
     current_user: UserResponse = Depends(
         require_permission(Permission.DATABASE_INSPECT)
     ),
@@ -1012,6 +1035,8 @@ async def preview_oracle_user_deprovision(
         request.app.state.database,
         connection_id,
         username,
+        profile_id=profile_id,
+        account_only=account_only,
     )
 
 

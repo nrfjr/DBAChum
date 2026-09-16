@@ -15,6 +15,8 @@ import {
   useRecordsStore,
   type DbaRecord,
   type DbaRecordInput,
+  type RecordCredentialInput,
+  type RecordCredentialType,
   type RecordStatus,
   type RecordType,
 } from '@/stores/records'
@@ -59,6 +61,45 @@ interface RecordForm {
   custom_fields: string
   connection_id: string
   server_id: string
+  credentials: CredentialForm[]
+}
+
+interface CredentialForm {
+  key: string
+  id: string | null
+  label: string
+  credential_type: RecordCredentialType
+  username: string
+  password: string
+  has_password: boolean
+  clear_password: boolean
+  domain: string
+  port: number | null
+  target: string
+  role: string
+  notes: string
+  preferred: boolean
+  active: boolean
+}
+
+function emptyCredential(): CredentialForm {
+  return {
+    key: `new-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    id: null,
+    label: '',
+    credential_type: 'other',
+    username: '',
+    password: '',
+    has_password: false,
+    clear_password: false,
+    domain: '',
+    port: null,
+    target: '',
+    role: '',
+    notes: '',
+    preferred: false,
+    active: true,
+  }
 }
 
 function emptyForm(): RecordForm {
@@ -82,6 +123,7 @@ function emptyForm(): RecordForm {
     custom_fields: '',
     connection_id: '',
     server_id: '',
+    credentials: [],
   }
 }
 
@@ -104,6 +146,33 @@ const statusOptions: Array<{ value: RecordStatus; label: string }> = [
   { value: 'retired', label: 'Retired' },
   { value: 'unknown', label: 'Unknown' },
 ]
+
+const credentialTypeOptions: Array<{ value: RecordCredentialType; label: string }> = [
+  { value: 'windows_rdp', label: 'Windows / RDP' },
+  { value: 'ssh', label: 'SSH' },
+  { value: 'vnc', label: 'VNC' },
+  { value: 'oracle', label: 'Oracle' },
+  { value: 'sqlserver', label: 'SQL Server' },
+  { value: 'mysql', label: 'MySQL / MariaDB' },
+  { value: 'goldengate', label: 'GoldenGate' },
+  { value: 'application', label: 'Application' },
+  { value: 'service_account', label: 'Service account' },
+  { value: 'other', label: 'Other' },
+]
+
+function addCredential() {
+  form.credentials.push(emptyCredential())
+}
+
+function removeCredential(index: number) {
+  form.credentials.splice(index, 1)
+}
+
+function setPreferredCredential(index: number) {
+  form.credentials.forEach((credential, credentialIndex) => {
+    credential.preferred = credentialIndex === index
+  })
+}
 
 function typeLabel(type: RecordType) {
   return recordTypeOptions.find((item) => item.value === type)?.label ?? type
@@ -154,6 +223,15 @@ const filteredRecords = computed(() => {
       record.notes,
       record.connection_name,
       record.server_name,
+      ...record.credentials.flatMap((credential) => [
+        credential.label,
+        credential.credential_type,
+        credential.username,
+        credential.domain,
+        credential.target,
+        credential.role,
+        credential.notes,
+      ]),
       ...record.tags,
       ...record.custom_fields.flatMap((item) => [item.key, item.value]),
     ]
@@ -219,6 +297,23 @@ function editRecord(record: DbaRecord) {
     custom_fields: customFieldsToText(record),
     connection_id: record.connection_id ?? '',
     server_id: record.server_id ?? '',
+    credentials: record.credentials.map((credential) => ({
+      key: credential.id,
+      id: credential.id,
+      label: credential.label,
+      credential_type: credential.credential_type,
+      username: credential.username ?? '',
+      password: '',
+      has_password: credential.has_password,
+      clear_password: false,
+      domain: credential.domain ?? '',
+      port: credential.port,
+      target: credential.target ?? '',
+      role: credential.role ?? '',
+      notes: credential.notes ?? '',
+      preferred: credential.preferred,
+      active: credential.active,
+    })),
   })
   formOpen.value = true
 }
@@ -264,6 +359,21 @@ function buildPayload(): DbaRecordInput {
     environment: form.environment.trim() || null,
     version: form.version.trim() || null,
     username: form.username.trim() || null,
+    credentials: form.credentials.map((credential): RecordCredentialInput => ({
+      id: credential.id,
+      label: credential.label.trim(),
+      credential_type: credential.credential_type,
+      username: credential.username.trim() || null,
+      ...(credential.password ? { password: credential.password } : {}),
+      clear_password: credential.clear_password,
+      domain: credential.domain.trim() || null,
+      port: credential.port ? Number(credential.port) : null,
+      target: credential.target.trim() || null,
+      role: credential.role.trim() || null,
+      notes: credential.notes.trim() || null,
+      preferred: credential.preferred,
+      active: credential.active,
+    })),
     application: form.application.trim() || null,
     owner: form.owner.trim() || null,
     url: form.url.trim() || null,
@@ -721,7 +831,7 @@ onMounted(async () => {
 
         <div class="records-form-section">
           <div>
-            <h3>Lookup credential (Optional)</h3>
+            <h3>Simple credential (Optional)</h3>
           </div>
           <div class="records-form-grid">
             <label>
@@ -733,6 +843,89 @@ onMounted(async () => {
               <input v-model="form.password" type="password" maxlength="512" autocomplete="new-password" />
             </label>
           </div>
+        </div>
+
+        <div class="records-form-section records-credentials-section">
+          <div class="utility-toolbar">
+            <div>
+              <h3>Credentials</h3>
+            </div>
+            <button type="button" class="secondary-button" @click="addCredential">Add credential</button>
+          </div>
+
+          <div v-if="form.credentials.length === 0" class="empty-state">
+            No typed credentials added.
+          </div>
+
+          <article
+            v-for="(credential, index) in form.credentials"
+            :key="credential.key"
+            class="record-credential-editor"
+          >
+            <div class="utility-toolbar">
+              <div>
+                <strong>{{ credential.label || `Credential ${index + 1}` }}</strong>
+                <small v-if="credential.preferred">Preferred</small>
+              </div>
+              <button type="button" class="danger-button compact-button" @click="removeCredential(index)">Remove</button>
+            </div>
+
+            <div class="records-form-grid records-form-grid--three">
+              <label>
+                <span>Label <span class="required-mark" aria-hidden="true">*</span></span>
+                <input v-model="credential.label" required maxlength="160" placeholder="VNC Admin / Oracle SYS / OGG Service Manager" />
+              </label>
+              <label>
+                <span>Type</span>
+                <select v-model="credential.credential_type">
+                  <option v-for="option in credentialTypeOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
+                </select>
+              </label>
+              <label>
+                <span>Username</span>
+                <input v-model="credential.username" maxlength="320" autocomplete="off" />
+              </label>
+              <label>
+                <span>Password <small v-if="credential.has_password">leave blank to keep</small></span>
+                <input v-model="credential.password" type="password" maxlength="512" autocomplete="new-password" />
+              </label>
+              <label>
+                <span>Domain</span>
+                <input v-model="credential.domain" maxlength="160" placeholder="DOMAIN" />
+              </label>
+              <label>
+                <span>Port</span>
+                <input v-model.number="credential.port" type="number" min="1" max="65535" placeholder="22 / 3389 / 5900 / 1521" />
+              </label>
+              <label class="records-form-span-two">
+                <span>Target / service / endpoint</span>
+                <input v-model="credential.target" maxlength="500" placeholder="ORCLPRD / Deployment sqlserver / VNC display / service URL" />
+              </label>
+              <label>
+                <span>Role</span>
+                <input v-model="credential.role" maxlength="160" placeholder="SYSDBA / Admin / Operator" />
+              </label>
+              <label class="records-form-span-two">
+                <span>Notes</span>
+                <textarea v-model="credential.notes" rows="2" maxlength="2000" placeholder="Purpose or operational notes" />
+              </label>
+            </div>
+
+            <div class="record-credential-flags">
+              <label>
+                <input type="checkbox" :checked="credential.preferred" @change="setPreferredCredential(index)" />
+                Preferred credential
+              </label>
+              <label>
+                <input v-model="credential.active" type="checkbox" />
+                Active
+              </label>
+              <label v-if="credential.has_password">
+                <input v-model="credential.clear_password" type="checkbox" />
+                Remove stored password
+              </label>
+            </div>
+          </article>
         </div>
 
         <div class="records-form-section">

@@ -31,6 +31,8 @@ const sectionTitle = computed(() => {
       return 'General'
     case 'settings-monitoring':
       return 'Monitoring'
+    case 'settings-security':
+      return 'Security'
     case 'settings-data':
       return 'Data'
     case 'settings-system-maintenance':
@@ -101,6 +103,11 @@ const groups = computed<SettingsNavGroup[]>(() => [
         label: 'Users & Access',
         to: '/settings/users',
         visible: canManageUsers.value,
+      },
+      {
+        label: 'Security',
+        to: '/settings/security',
+        visible: canManageSystem.value,
       },
       {
         label: 'Data',

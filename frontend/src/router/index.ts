@@ -14,6 +14,7 @@ import ServersView from '@/views/ServersView.vue'
 import SettingsAlertsEmailView from '@/views/SettingsAlertsEmailView.vue'
 import SettingsGeneralView from '@/views/SettingsGeneralView.vue'
 import SettingsMonitoringView from '@/views/SettingsMonitoringView.vue'
+import SettingsSecurityView from '@/views/SettingsSecurityView.vue'
 import SettingsDataView from '@/views/SettingsDataView.vue'
 import SettingsSystemMaintenanceView from '@/views/SettingsSystemMaintenanceView.vue'
 import SettingsConnectionsView from '@/views/SettingsConnectionsView.vue'
@@ -125,7 +126,7 @@ const router = createRouter({
       path: '/settings',
       component: SettingsView,
       meta: {
-        title: 'Settings',
+        title: '',
       },
       children: [
         {
@@ -142,6 +143,12 @@ const router = createRouter({
           path: 'monitoring',
           name: 'settings-monitoring',
           component: SettingsMonitoringView,
+          meta: { permission: 'system:manage' },
+        },
+        {
+          path: 'security',
+          name: 'settings-security',
+          component: SettingsSecurityView,
           meta: { permission: 'system:manage' },
         },
         {

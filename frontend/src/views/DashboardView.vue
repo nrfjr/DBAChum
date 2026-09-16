@@ -138,7 +138,6 @@ onMounted(() => {
         <div v-else class="empty-state empty-state--small">
           <div class="empty-state__icon">DB</div>
           <strong>No databases configured</strong>
-          <p>Add a database connection under Settings → Connections.</p>
         </div>
       </article>
 

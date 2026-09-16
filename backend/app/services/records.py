@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from uuid import uuid4
 
 from bson import ObjectId
 from cryptography.fernet import InvalidToken
@@ -6,8 +7,61 @@ from pymongo.errors import DuplicateKeyError
 
 from app.core.exceptions import AppError
 from app.core.security import decrypt_secret, encrypt_secret
-from app.schemas.record import RecordCreate, RecordResponse, RecordUpdate
+from app.schemas.record import RecordCreate, RecordCredentialResponse, RecordResponse, RecordUpdate
 
+
+
+def _credential_to_response(item: dict) -> RecordCredentialResponse:
+    return RecordCredentialResponse(
+        id=str(item.get("id") or ""),
+        label=item.get("label") or "Credential",
+        credential_type=item.get("credential_type") or "other",
+        username=item.get("username"),
+        domain=item.get("domain"),
+        port=item.get("port"),
+        target=item.get("target"),
+        role=item.get("role"),
+        notes=item.get("notes"),
+        preferred=bool(item.get("preferred", False)),
+        active=bool(item.get("active", True)),
+        has_password=bool(item.get("password_encrypted")),
+    )
+
+
+def _credential_documents(inputs: list, existing: list[dict] | None = None) -> list[dict]:
+    existing_by_id = {str(item.get("id")): item for item in (existing or []) if item.get("id")}
+    result: list[dict] = []
+    seen: set[str] = set()
+    preferred_seen = False
+
+    for value in inputs:
+        raw = value.model_dump(mode="json") if hasattr(value, "model_dump") else dict(value)
+        credential_id = str(raw.pop("id", None) or uuid4().hex)
+        if credential_id in seen:
+            raise AppError(
+                "Duplicate credential identifier is not allowed.",
+                code="RECORD_CREDENTIAL_DUPLICATE",
+                status_code=400,
+            )
+        seen.add(credential_id)
+        password = raw.pop("password", None)
+        clear_password = bool(raw.pop("clear_password", False))
+        item = {"id": credential_id, **raw}
+
+        prior = existing_by_id.get(credential_id)
+        if password:
+            item["password_encrypted"] = encrypt_secret(password)
+        elif not clear_password and prior and prior.get("password_encrypted"):
+            item["password_encrypted"] = prior["password_encrypted"]
+
+        if item.get("preferred") and item.get("active", True):
+            if preferred_seen:
+                item["preferred"] = False
+            else:
+                preferred_seen = True
+        result.append(item)
+
+    return result
 
 def _parse_object_id(value: str, *, field_name: str) -> ObjectId:
     try:
@@ -122,6 +176,7 @@ async def record_to_response(database, document: dict) -> RecordResponse:
         connection_id=connection_id,
         server_id=server_id,
         has_password=bool(document.get("password_encrypted")),
+        credentials=[_credential_to_response(item) for item in (document.get("credentials") or [])],
         connection_name=connection_name,
         server_name=server_name,
         created_by=document.get("created_by"),
@@ -167,6 +222,9 @@ async def create_record(
     now = datetime.now(timezone.utc)
     document = data.model_dump(mode="json")
     password = document.pop("password", None)
+    credential_inputs = data.credentials
+    document.pop("credentials", None)
+    document["credentials"] = _credential_documents(credential_inputs)
     document.update(
         {
             "identity_key": normalize_identity(data.name, data.environment),
@@ -210,6 +268,13 @@ async def update_record(
 
     document = data.model_dump(mode="json")
     password = document.pop("password", None)
+    credential_inputs = data.credentials
+    document.pop("credentials", None)
+    if credential_inputs is not None:
+        document["credentials"] = _credential_documents(
+            credential_inputs,
+            existing.get("credentials") or [],
+        )
     document.update(
         {
             "identity_key": normalize_identity(data.name, data.environment),
@@ -274,5 +339,38 @@ async def reveal_record_password(database, record_id: str) -> str:
         raise AppError(
             "The stored record password could not be decrypted with the current encryption key.",
             code="RECORD_PASSWORD_DECRYPT_FAILED",
+            status_code=500,
+        )
+
+
+async def reveal_record_credential_password(
+    database,
+    record_id: str,
+    credential_id: str,
+) -> str:
+    document = await get_record(database, record_id)
+    credential = next(
+        (item for item in (document.get("credentials") or []) if str(item.get("id")) == credential_id),
+        None,
+    )
+    if credential is None:
+        raise AppError(
+            "Credential was not found on this record.",
+            code="RECORD_CREDENTIAL_NOT_FOUND",
+            status_code=404,
+        )
+    encrypted = credential.get("password_encrypted")
+    if not encrypted:
+        raise AppError(
+            "This credential does not have a stored password.",
+            code="RECORD_CREDENTIAL_PASSWORD_NOT_SET",
+            status_code=404,
+        )
+    try:
+        return decrypt_secret(encrypted)
+    except (InvalidToken, ValueError):
+        raise AppError(
+            "The stored credential password could not be decrypted with the current encryption key.",
+            code="RECORD_CREDENTIAL_PASSWORD_DECRYPT_FAILED",
             status_code=500,
         )

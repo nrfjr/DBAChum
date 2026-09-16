@@ -343,7 +343,6 @@ async function downloadResultsXlsx() {
           <strong>Spreadsheet headers</strong>
           <p>Required: <code>employee_id</code>, <code>first_name</code>, <code>last_name</code></p>
           <p>Optional: <code>middle_name</code>, <code>password</code>, <code>reference_user</code></p>
-          <small>Supported: .xlsx and UTF-8 .csv · blank password = application generates one · reference user is optional.</small>
         </div>
 
         <div class="bulk-file-row">
@@ -464,7 +463,6 @@ async function downloadResultsXlsx() {
               <button type="button" @click="downloadResultsXlsx">XLSX</button>
             </div>
           </div>
-          <small>Passwords exist only in this open bulk session and are not added to DBAChum lifecycle/audit records.</small>
         </div>
         <ScrollableDataTable max-height="27rem">
           <template #header><tr><th>Row</th><th>Username</th><th>Initial password</th><th>Status</th><th>Run / audit</th><th>Error</th></tr></template><tr v-for="row in execution.rows" :key="row.row_number"><td>{{ row.row_number }}</td><td><strong>{{ row.username || '—' }}</strong></td><td><code>{{ showResultPasswords ? passwordForRow(row.row_number) : '••••••••' }}</code></td><td><span class="provisioning-status" :data-status="row.status">{{ row.status.toUpperCase() }}</span></td><td><small>{{ row.run_id || row.audit_id || '—' }}</small></td><td><small :class="{ 'field-error': row.error }">{{ row.error || '—' }}</small></td></tr>        </ScrollableDataTable>

@@ -95,11 +95,6 @@ function openTerminal(server: Server) {
     <div class="panel-header database-terminal-panel__header">
       <div>
         <h2>SSH terminal</h2>
-        <p>
-          Open an audited shell on a server linked to {{ connectionName }}.
-          DBAChum performs SSH authentication on the backend; stored credentials
-          are never sent to the browser.
-        </p>
       </div>
 
       <RouterLink

@@ -133,7 +133,6 @@ onMounted(() => {
 
   <div v-else-if="filteredServers.length === 0" class="database-empty-state">
     <h2>No server assets found</h2>
-    <p>Add or update server assets from Settings → Connections → Servers / SSH.</p>
   </div>
 
   <div v-else class="server-grid">

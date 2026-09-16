@@ -85,6 +85,31 @@ export interface ServerAnalyticsResponse {
   items: ServerAnalyticsItem[]
 }
 
+
+export interface OracleTablespaceGrowthPoint {
+  day: string
+  collected_at: string | null
+  used_bytes: number | null
+  capacity_bytes: number | null
+  allocated_bytes: number | null
+  max_bytes: number | null
+  used_percent: number | null
+}
+
+export interface OracleTablespaceGrowthSeries {
+  name: string
+  contents: string | null
+  points: OracleTablespaceGrowthPoint[]
+}
+
+export interface OracleTablespaceGrowthResponse {
+  connection_id: string
+  connection_name: string | null
+  generated_at: string
+  days: number
+  series: OracleTablespaceGrowthSeries[]
+}
+
 export interface GrowthImportPreview {
   filename: string
   headers: string[]
@@ -114,6 +139,7 @@ export const useAnalyticsStore = defineStore('analytics', {
   state: () => ({
     databases: null as DatabaseAnalyticsResponse | null,
     servers: null as ServerAnalyticsResponse | null,
+    tablespaceGrowth: {} as Record<string, OracleTablespaceGrowthResponse>,
     loading: false,
     error: null as string | null,
   }),
@@ -149,6 +175,15 @@ export const useAnalyticsStore = defineStore('analytics', {
       } finally {
         this.loading = false
       }
+    },
+
+    async loadOracleTablespaceGrowth(connectionId: string, days = 90) {
+      const params = new URLSearchParams({ days: String(days) })
+      const response = await request<OracleTablespaceGrowthResponse>(
+        `/analytics/databases/${connectionId}/oracle/tablespace-growth?${params}`,
+      )
+      this.tablespaceGrowth[connectionId] = response
+      return response
     },
 
     async previewGrowth(file: File) {

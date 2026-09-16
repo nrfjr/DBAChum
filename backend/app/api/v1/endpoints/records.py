@@ -4,6 +4,7 @@ from app.core.permissions import Permission
 from app.dependencies.permissions import require_permission
 from app.schemas.record import (
     RecordCreate,
+    RecordCredentialSecretResponse,
     RecordResponse,
     RecordSecretResponse,
     RecordUpdate,
@@ -14,6 +15,7 @@ from app.services.records import (
     delete_record,
     get_record_response,
     list_records,
+    reveal_record_credential_password,
     reveal_record_password,
     update_record,
 )
@@ -116,3 +118,23 @@ async def reveal_record_password_endpoint(
         record_id,
     )
     return RecordSecretResponse(password=password)
+
+
+@router.post(
+    "/{record_id}/credentials/{credential_id}/reveal-password",
+    response_model=RecordCredentialSecretResponse,
+)
+async def reveal_record_credential_password_endpoint(
+    record_id: str,
+    credential_id: str,
+    request: Request,
+    current_user: UserResponse = Depends(
+        require_permission(Permission.RECORD_MANAGE)
+    ),
+):
+    password = await reveal_record_credential_password(
+        request.app.state.database,
+        record_id,
+        credential_id,
+    )
+    return RecordCredentialSecretResponse(password=password)

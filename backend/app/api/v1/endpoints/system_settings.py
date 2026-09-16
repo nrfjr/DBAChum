@@ -7,6 +7,7 @@ from app.schemas.system_settings import (
     DataSettingsUpdate,
     GeneralSettingsUpdate,
     MonitoringSettingsUpdate,
+    SecuritySettingsUpdate,
 )
 from app.schemas.user import UserResponse
 from app.services.image_uploads import read_image_upload
@@ -17,11 +18,13 @@ from app.services.system_settings import (
     general_settings_response,
     maintenance_diagnostics,
     monitoring_settings_response,
+    security_settings_response,
     run_system_cleanup,
     save_branding_logo,
     update_data_settings,
     update_general_settings,
     update_monitoring_settings,
+    update_security_settings,
     verify_system_indexes,
 )
 
@@ -69,6 +72,27 @@ async def patch_monitoring_settings(
     current_user: UserResponse = Depends(require_permission(Permission.SYSTEM_MANAGE)),
 ):
     return await update_monitoring_settings(
+        request.app.state.database,
+        payload,
+        username=_username(current_user),
+    )
+
+
+@router.get("/security")
+async def get_security_settings(
+    request: Request,
+    current_user: UserResponse = Depends(require_permission(Permission.SYSTEM_MANAGE)),
+):
+    return await security_settings_response(request.app.state.database)
+
+
+@router.patch("/security")
+async def patch_security_settings(
+    payload: SecuritySettingsUpdate,
+    request: Request,
+    current_user: UserResponse = Depends(require_permission(Permission.SYSTEM_MANAGE)),
+):
+    return await update_security_settings(
         request.app.state.database,
         payload,
         username=_username(current_user),

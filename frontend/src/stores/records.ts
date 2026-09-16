@@ -17,6 +17,50 @@ export type RecordStatus =
   | 'retired'
   | 'unknown'
 
+
+export type RecordCredentialType =
+  | 'windows_rdp'
+  | 'ssh'
+  | 'vnc'
+  | 'oracle'
+  | 'sqlserver'
+  | 'mysql'
+  | 'goldengate'
+  | 'application'
+  | 'service_account'
+  | 'other'
+
+export interface RecordCredential {
+  id: string
+  label: string
+  credential_type: RecordCredentialType
+  username: string | null
+  domain: string | null
+  port: number | null
+  target: string | null
+  role: string | null
+  notes: string | null
+  preferred: boolean
+  active: boolean
+  has_password: boolean
+}
+
+export interface RecordCredentialInput {
+  id?: string | null
+  label: string
+  credential_type: RecordCredentialType
+  username: string | null
+  password?: string
+  clear_password?: boolean
+  domain: string | null
+  port: number | null
+  target: string | null
+  role: string | null
+  notes: string | null
+  preferred: boolean
+  active: boolean
+}
+
 export interface RecordCustomField {
   key: string
   value: string
@@ -45,6 +89,7 @@ export interface DbaRecord {
   server_id: string | null
   server_name: string | null
   has_password: boolean
+  credentials: RecordCredential[]
   created_by: string | null
   updated_by: string | null
   created_at: string
@@ -63,6 +108,7 @@ export interface DbaRecordInput {
   version: string | null
   username: string | null
   password?: string
+  credentials: RecordCredentialInput[]
   application: string | null
   owner: string | null
   url: string | null
@@ -178,6 +224,14 @@ export const useRecordsStore = defineStore('records', {
     async revealPassword(id: string) {
       const result = await apiRequest<{ password: string }>(
         `/records/${id}/reveal-password`,
+        { method: 'POST' },
+      )
+      return result.password
+    },
+
+    async revealCredentialPassword(recordId: string, credentialId: string) {
+      const result = await apiRequest<{ password: string }>(
+        `/records/${recordId}/credentials/${encodeURIComponent(credentialId)}/reveal-password`,
         { method: 'POST' },
       )
       return result.password

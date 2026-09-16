@@ -1,10 +1,14 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
+import VChart from 'vue-echarts'
+
+import '@/charts/echarts'
 
 import ScrollableDataTable from '@/components/common/ScrollableDataTable.vue'
 import FloatingActionMenu from '@/components/common/FloatingActionMenu.vue'
 import { hasPermission } from '@/core/permissions'
 import { useAuthStore } from '@/stores/auth'
+import { useAnalyticsStore } from '@/stores/analytics'
 import { useDatabaseOperationsStore } from '@/stores/databaseOperations'
 import { useOracleDbaStore, type OracleDatafile } from '@/stores/oracleDba'
 import { formDialog, showToast } from '@/ui/feedback'
@@ -13,6 +17,7 @@ const props = defineProps<{ connectionId: string }>()
 const oracleStore = useOracleDbaStore()
 const operations = useDatabaseOperationsStore()
 const authStore = useAuthStore()
+const analyticsStore = useAnalyticsStore()
 const storage = computed(() => oracleStore.storage[props.connectionId])
 const canOperate = computed(() => hasPermission(authStore.user, 'database:operate'))
 const selectedTablespaceName = ref<string | null>(null)
@@ -22,7 +27,25 @@ const selectedTablespace = computed(() =>
 const selectedDatafiles = computed(() =>
   (storage.value?.datafiles ?? []).filter((file) => file.tablespace_name === selectedTablespaceName.value),
 )
-
+const trendDays = ref(90)
+const trendLoading = ref(false)
+const trendError = ref<string | null>(null)
+const growthData = computed(() => analyticsStore.tablespaceGrowth[props.connectionId] ?? null)
+const selectedGrowthSeries = computed(() =>
+  growthData.value?.series.find((item) => item.name === selectedTablespaceName.value) ?? null,
+)
+const selectedAllocatedBytes = computed(() =>
+  selectedDatafiles.value.reduce((sum, file) => sum + Number(file.size_bytes || 0), 0),
+)
+const selectedHardMaxBytes = computed(() =>
+  selectedDatafiles.value.reduce((sum, file) => {
+    const size = Number(file.size_bytes || 0)
+    const maximum = file.autoextensible && file.max_bytes != null
+      ? Math.max(size, Number(file.max_bytes))
+      : size
+    return sum + maximum
+  }, 0),
+)
 
 function formatBytes(bytes: number | null) {
   if (bytes == null) return '—'
@@ -31,6 +54,69 @@ function formatBytes(bytes: number | null) {
   const index = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1)
   return `${(bytes / Math.pow(1024, index)).toFixed(1)} ${units[index]}`
 }
+
+function bytesToGb(value: number | null | undefined) {
+  return value == null ? null : Number((value / 1024 / 1024 / 1024).toFixed(3))
+}
+
+async function loadTablespaceTrend() {
+  trendLoading.value = true
+  trendError.value = null
+  try {
+    await analyticsStore.loadOracleTablespaceGrowth(props.connectionId, trendDays.value)
+  } catch (cause) {
+    trendError.value = cause instanceof Error ? cause.message : 'Unable to load tablespace growth history.'
+  } finally {
+    trendLoading.value = false
+  }
+}
+
+const tablespaceTrendOption = computed(() => {
+  const points = selectedGrowthSeries.value?.points ?? []
+  return {
+    animation: false,
+    tooltip: {
+      trigger: 'axis',
+      valueFormatter: (value: number) => `${Number(value).toFixed(2)} GB`,
+    },
+    legend: { data: ['Used', 'Allocated', 'Hard max'] },
+    grid: { left: 62, right: 28, top: 48, bottom: 48 },
+    xAxis: {
+      type: 'category',
+      boundaryGap: false,
+      data: points.map((point) => point.day),
+    },
+    yAxis: {
+      type: 'value',
+      name: 'GB',
+      min: 0,
+    },
+    series: [
+      {
+        name: 'Used',
+        type: 'line',
+        smooth: true,
+        symbol: 'circle',
+        data: points.map((point) => bytesToGb(point.used_bytes)),
+      },
+      {
+        name: 'Allocated',
+        type: 'line',
+        smooth: true,
+        symbol: 'none',
+        data: points.map((point) => bytesToGb(point.allocated_bytes ?? point.capacity_bytes)),
+      },
+      {
+        name: 'Hard max',
+        type: 'line',
+        smooth: true,
+        symbol: 'none',
+        lineStyle: { type: 'dashed' },
+        data: points.map((point) => bytesToGb(point.max_bytes)),
+      },
+    ],
+  }
+})
 
 async function resizeDatafile(file: OracleDatafile) {
   const currentMb = Math.round(file.size_bytes / 1024 / 1024)
@@ -161,6 +247,14 @@ function inspectTablespace(name: string) {
   selectedTablespaceName.value = selectedTablespaceName.value === name ? null : name
 }
 
+watch(selectedTablespaceName, (name) => {
+  if (name) void loadTablespaceTrend()
+})
+
+watch(trendDays, () => {
+  if (selectedTablespaceName.value) void loadTablespaceTrend()
+})
+
 onMounted(() => {
   void oracleStore.loadStorage(props.connectionId)
 })
@@ -215,7 +309,6 @@ onMounted(() => {
         <div class="utility-toolbar">
           <div>
             <h3>{{ selectedTablespace.name }} datafiles</h3>
-            <p>Only files belonging to the inspected tablespace are shown here.</p>
           </div>
           <div class="database-inline-actions">
             <button
@@ -233,10 +326,37 @@ onMounted(() => {
 
         <div class="utility-summary">
           <div><span>Used</span><strong>{{ formatBytes(selectedTablespace.used_bytes) }}</strong></div>
-          <div><span>Capacity</span><strong>{{ formatBytes(selectedTablespace.capacity_bytes) }}</strong></div>
+          <div><span>Allocated</span><strong>{{ formatBytes(selectedAllocatedBytes || selectedTablespace.capacity_bytes) }}</strong></div>
+          <div><span>Hard max</span><strong>{{ formatBytes(selectedHardMaxBytes || selectedTablespace.capacity_bytes) }}</strong></div>
           <div><span>Usage</span><strong>{{ selectedTablespace.used_percent }}%</strong></div>
           <div><span>Files</span><strong>{{ selectedDatafiles.length }}</strong></div>
         </div>
+
+        <section class="oracle-tablespace-trend">
+          <div class="utility-toolbar">
+            <div>
+              <h4>Growth trend</h4>
+            </div>
+            <select v-model.number="trendDays" aria-label="Tablespace growth history range">
+              <option :value="30">30 days</option>
+              <option :value="90">90 days</option>
+              <option :value="180">180 days</option>
+              <option :value="365">1 year</option>
+              <option :value="730">2 years</option>
+            </select>
+          </div>
+          <div v-if="trendLoading" class="empty-state">Loading tablespace growth history...</div>
+          <div v-else-if="trendError" class="utility-warning">{{ trendError }}</div>
+          <VChart
+            v-else-if="selectedGrowthSeries?.points.length"
+            class="oracle-tablespace-trend-chart"
+            :option="tablespaceTrendOption"
+            autoresize
+          />
+          <div v-else class="empty-state">
+            No daily growth history is available yet. The collector will populate this chart as new snapshots are recorded.
+          </div>
+        </section>
 
         <ScrollableDataTable
           v-if="storage.datafiles_available"

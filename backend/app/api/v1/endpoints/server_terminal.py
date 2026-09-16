@@ -20,7 +20,7 @@ async def server_terminal_websocket(
 
     if not session_token:
         await websocket.send_json(
-            {"type": "error", "code": "AUTH_REQUIRED", "message": "Authentication required."}
+            {"type": "error", "code": "AUTH_REQUIRED", "message": "Session expired. Please log in again."}
         )
         await websocket.close(code=4401)
         return
@@ -28,7 +28,7 @@ async def server_terminal_websocket(
     user = await get_user_from_session(database, session_token)
     if user is None or not user.get("is_active", True):
         await websocket.send_json(
-            {"type": "error", "code": "INVALID_SESSION", "message": "Session is invalid or expired."}
+            {"type": "error", "code": "INVALID_SESSION", "message": "Session expired. Please log in again."}
         )
         await websocket.close(code=4401)
         return

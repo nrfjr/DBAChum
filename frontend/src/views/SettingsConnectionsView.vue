@@ -252,7 +252,6 @@ onMounted(() => {
         >
           <strong>{{ card.count }}</strong>
           <span>{{ card.label }}</span>
-          <small>Manage →</small>
         </button>
       </div>
 

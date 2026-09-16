@@ -57,6 +57,10 @@ export interface MonitoringSettings {
   collector: Record<string, unknown>
 }
 
+export interface SecuritySettings {
+  session_idle_timeout_minutes: number
+}
+
 export interface DataCollectionStats {
   name: string
   count: number
@@ -117,6 +121,7 @@ export const useSystemSettingsStore = defineStore('systemSettings', {
     updateInstallLoading: false,
     updateInstallError: null as string | null,
     monitoring: null as MonitoringSettings | null,
+    security: null as SecuritySettings | null,
     data: null as DataSettings | null,
     maintenance: null as MaintenanceDiagnostics | null,
     loading: false,
@@ -207,6 +212,17 @@ export const useSystemSettingsStore = defineStore('systemSettings', {
         body: JSON.stringify(payload),
       })
       return this.monitoring
+    },
+    async loadSecurity() {
+      this.security = await request<SecuritySettings>('/settings/security')
+      return this.security
+    },
+    async saveSecurity(payload: SecuritySettings) {
+      this.security = await request<SecuritySettings>('/settings/security', {
+        method: 'PATCH',
+        body: JSON.stringify(payload),
+      })
+      return this.security
     },
     async loadData() {
       this.data = await request<DataSettings>('/settings/data')

@@ -23,6 +23,62 @@ class RecordStatus(str, Enum):
     UNKNOWN = "unknown"
 
 
+class RecordCredentialType(str, Enum):
+    WINDOWS_RDP = "windows_rdp"
+    SSH = "ssh"
+    VNC = "vnc"
+    ORACLE = "oracle"
+    SQLSERVER = "sqlserver"
+    MYSQL = "mysql"
+    GOLDENGATE = "goldengate"
+    APPLICATION = "application"
+    SERVICE_ACCOUNT = "service_account"
+    OTHER = "other"
+
+
+class RecordCredentialBase(BaseModel):
+    id: str | None = Field(default=None, max_length=64)
+    label: str = Field(min_length=1, max_length=160)
+    credential_type: RecordCredentialType = RecordCredentialType.OTHER
+    username: str | None = Field(default=None, max_length=320)
+    domain: str | None = Field(default=None, max_length=160)
+    port: int | None = Field(default=None, ge=1, le=65535)
+    target: str | None = Field(default=None, max_length=500)
+    role: str | None = Field(default=None, max_length=160)
+    notes: str | None = Field(default=None, max_length=2000)
+    preferred: bool = False
+    active: bool = True
+
+    @field_validator("id", "label", "username", "domain", "target", "role", "notes", mode="before")
+    @classmethod
+    def clean_credential_strings(cls, value):
+        if not isinstance(value, str):
+            return value
+        cleaned = value.strip()
+        return cleaned or None
+
+    @field_validator("label")
+    @classmethod
+    def require_credential_label(cls, value: str | None) -> str:
+        if not value:
+            raise ValueError("Credential label is required.")
+        return value
+
+
+class RecordCredentialInput(RecordCredentialBase):
+    password: str | None = Field(default=None, max_length=512)
+    clear_password: bool = False
+
+
+class RecordCredentialResponse(RecordCredentialBase):
+    id: str
+    has_password: bool = False
+
+
+class RecordCredentialSecretResponse(BaseModel):
+    password: str
+
+
 class RecordCustomField(BaseModel):
     key: str = Field(min_length=1, max_length=80)
     value: str = Field(default="", max_length=1000)
@@ -120,15 +176,18 @@ class RecordBase(BaseModel):
 
 class RecordCreate(RecordBase):
     password: str | None = Field(default=None, max_length=512)
+    credentials: list[RecordCredentialInput] = Field(default_factory=list, max_length=64)
 
 
 class RecordUpdate(RecordBase):
     password: str | None = Field(default=None, max_length=512)
+    credentials: list[RecordCredentialInput] | None = Field(default=None, max_length=64)
 
 
 class RecordResponse(RecordBase):
     id: str
     has_password: bool = False
+    credentials: list[RecordCredentialResponse] = Field(default_factory=list)
     connection_name: str | None = None
     server_name: str | None = None
     created_by: str | None = None

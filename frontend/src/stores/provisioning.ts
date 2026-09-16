@@ -225,8 +225,15 @@ export interface ProvisioningDeprovisionPreview {
   warnings: string[]
 }
 
+export interface OracleUserDeprovisionProfileOption {
+  profile_id: string
+  profile_name: string
+  last_used_at: string | null
+  run_count: number
+}
+
 export interface OracleUserDeprovisionPreviewItem {
-  component: 'account' | 'table' | 'ldap' | 'ldap' | 'history'
+  component: 'account' | 'table' | 'ldap' | 'history'
   label: string
   planned_action: string
   state: 'candidate' | 'blocked' | 'no_action' | 'already_absent'
@@ -251,6 +258,10 @@ export interface OracleUserDeprovisionPreview {
   protected_account: boolean
   owned_object_count: number
   drop_cascade: boolean
+  selected_profile_id: string | null
+  selected_profile_name: string | null
+  account_only: boolean
+  remaining_profile_count: number
   lifecycle_run_count: number
   linked_row_count: number
   linked_ldap_count: number
@@ -822,9 +833,23 @@ export const useProvisioningStore = defineStore('provisioning', {
       )
     },
 
-    async previewOracleUserDeprovision(connectionId: string, username: string) {
+    async loadOracleUserDeprovisionProfiles(connectionId: string, username: string) {
+      return apiRequest<OracleUserDeprovisionProfileOption[]>(
+        `/databases/${connectionId}/oracle/users/${encodeURIComponent(username)}/deprovision-profiles`,
+      )
+    },
+
+    async previewOracleUserDeprovision(
+      connectionId: string,
+      username: string,
+      options: { profileId?: string | null; accountOnly?: boolean } = {},
+    ) {
+      const params = new URLSearchParams()
+      if (options.profileId) params.set('profile_id', options.profileId)
+      if (options.accountOnly) params.set('account_only', 'true')
+      const query = params.toString()
       return apiRequest<OracleUserDeprovisionPreview>(
-        `/databases/${connectionId}/oracle/users/${encodeURIComponent(username)}/deprovision-preview`,
+        `/databases/${connectionId}/oracle/users/${encodeURIComponent(username)}/deprovision-preview${query ? `?${query}` : ''}`,
       )
     },
 
@@ -833,6 +858,7 @@ export const useProvisioningStore = defineStore('provisioning', {
       username: string,
       confirmation: string,
       requestReference: string | null = null,
+      options: { profileId?: string | null; accountOnly?: boolean } = {},
     ) {
       return apiRequest<OracleUserDeprovisionResult>(
         `/databases/${connectionId}/oracle/users/${encodeURIComponent(username)}/deprovision`,
@@ -841,6 +867,8 @@ export const useProvisioningStore = defineStore('provisioning', {
           body: JSON.stringify({
             confirmation,
             request_reference: requestReference,
+            profile_id: options.profileId ?? null,
+            account_only: Boolean(options.accountOnly),
           }),
         },
       )

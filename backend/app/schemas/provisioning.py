@@ -504,6 +504,13 @@ class ProvisioningDeprovisionPreviewResponse(BaseModel):
     warnings: list[str] = Field(default_factory=list)
 
 
+class OracleUserDeprovisionProfileOption(BaseModel):
+    profile_id: str
+    profile_name: str
+    last_used_at: datetime | None = None
+    run_count: int = 0
+
+
 class OracleUserDeprovisionPreviewItem(BaseModel):
     component: Literal["account", "table", "ldap", "history"]
     label: str
@@ -525,6 +532,10 @@ class OracleUserDeprovisionPreviewItem(BaseModel):
 class OracleUserDeprovisionPreviewResponse(BaseModel):
     username: str
     generated_at: datetime
+    selected_profile_id: str | None = None
+    selected_profile_name: str | None = None
+    account_only: bool = False
+    remaining_profile_count: int = 0
     account_exists: bool
     account_status: str | None = None
     protected_account: bool = False
@@ -544,6 +555,8 @@ class OracleUserDeprovisionPreviewResponse(BaseModel):
 class OracleUserDeprovisionRequest(BaseModel):
     confirmation: str = Field(min_length=1, max_length=30)
     request_reference: str | None = Field(default=None, max_length=100)
+    profile_id: str | None = Field(default=None, max_length=64)
+    account_only: bool = False
 
 
 class OracleUserDeprovisionExecutionItem(BaseModel):

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import deepcopy
 from datetime import datetime, timezone
 
 from app.connectors.oracle_provisioning import (
@@ -14,6 +15,7 @@ from app.core.oracle_accounts import is_oracle_system_account
 from app.schemas.database_action import DatabaseActionRisk, DatabaseActionStatus
 from app.schemas.provisioning import (
     OracleUserDeprovisionExecutionItem,
+    OracleUserDeprovisionProfileOption,
     OracleUserDeprovisionRequest,
     OracleUserDeprovisionResponse,
     OracleUserDeprovisionPreviewItem,
@@ -23,11 +25,7 @@ from app.schemas.user import UserResponse
 from app.services.database_actions import finish_database_action, start_database_action
 from app.services.database_connections import get_database_connection
 from app.services.ldap_directory import delete_ldap_entry, find_ldap_entries_for_username
-from app.services.provisioning import (
-    effective_match_columns,
-    get_ldap_profile_document,
-    list_provisioning_profiles_for_connection,
-)
+from app.services.provisioning import effective_match_columns, get_ldap_profile_document
 from app.services.provisioning_execution import _safe_error
 
 
@@ -35,26 +33,94 @@ def _is_protected_oracle_user(username: str) -> bool:
     return is_oracle_system_account(username)
 
 
-async def _lifecycle_context(database, parent_connection_id: str, username: str) -> tuple[int, dict]:
+def _active_run_query(parent_connection_id: str, username: str) -> dict:
+    return {
+        "parent_connection_id": parent_connection_id,
+        "username": username,
+        "status": {"$in": ["succeeded", "partial"]},
+        "$or": [
+            {"deprovisioned_at": {"$exists": False}},
+            {"deprovisioned_at": None},
+        ],
+    }
 
+
+async def _active_run_documents(database, parent_connection_id: str, username: str) -> list[dict]:
     cursor = (
-        database.provisioning_runs.find(
-            {
-                "parent_connection_id": parent_connection_id,
-                "username": username,
-            }
-        )
+        database.provisioning_runs.find(_active_run_query(parent_connection_id, username))
         .sort("started_at", -1)
     )
-    documents = await cursor.to_list(100)
-    if not documents:
-        return 0, {}
+    return await cursor.to_list(250)
 
-    latest = documents[0]
+
+async def list_oracle_user_deprovision_profiles(
+    database,
+    parent_connection_id: str,
+    username: str,
+) -> list[OracleUserDeprovisionProfileOption]:
+    username = normalize_oracle_identifier(username, field_name="Schema name")
+    parent_connection = await get_database_connection(database, parent_connection_id)
+    if parent_connection.get("engine") != "oracle":
+        raise AppError(
+            "Schema deprovisioning is only available for Oracle database connections.",
+            code="ORACLE_DEPROVISION_REQUIRES_ORACLE",
+            status_code=400,
+        )
+    documents = await _active_run_documents(database, parent_connection_id, username)
+
+    grouped: dict[str, dict] = {}
+    for document in documents:
+        profile_id = str(document.get("profile_id") or "").strip()
+        if not profile_id:
+            continue
+        current = grouped.get(profile_id)
+        if current is None:
+            grouped[profile_id] = {
+                "profile_id": profile_id,
+                "profile_name": str(document.get("profile_name") or profile_id),
+                "last_used_at": document.get("started_at"),
+                "run_count": 1,
+            }
+        else:
+            current["run_count"] += 1
+
+    return [OracleUserDeprovisionProfileOption(**value) for value in grouped.values()]
+
+
+async def _selected_lifecycle_context(
+    database,
+    parent_connection_id: str,
+    username: str,
+    profile_id: str,
+) -> tuple[int, dict, dict, dict]:
+    documents = await _active_run_documents(database, parent_connection_id, username)
+    matching = [
+        document
+        for document in documents
+        if str(document.get("profile_id") or "") == profile_id
+    ]
+    if not matching:
+        raise AppError(
+            "The selected provisioning profile was not found in this account's active provisioning history.",
+            code="ORACLE_DEPROVISION_PROFILE_NOT_USED",
+            status_code=404,
+        )
+
+    latest = matching[0]
+    profile = deepcopy(latest.get("profile_snapshot") or {})
+    if not profile:
+        raise AppError(
+            "The selected provisioning history predates lifecycle snapshots. Use Oracle account only or review this account manually.",
+            code="ORACLE_DEPROVISION_PROFILE_SNAPSHOT_MISSING",
+            status_code=409,
+        )
+
+    profile["id"] = profile_id
+    profile["name"] = str(latest.get("profile_name") or profile.get("name") or profile_id)
     inputs = dict(latest.get("input_snapshot") or {})
     if latest.get("employee_id") and not inputs.get("employee_id"):
         inputs["employee_id"] = latest.get("employee_id")
-    return len(documents), inputs
+    return len(matching), inputs, profile, latest
 
 
 def _step_dict(step) -> dict:
@@ -65,30 +131,18 @@ def _step_dict(step) -> dict:
     raise TypeError("Unsupported provisioning table step.")
 
 
-def _profile_dict(profile) -> dict:
-    if isinstance(profile, dict):
-        return profile
-    if hasattr(profile, "model_dump"):
-        return profile.model_dump(mode="python")
-    raise TypeError("Unsupported provisioning profile.")
-
-
 def _deprovision_match_values(
     step: dict,
     *,
     username: str,
     lifecycle_inputs: dict,
 ) -> tuple[dict[str, object] | None, str | None]:
-
     mappings = {
         str(mapping.get("column_name", "")).strip().upper(): mapping
         for mapping in (step.get("mappings") or [])
         if str(mapping.get("column_name", "")).strip()
     }
 
-    # Generated username is the immutable relationship back to DBA_USERS. Prefer it
-    # over editable business identifiers such as employee ID so later detail edits do
-    # not break deprovision discovery.
     username_columns = [
         column
         for column, mapping in mappings.items()
@@ -98,9 +152,14 @@ def _deprovision_match_values(
     if len(username_columns) == 1:
         return {username_columns[0]: username}, None
     if len(username_columns) > 1:
+        # A profile may write the generated username into audit/created-by columns too.
+        # Prefer the configured match columns when they identify one of those columns.
+        match_columns = effective_match_columns(step)
+        username_matches = [column for column in match_columns if column in username_columns]
+        if len(username_matches) == 1:
+            return {username_matches[0]: username}, None
         return None, (
-            "Multiple table columns map to the generated username. "
-            "A single immutable username relationship is required for safe lifecycle operations."
+            "Multiple table columns map to the generated username and the saved profile does not identify one as the row match key."
         )
 
     match_columns = effective_match_columns(step)
@@ -147,6 +206,9 @@ async def build_oracle_user_deprovision_preview(
     database,
     parent_connection_id: str,
     username: str,
+    *,
+    profile_id: str | None = None,
+    account_only: bool = False,
 ) -> OracleUserDeprovisionPreviewResponse:
     username = normalize_oracle_identifier(username, field_name="Schema name")
     generated_at = datetime.now(timezone.utc)
@@ -158,17 +220,50 @@ async def build_oracle_user_deprovision_preview(
             status_code=400,
         )
 
-    lifecycle_run_count, lifecycle_inputs = await _lifecycle_context(
+    profile_options = await list_oracle_user_deprovision_profiles(
         database, parent_connection_id, username
     )
+    selected_profile_name: str | None = None
+    lifecycle_run_count = 0
+    lifecycle_inputs: dict = {}
+    profiles: list[dict] = []
+    remaining_profile_count = len(profile_options)
+
+    if account_only:
+        profile_id = None
+    else:
+        if not profile_id:
+            raise AppError(
+                "Select one previously used provisioning profile before building the deprovision preview.",
+                code="ORACLE_DEPROVISION_PROFILE_REQUIRED",
+                status_code=400,
+            )
+        lifecycle_run_count, lifecycle_inputs, selected_profile, _latest_run = await _selected_lifecycle_context(
+            database,
+            parent_connection_id,
+            username,
+            profile_id,
+        )
+        selected_profile_name = str(selected_profile.get("name") or profile_id)
+        profiles = [selected_profile]
+        remaining_profile_count = max(len(profile_options) - 1, 0)
 
     items: list[OracleUserDeprovisionPreviewItem] = []
     warnings: list[str] = [
-        "Execution re-checks every linked cleanup target immediately before deletion.",
-        "Only enabled provisioning profiles attached to this parent database are inspected.",
+        "Execution re-checks every selected cleanup target immediately before deletion.",
     ]
-    blocked_reasons: list[str] = []
+    if account_only:
+        warnings.append("Oracle account only was selected. No provisioning-table or LDAP records will be inspected or removed.")
+    else:
+        warnings.append(
+            f"Only the saved lifecycle snapshot for provisioning profile {selected_profile_name} is inspected."
+        )
+        if remaining_profile_count:
+            warnings.append(
+                f"{remaining_profile_count} other provisioned profile(s) remain active for this Oracle account, so the Oracle schema will be kept."
+            )
 
+    blocked_reasons: list[str] = []
     protected = _is_protected_oracle_user(username)
     if protected:
         blocked_reasons.append("This is a protected Oracle/system account and cannot be dropped from DBAChum.")
@@ -176,20 +271,18 @@ async def build_oracle_user_deprovision_preview(
     try:
         account_state = await get_oracle_user_deprovision_state(parent_connection, username)
     except Exception as exc:
-        account_state = {
-            "exists": False,
-            "account_status": None,
-            "owned_object_count": 0,
-        }
+        account_state = {"exists": False, "account_status": None, "owned_object_count": 0}
         blocked_reasons.append("Unable to verify the Oracle account: " + _safe_error(exc))
 
     account_exists = bool(account_state.get("exists"))
     account_status = account_state.get("account_status")
     owned_object_count = int(account_state.get("owned_object_count") or 0)
-    drop_cascade = owned_object_count > 0
+    should_drop_account = account_only or (not account_only and remaining_profile_count == 0)
+    drop_cascade = should_drop_account and owned_object_count > 0
 
     if not account_exists:
-        blocked_reasons.append("The Oracle schema/user no longer exists.")
+        if account_only:
+            blocked_reasons.append("The Oracle schema/user no longer exists.")
         items.append(
             OracleUserDeprovisionPreviewItem(
                 component="account",
@@ -197,6 +290,16 @@ async def build_oracle_user_deprovision_preview(
                 planned_action="No DROP USER action",
                 state="already_absent",
                 reason="The Oracle account was not found during the live preview.",
+            )
+        )
+    elif not should_drop_account:
+        items.append(
+            OracleUserDeprovisionPreviewItem(
+                component="account",
+                label=f"Oracle schema {username}",
+                planned_action="Keep Oracle schema",
+                state="no_action",
+                reason=f"{remaining_profile_count} other provisioning profile(s) remain active for this account.",
             )
         )
     else:
@@ -213,35 +316,16 @@ async def build_oracle_user_deprovision_preview(
                     else (
                         f"The schema currently owns {owned_object_count} object(s); DROP USER CASCADE is required and will permanently remove them."
                         if drop_cascade
-                        else "The schema owns no objects, so a normal DROP USER is sufficient."
+                        else "No other active provisioning profiles remain, so the Oracle account will be removed."
                     )
                 ),
             )
         )
 
-    try:
-        profiles = await list_provisioning_profiles_for_connection(
-            database, parent_connection_id
-        )
-    except Exception as exc:
-        profiles = []
-        reason = "Unable to load enabled provisioning profiles: " + _safe_error(exc)
-        blocked_reasons.append(reason)
-        items.append(
-            OracleUserDeprovisionPreviewItem(
-                component="table",
-                label="Provisioning-table discovery",
-                planned_action="Manual review required",
-                state="blocked",
-                reason=reason,
-            )
-        )
-
     seen_targets: set[tuple] = set()
-    for profile_model in profiles:
-        profile = _profile_dict(profile_model)
-        profile_id = str(profile.get("id") or profile.get("_id") or "")
-        profile_name = str(profile.get("name") or profile_id or "Provisioning profile")
+    for profile in profiles:
+        selected_id = str(profile.get("id") or "")
+        profile_name = str(profile.get("name") or selected_id or "Provisioning profile")
         for index, raw_step in enumerate(profile.get("table_steps") or [], start=1):
             step = _step_dict(raw_step)
             match_values, match_issue = _deprovision_match_values(
@@ -249,10 +333,7 @@ async def build_oracle_user_deprovision_preview(
                 username=username,
                 lifecycle_inputs=lifecycle_inputs,
             )
-            label = (
-                f"{profile_name} · Step {index} · "
-                f"{step.get('owner')}.{step.get('table_name')}"
-            )
+            label = f"{profile_name} · Step {index} · {step.get('owner')}.{step.get('table_name')}"
 
             if match_issue:
                 blocked_reasons.append(label + ": " + match_issue)
@@ -263,7 +344,7 @@ async def build_oracle_user_deprovision_preview(
                         planned_action="Manual review required",
                         state="blocked",
                         reason=match_issue,
-                        profile_id=profile_id or None,
+                        profile_id=selected_id or None,
                         profile_name=profile_name,
                         step_index=index,
                         connection_id=step.get("connection_id"),
@@ -274,7 +355,6 @@ async def build_oracle_user_deprovision_preview(
                 continue
 
             if not match_values:
-
                 continue
 
             key = (
@@ -288,9 +368,7 @@ async def build_oracle_user_deprovision_preview(
             seen_targets.add(key)
 
             try:
-                step_connection = await get_database_connection(
-                    database, step["connection_id"]
-                )
+                step_connection = await get_database_connection(database, step["connection_id"])
                 existing_rows = await count_oracle_rows_by_match(
                     step_connection,
                     owner=step["owner"],
@@ -307,7 +385,7 @@ async def build_oracle_user_deprovision_preview(
                         planned_action="Manual review required",
                         state="blocked",
                         reason=reason,
-                        profile_id=profile_id or None,
+                        profile_id=selected_id or None,
                         profile_name=profile_name,
                         step_index=index,
                         connection_id=step.get("connection_id"),
@@ -319,7 +397,7 @@ async def build_oracle_user_deprovision_preview(
                 continue
 
             common = dict(
-                profile_id=profile_id or None,
+                profile_id=selected_id or None,
                 profile_name=profile_name,
                 step_index=index,
                 connection_id=step.get("connection_id"),
@@ -335,7 +413,7 @@ async def build_oracle_user_deprovision_preview(
                         label=label,
                         planned_action="No linked row to delete",
                         state="already_absent",
-                        reason="No row matched this account in the enabled provisioning table.",
+                        reason="No row matched this account in the selected provisioning profile.",
                         **common,
                     )
                 )
@@ -346,7 +424,7 @@ async def build_oracle_user_deprovision_preview(
                         label=label,
                         planned_action="DELETE linked provisioning row",
                         state="candidate",
-                        reason="Exactly one row matches the account identity defined by this enabled provisioning profile.",
+                        reason="Exactly one row matches the account identity from the selected saved provisioning profile.",
                         **common,
                     )
                 )
@@ -366,17 +444,14 @@ async def build_oracle_user_deprovision_preview(
                     )
                 )
 
-    seen_ldap_profiles: set[str] = set()
-    for profile_model in profiles:
-        profile = _profile_dict(profile_model)
+    for profile in profiles:
         if not profile.get("ldap_enabled"):
             continue
         ldap_profile_id = str(profile.get("ldap_profile_id") or "")
-        if not ldap_profile_id or ldap_profile_id in seen_ldap_profiles:
+        if not ldap_profile_id:
             continue
-        seen_ldap_profiles.add(ldap_profile_id)
-        profile_id = str(profile.get("id") or profile.get("_id") or "")
-        profile_name = str(profile.get("name") or profile_id or "Provisioning profile")
+        selected_id = str(profile.get("id") or "")
+        profile_name = str(profile.get("name") or selected_id or "Provisioning profile")
         label = f"{profile_name} · LDAP entry"
         try:
             ldap_profile = await get_ldap_profile_document(database, ldap_profile_id)
@@ -391,7 +466,7 @@ async def build_oracle_user_deprovision_preview(
                     planned_action="Manual review required",
                     state="blocked",
                     reason=reason,
-                    profile_id=profile_id or None,
+                    profile_id=selected_id or None,
                     profile_name=profile_name,
                     ldap_profile_id=ldap_profile_id,
                 )
@@ -405,8 +480,8 @@ async def build_oracle_user_deprovision_preview(
                     label=label,
                     planned_action="No LDAP entry to delete",
                     state="already_absent",
-                    reason="No LDAP entry matched this username in the enabled LDAP profile.",
-                    profile_id=profile_id or None,
+                    reason="No LDAP entry matched this username for the selected provisioning profile.",
+                    profile_id=selected_id or None,
                     profile_name=profile_name,
                     ldap_profile_id=ldap_profile_id,
                 )
@@ -419,16 +494,14 @@ async def build_oracle_user_deprovision_preview(
                     planned_action="DELETE LDAP entry",
                     state="candidate",
                     reason="Exactly one LDAP entry matched this username.",
-                    profile_id=profile_id or None,
+                    profile_id=selected_id or None,
                     profile_name=profile_name,
                     ldap_profile_id=ldap_profile_id,
                     ldap_dn=matches[0],
                 )
             )
         else:
-            reason = (
-                f"LDAP lookup matched {len(matches)} entries. DBAChum will not guess which directory entry to delete."
-            )
+            reason = f"LDAP lookup matched {len(matches)} entries. DBAChum will not guess which directory entry to delete."
             blocked_reasons.append(label + ": " + reason)
             items.append(
                 OracleUserDeprovisionPreviewItem(
@@ -437,7 +510,7 @@ async def build_oracle_user_deprovision_preview(
                     planned_action="Manual review required",
                     state="blocked",
                     reason=reason,
-                    profile_id=profile_id or None,
+                    profile_id=selected_id or None,
                     profile_name=profile_name,
                     ldap_profile_id=ldap_profile_id,
                 )
@@ -447,10 +520,12 @@ async def build_oracle_user_deprovision_preview(
         items.append(
             OracleUserDeprovisionPreviewItem(
                 component="history",
-                label="DBAChum provisioning history",
+                label=f"{selected_profile_name} provisioning history",
                 planned_action="Preserve audit history",
                 state="no_action",
-                reason=f"{lifecycle_run_count} lifecycle run(s) were found. History is retained after deprovisioning.",
+                reason=f"{lifecycle_run_count} lifecycle run(s) for the selected profile are retained and marked deprovisioned after successful execution.",
+                profile_id=profile_id,
+                profile_name=selected_profile_name,
             )
         )
 
@@ -459,13 +534,23 @@ async def build_oracle_user_deprovision_preview(
         for item in items
         if item.component == "table" and item.state == "candidate"
     )
-    linked_ldap_count = sum(1 for item in items if item.component == "ldap" and item.state == "candidate")
+    linked_ldap_count = sum(
+        1 for item in items if item.component == "ldap" and item.state == "candidate"
+    )
     blocked_count = sum(1 for item in items if item.state == "blocked")
-    execution_ready = account_exists and not protected and blocked_count == 0 and not blocked_reasons
+
+    account_requirement_ok = account_exists or (not should_drop_account and not account_exists)
+    execution_ready = account_requirement_ok and not protected and blocked_count == 0 and not blocked_reasons
+    if account_only and not account_exists:
+        execution_ready = False
 
     return OracleUserDeprovisionPreviewResponse(
         username=username,
         generated_at=generated_at,
+        selected_profile_id=profile_id,
+        selected_profile_name=selected_profile_name,
+        account_only=account_only,
+        remaining_profile_count=remaining_profile_count,
         account_exists=account_exists,
         account_status=account_status,
         protected_account=protected,
@@ -499,7 +584,11 @@ async def execute_oracle_user_deprovision(
         )
 
     preview = await build_oracle_user_deprovision_preview(
-        database, parent_connection_id, username
+        database,
+        parent_connection_id,
+        username,
+        profile_id=data.profile_id,
+        account_only=data.account_only,
     )
     if not preview.execution_ready:
         reason = preview.blocked_reasons[0] if preview.blocked_reasons else "The current preview is not safe to execute."
@@ -527,9 +616,16 @@ async def execute_oracle_user_deprovision(
             "lifecycle_run_count": preview.lifecycle_run_count,
             "linked_row_count": preview.linked_row_count,
             "linked_ldap_count": preview.linked_ldap_count,
+            "selected_profile_id": preview.selected_profile_id,
+            "selected_profile_name": preview.selected_profile_name,
+            "account_only": preview.account_only,
+            "remaining_profile_count": preview.remaining_profile_count,
         },
         details={
             "confirmation_required": username,
+            "selected_profile_id": preview.selected_profile_id,
+            "selected_profile_name": preview.selected_profile_name,
+            "account_only": preview.account_only,
             "linked_targets": [
                 {
                     "profile_name": item.profile_name,
@@ -559,11 +655,48 @@ async def execute_oracle_user_deprovision(
     deleted_ldap_entries = 0
     account_dropped = False
 
+    async def fail(error: str) -> OracleUserDeprovisionResponse:
+        status = DatabaseActionStatus.PARTIAL if (deleted_rows or deleted_ldap_entries) else DatabaseActionStatus.FAILED
+        await finish_database_action(
+            database,
+            audit_id,
+            status=status,
+            after={
+                "account_dropped": False,
+                "deleted_provisioning_rows": deleted_rows,
+                "deleted_ldap_entries": deleted_ldap_entries,
+            },
+            error=error,
+            details={"execution_items": [entry.model_dump(mode="json") for entry in execution_items]},
+        )
+        return OracleUserDeprovisionResponse(
+            audit_id=audit_id,
+            status=status.value,
+            username=username,
+            account_dropped=False,
+            deleted_provisioning_rows=deleted_rows,
+            deleted_ldap_entries=deleted_ldap_entries,
+            items=execution_items,
+            error=error,
+        )
+
     for item in preview.items:
         if item.component != "table" or item.state != "candidate":
             continue
         try:
             step_connection = await get_database_connection(database, item.connection_id)
+            existing_rows = await count_oracle_rows_by_match(
+                step_connection,
+                owner=item.owner,
+                table_name=item.table_name,
+                match_values=item.match_values,
+            )
+            if existing_rows != 1:
+                raise AppError(
+                    f"Linked row re-check returned {existing_rows} rows instead of exactly one.",
+                    code="ORACLE_DEPROVISION_TARGET_CHANGED",
+                    status_code=409,
+                )
             rowcount = await delete_oracle_provisioning_row(
                 step_connection,
                 owner=item.owner,
@@ -590,35 +723,20 @@ async def execute_oracle_user_deprovision(
                     error=error,
                 )
             )
-            status = DatabaseActionStatus.PARTIAL if deleted_rows else DatabaseActionStatus.FAILED
-            await finish_database_action(
-                database,
-                audit_id,
-                status=status,
-                after={
-                    "account_dropped": False,
-                    "deleted_provisioning_rows": deleted_rows,
-                    "deleted_ldap_entries": deleted_ldap_entries,
-                },
-                error=error,
-                details={"execution_items": [entry.model_dump(mode="json") for entry in execution_items]},
-            )
-            return OracleUserDeprovisionResponse(
-                audit_id=audit_id,
-                status=status.value,
-                username=username,
-                account_dropped=False,
-                deleted_provisioning_rows=deleted_rows,
-                deleted_ldap_entries=deleted_ldap_entries,
-                items=execution_items,
-                error=error,
-            )
+            return await fail(error)
 
     for item in preview.items:
         if item.component != "ldap" or item.state != "candidate":
             continue
         try:
             ldap_profile = await get_ldap_profile_document(database, item.ldap_profile_id or "")
+            matches = await find_ldap_entries_for_username(ldap_profile, username)
+            if matches != [item.ldap_dn]:
+                raise AppError(
+                    "LDAP entry re-check no longer matches the reviewed target.",
+                    code="ORACLE_DEPROVISION_LDAP_TARGET_CHANGED",
+                    status_code=409,
+                )
             removed = await delete_ldap_entry(ldap_profile, item.ldap_dn or "")
             if removed:
                 deleted_ldap_entries += 1
@@ -641,78 +759,55 @@ async def execute_oracle_user_deprovision(
                     error=error,
                 )
             )
-            status = DatabaseActionStatus.PARTIAL if (deleted_rows or deleted_ldap_entries) else DatabaseActionStatus.FAILED
-            await finish_database_action(
-                database,
-                audit_id,
-                status=status,
-                after={
-                    "account_dropped": False,
-                    "deleted_provisioning_rows": deleted_rows,
-                    "deleted_ldap_entries": deleted_ldap_entries,
-                },
-                error=error,
-                details={"execution_items": [entry.model_dump(mode="json") for entry in execution_items]},
-            )
-            return OracleUserDeprovisionResponse(
-                audit_id=audit_id,
-                status=status.value,
-                username=username,
-                account_dropped=False,
-                deleted_provisioning_rows=deleted_rows,
-                deleted_ldap_entries=deleted_ldap_entries,
-                items=execution_items,
-                error=error,
-            )
+            return await fail(error)
 
-    try:
-        await drop_oracle_user(
-            parent_connection,
-            username,
-            cascade=preview.drop_cascade,
-        )
-        account_dropped = True
-        execution_items.append(
-            OracleUserDeprovisionExecutionItem(
-                component="account",
-                label=f"Oracle schema {username}",
-                status="succeeded",
-                affected_rows=1,
+    account_item = next(
+        (item for item in preview.items if item.component == "account"),
+        None,
+    )
+    if account_item and account_item.state == "candidate":
+        try:
+            await drop_oracle_user(
+                parent_connection,
+                username,
+                cascade=preview.drop_cascade,
             )
-        )
-    except Exception as exc:
-        error = _safe_error(exc)
-        execution_items.append(
-            OracleUserDeprovisionExecutionItem(
-                component="account",
-                label=f"Oracle schema {username}",
-                status="failed",
-                affected_rows=0,
-                error=error,
+            account_dropped = True
+            execution_items.append(
+                OracleUserDeprovisionExecutionItem(
+                    component="account",
+                    label=f"Oracle schema {username}",
+                    status="succeeded",
+                    affected_rows=1,
+                )
             )
-        )
-        status = DatabaseActionStatus.PARTIAL if (deleted_rows or deleted_ldap_entries) else DatabaseActionStatus.FAILED
-        await finish_database_action(
-            database,
-            audit_id,
-            status=status,
-            after={
-                "account_dropped": False,
-                "deleted_provisioning_rows": deleted_rows,
-                "deleted_ldap_entries": deleted_ldap_entries,
+        except Exception as exc:
+            error = _safe_error(exc)
+            execution_items.append(
+                OracleUserDeprovisionExecutionItem(
+                    component="account",
+                    label=f"Oracle schema {username}",
+                    status="failed",
+                    affected_rows=0,
+                    error=error,
+                )
+            )
+            return await fail(error)
+
+    if preview.selected_profile_id and not preview.account_only:
+        now = datetime.now(timezone.utc)
+        await database.provisioning_runs.update_many(
+            {
+                **_active_run_query(parent_connection_id, username),
+                "profile_id": preview.selected_profile_id,
             },
-            error=error,
-            details={"execution_items": [entry.model_dump(mode="json") for entry in execution_items]},
-        )
-        return OracleUserDeprovisionResponse(
-            audit_id=audit_id,
-            status=status.value,
-            username=username,
-            account_dropped=False,
-            deleted_provisioning_rows=deleted_rows,
-            deleted_ldap_entries=deleted_ldap_entries,
-            items=execution_items,
-            error=error,
+            {
+                "$set": {
+                    "deprovisioned_at": now,
+                    "deprovisioned_by": operator.username,
+                    "deprovision_audit_id": audit_id,
+                }
+            },
         )
 
     await finish_database_action(
@@ -723,6 +818,8 @@ async def execute_oracle_user_deprovision(
             "account_dropped": account_dropped,
             "deleted_provisioning_rows": deleted_rows,
             "deleted_ldap_entries": deleted_ldap_entries,
+            "selected_profile_id": preview.selected_profile_id,
+            "remaining_profile_count": preview.remaining_profile_count,
         },
         details={"execution_items": [entry.model_dump(mode="json") for entry in execution_items]},
     )
@@ -730,7 +827,7 @@ async def execute_oracle_user_deprovision(
         audit_id=audit_id,
         status="succeeded",
         username=username,
-        account_dropped=True,
+        account_dropped=account_dropped,
         deleted_provisioning_rows=deleted_rows,
         deleted_ldap_entries=deleted_ldap_entries,
         items=execution_items,

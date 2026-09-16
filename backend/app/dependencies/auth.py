@@ -23,8 +23,8 @@ async def get_current_user(
 ):
     if session_token is None:
         raise AppError(
-            "Authentication required.",
-            code="AUTH_REQUIRED",
+            "Session expired. Please log in again.",
+            code="SESSION_EXPIRED",
             status_code=401,
         )
 
@@ -35,15 +35,15 @@ async def get_current_user(
 
     if user is None:
         raise AppError(
-            "Session is invalid or expired.",
-            code="INVALID_SESSION",
+            "Session expired. Please log in again.",
+            code="SESSION_EXPIRED",
             status_code=401,
         )
 
     if not user.get("is_active", True):
         raise AppError(
-            "Authentication required.",
-            code="AUTH_REQUIRED",
+            "Session expired. Please log in again.",
+            code="SESSION_EXPIRED",
             status_code=401,
         )
 

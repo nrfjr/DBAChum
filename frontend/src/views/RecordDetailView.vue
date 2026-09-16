@@ -5,7 +5,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { engineLabel } from '@/core/databasePresentation'
 import { hasPermission } from '@/core/permissions'
 import { useAuthStore } from '@/stores/auth'
-import { useRecordsStore, type DbaRecord, type RecordStatus, type RecordType } from '@/stores/records'
+import { useRecordsStore, type DbaRecord, type RecordCredentialType, type RecordStatus, type RecordType } from '@/stores/records'
 import { confirmDialog, showToast } from '@/ui/feedback'
 
 const route = useRoute()
@@ -19,6 +19,8 @@ const error = ref<string | null>(null)
 const revealedPassword = ref<string | null>(null)
 const secretError = ref<string | null>(null)
 const copied = ref<string | null>(null)
+const revealedCredentialPasswords = ref<Record<string, string>>({})
+const credentialSecretErrors = ref<Record<string, string>>({})
 
 const canManage = computed(() => hasPermission(authStore.user, 'records:manage'))
 
@@ -37,6 +39,19 @@ const statusLabels: Record<RecordStatus, string> = {
   disabled: 'Disabled',
   retired: 'Retired',
   unknown: 'Unknown',
+}
+
+const credentialTypeLabels: Record<RecordCredentialType, string> = {
+  windows_rdp: 'Windows / RDP',
+  ssh: 'SSH',
+  vnc: 'VNC',
+  oracle: 'Oracle',
+  sqlserver: 'SQL Server',
+  mysql: 'MySQL / MariaDB',
+  goldengate: 'GoldenGate',
+  application: 'Application',
+  service_account: 'Service account',
+  other: 'Other',
 }
 
 const endpoint = computed(() => {
@@ -89,6 +104,30 @@ async function revealPassword() {
 function hidePassword() {
   revealedPassword.value = null
   secretError.value = null
+}
+
+async function revealCredentialPassword(credentialId: string) {
+  if (!record.value || !canManage.value) return
+  const errors = { ...credentialSecretErrors.value }
+  delete errors[credentialId]
+  credentialSecretErrors.value = errors
+  try {
+    const password = await recordsStore.revealCredentialPassword(record.value.id, credentialId)
+    revealedCredentialPasswords.value = {
+      ...revealedCredentialPasswords.value,
+      [credentialId]: password,
+    }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Unable to reveal credential password.'
+    credentialSecretErrors.value = { ...credentialSecretErrors.value, [credentialId]: message }
+    showToast({ title: 'Unable to reveal password', message, tone: 'danger' })
+  }
+}
+
+function hideCredentialPassword(credentialId: string) {
+  const values = { ...revealedCredentialPasswords.value }
+  delete values[credentialId]
+  revealedCredentialPasswords.value = values
 }
 
 function editRecord() {
@@ -232,7 +271,7 @@ onMounted(async () => {
       </article>
 
       <article class="detail-card">
-        <h2>Lookup credential</h2>
+        <h2>Simple credential</h2>
         <dl class="detail-list record-detail-list">
           <div>
             <dt>Username</dt>
@@ -269,6 +308,74 @@ onMounted(async () => {
             </dd>
           </div>
         </dl>
+      </article>
+
+      <article v-if="record.credentials.length" class="detail-card record-credentials-card">
+        <div class="utility-toolbar">
+          <div>
+            <h2>Credentials</h2>
+            <p>{{ record.credentials.length }} purpose-specific credential{{ record.credentials.length === 1 ? '' : 's' }}</p>
+          </div>
+        </div>
+
+        <div class="record-credential-list">
+          <article
+            v-for="credential in record.credentials"
+            :key="credential.id"
+            class="record-credential-card"
+            :class="{ 'record-credential-card--inactive': !credential.active }"
+          >
+            <header>
+              <div>
+                <strong>{{ credential.label }}</strong>
+                <small>{{ credentialTypeLabels[credential.credential_type] }}</small>
+              </div>
+              <span v-if="credential.preferred" class="record-status-pill record-status-pill--active">Preferred</span>
+              <span v-else-if="!credential.active" class="record-status-pill record-status-pill--disabled">Inactive</span>
+            </header>
+
+            <dl class="detail-list record-detail-list">
+              <div>
+                <dt>Username</dt>
+                <dd class="record-copy-value">
+                  <span>{{ credential.username ?? '—' }}</span>
+                  <button v-if="credential.username" type="button" class="record-copy-button" @click="copyValue(`credential-user:${credential.id}`, credential.username)">
+                    {{ copied === `credential-user:${credential.id}` ? 'Copied' : 'Copy' }}
+                  </button>
+                </dd>
+              </div>
+              <div v-if="credential.domain"><dt>Domain</dt><dd>{{ credential.domain }}</dd></div>
+              <div v-if="credential.port"><dt>Port</dt><dd>{{ credential.port }}</dd></div>
+              <div v-if="credential.target"><dt>Target / service</dt><dd>{{ credential.target }}</dd></div>
+              <div v-if="credential.role"><dt>Role</dt><dd>{{ credential.role }}</dd></div>
+              <div>
+                <dt>Password</dt>
+                <dd>
+                  <div v-if="credential.has_password" class="record-secret-row">
+                    <code>{{ revealedCredentialPasswords[credential.id] ?? '••••••••••••' }}</code>
+                    <button
+                      v-if="canManage && !revealedCredentialPasswords[credential.id]"
+                      type="button"
+                      class="secondary-button"
+                      @click="revealCredentialPassword(credential.id)"
+                    >
+                      Reveal
+                    </button>
+                    <template v-else-if="canManage && revealedCredentialPasswords[credential.id]">
+                      <button type="button" class="secondary-button" @click="copyValue(`credential-pass:${credential.id}`, revealedCredentialPasswords[credential.id] ?? null)">
+                        {{ copied === `credential-pass:${credential.id}` ? 'Copied' : 'Copy' }}
+                      </button>
+                      <button type="button" class="secondary-button" @click="hideCredentialPassword(credential.id)">Hide</button>
+                    </template>
+                  </div>
+                  <span v-else>—</span>
+                  <small v-if="credentialSecretErrors[credential.id]" class="record-detail-error">{{ credentialSecretErrors[credential.id] }}</small>
+                </dd>
+              </div>
+            </dl>
+            <p v-if="credential.notes" class="record-notes-text">{{ credential.notes }}</p>
+          </article>
+        </div>
       </article>
 
       <article v-if="record.custom_fields.length" class="detail-card record-custom-fields-card">

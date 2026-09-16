@@ -275,7 +275,6 @@ async function runCompare() {
               />
             </label>
             <label>
-              <span>Privilege <small>optional</small></span>
               <input class="utility-search-input"
                 v-model="objectPrivilege"
                 type="text"
@@ -330,7 +329,7 @@ async function runCompare() {
         <details v-if="result.powerful" class="access-alert-section">
           <summary>⚠ Elevated access target</summary>
           <p>
-            {{ result.target }} matches DBAChum's explicit elevated-access rules. This is a warning, not a security score.
+            {{ result.target }} matches DBAChum's explicit elevated-access rules.
           </p>
         </details>
 
@@ -341,9 +340,6 @@ async function runCompare() {
 
         <details v-if="result.public_access" class="access-alert-section" open>
           <summary>PUBLIC grants</summary>
-          <p>
-            This access is granted through PUBLIC and therefore applies to database users generally.
-          </p>
           <div class="access-chip-row">
             <span v-for="item in result.public_details" :key="item" class="access-chip">
               {{ item }}
@@ -426,9 +422,6 @@ async function runCompare() {
             />
           </label>
         </div>
-        <small>
-          Compare effective roles, system privileges, object/column grants and password-file administrative privileges.
-        </small>
 
         <div class="access-search-actions">
           <button

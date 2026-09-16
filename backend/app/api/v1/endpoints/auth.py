@@ -21,6 +21,7 @@ from app.services.auth import (
     authenticate_user,
     create_session,
     delete_session,
+    touch_session_activity,
 )
 from app.services.users import (
     user_to_response,
@@ -126,3 +127,22 @@ async def me(
     ),
 ) -> UserResponse:
     return current_user
+
+@router.post("/activity", status_code=204)
+async def activity(
+    request: Request,
+    session_token: str | None = Cookie(
+        default=None,
+        alias=settings.session_cookie_name,
+    ),
+):
+    if session_token is None or not await touch_session_activity(
+        request.app.state.database,
+        session_token,
+    ):
+        raise AppError(
+            "Session expired. Please log in again.",
+            code="SESSION_EXPIRED",
+            status_code=401,
+        )
+    return Response(status_code=204)

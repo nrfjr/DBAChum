@@ -41,7 +41,6 @@ onMounted(() => {
     <div class="utility-toolbar">
       <div>
         <h2>Operational health</h2>
-        <p>Server-level counters plus database-filtered processlist detail when a database is configured.</p>
       </div>
       <button
         type="button"

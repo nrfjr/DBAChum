@@ -341,6 +341,11 @@ export const useAuthStore = defineStore(
         }
       },
 
+      expireLocalSession() {
+        this.user = null
+        this.initialized = true
+      },
+
       async logout() {
         try {
           await fetch(
