@@ -92,6 +92,9 @@ const preferences = reactive({
   theme: 'system' as ThemePreference,
   accent: 'purple' as AccentPreference,
   density: 'comfortable' as DensityPreference,
+  terminal_foreground: '#d7e0ea',
+  terminal_background: '#0b0f14',
+  terminal_highlight_keywords: true,
 })
 
 const notifications = reactive({
@@ -199,6 +202,9 @@ function syncFromUser() {
   preferences.theme = user.preferences.theme
   preferences.accent = user.preferences.accent
   preferences.density = user.preferences.density
+  preferences.terminal_foreground = user.preferences.terminal_foreground
+  preferences.terminal_background = user.preferences.terminal_background
+  preferences.terminal_highlight_keywords = user.preferences.terminal_highlight_keywords
 
   notifications.email_enabled = user.notifications.email_enabled
   notifications.severities = [...user.notifications.severities]
@@ -320,6 +326,9 @@ async function savePreferences() {
       theme: preferences.theme,
       accent: preferences.accent,
       density: preferences.density,
+      terminal_foreground: preferences.terminal_foreground,
+      terminal_background: preferences.terminal_background,
+      terminal_highlight_keywords: preferences.terminal_highlight_keywords,
     })
 
     uiStore.applyUserPreferences(user.preferences)
@@ -427,6 +436,9 @@ async function importPreferences(event: Event) {
       theme: importedPreferences.theme as ThemePreference,
       accent: importedPreferences.accent as AccentPreference,
       density: importedPreferences.density as DensityPreference,
+      terminal_foreground: String(importedPreferences.terminal_foreground ?? '#d7e0ea'),
+      terminal_background: String(importedPreferences.terminal_background ?? '#0b0f14'),
+      terminal_highlight_keywords: importedPreferences.terminal_highlight_keywords !== false,
     })
 
     await authStore.updateNotifications({
@@ -481,6 +493,9 @@ async function resetPreferences() {
       theme: 'system',
       accent: 'purple',
       density: 'comfortable',
+      terminal_foreground: '#d7e0ea',
+      terminal_background: '#0b0f14',
+      terminal_highlight_keywords: true,
     })
 
     await authStore.updateNotifications({
@@ -727,6 +742,30 @@ function engineLabel(engine: NotificationEngine) {
               </select>
             </label>
 
+            <fieldset class="profile-fieldset terminal-profile-settings">
+              <legend>Terminal</legend>
+              <div class="terminal-profile-colors">
+                <label>
+                  Foreground
+                  <span class="terminal-color-control">
+                    <input v-model="preferences.terminal_foreground" type="color" />
+                    <code>{{ preferences.terminal_foreground }}</code>
+                  </span>
+                </label>
+                <label>
+                  Background
+                  <span class="terminal-color-control">
+                    <input v-model="preferences.terminal_background" type="color" />
+                    <code>{{ preferences.terminal_background }}</code>
+                  </span>
+                </label>
+              </div>
+              <label class="notification-toggle-row terminal-highlight-toggle">
+                <span><strong>Highlight warnings and errors</strong></span>
+                <input v-model="preferences.terminal_highlight_keywords" type="checkbox" class="toggle-switch" />
+              </label>
+            </fieldset>
+
             <p v-if="preferencesError" class="login-error">
               {{ preferencesError }}
             </p>
@@ -760,7 +799,7 @@ function engineLabel(engine: NotificationEngine) {
               <fieldset class="profile-fieldset notification-section">
                 <legend>Severity</legend>
                 <label v-for="option in severityOptions" :key="option.value" class="notification-check-row">
-                  <input v-model="notifications.severities" type="checkbox" :value="option.value" class="toggle-switch"
+                  <input v-model="notifications.severities" type="checkbox" :value="option.value"
                     title="{{ option.description }}" />
                   <span>
                     <strong>{{ option.label }}</strong>
@@ -771,7 +810,7 @@ function engineLabel(engine: NotificationEngine) {
               <fieldset class="profile-fieldset notification-section">
                 <legend>Database engines</legend>
                 <label v-for="option in engineOptions" :key="option.value" class="notification-check-row">
-                  <input v-model="notifications.engines" type="checkbox" :value="option.value" class="toggle-switch"/>
+                  <input v-model="notifications.engines" type="checkbox" :value="option.value" />
                   <span>{{ option.label }}</span>
                 </label>
 
@@ -791,7 +830,7 @@ function engineLabel(engine: NotificationEngine) {
               <legend>Alert categories</legend>
               <div class="notification-chip-grid">
                 <label v-for="option in categoryOptions" :key="option.value" class="notification-chip">
-                  <input v-model="notifications.categories" type="checkbox" :value="option.value" class="toggle-switch" />
+                  <input v-model="notifications.categories" type="checkbox" :value="option.value" />
                   <span>{{ option.label }}</span>
                 </label>
               </div>
@@ -832,7 +871,7 @@ function engineLabel(engine: NotificationEngine) {
                 <div v-else class="notification-source-list">
                   <label v-for="connection in monitoredConnections" :key="connection.id"
                     class="notification-source-row">
-                    <input v-model="notifications.database_connection_ids" type="checkbox" :value="connection.id" class="toggle-switch"/>
+                    <input v-model="notifications.database_connection_ids" type="checkbox" :value="connection.id" />
                     <span>
                       <strong>{{ connection.name }}</strong>
                       <small>
@@ -859,7 +898,7 @@ function engineLabel(engine: NotificationEngine) {
 
                 <div v-else class="notification-source-list">
                   <label v-for="server in monitoredServers" :key="server.id" class="notification-source-row">
-                    <input v-model="notifications.server_ids" type="checkbox" :value="server.id" class="toggle-switch"/>
+                    <input v-model="notifications.server_ids" type="checkbox" :value="server.id" />
                     <span>
                       <strong>{{ server.name }}</strong>
                       <small>

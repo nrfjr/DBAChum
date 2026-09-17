@@ -37,11 +37,15 @@ export const useTerminalSessionsStore = defineStore('terminalSessions', {
 
   actions: {
     open(server: Server) {
+      const existing = this.sessions.find((item) => item.server_id === server.id)
+      if (existing) {
+        this.restore(existing.client_id)
+        return existing
+      }
+
       if (this.sessions.length >= MAX_TERMINALS) {
         throw new Error(`You already have ${MAX_TERMINALS} active terminals. Close one before opening another.`)
       }
-
-      for (const session of this.sessions) session.view = 'minimized'
 
       const session: TerminalSessionUi = {
         client_id: makeClientId(),
@@ -65,18 +69,20 @@ export const useTerminalSessionsStore = defineStore('terminalSessions', {
     },
 
     restore(clientId: string) {
-      for (const session of this.sessions) {
-        session.view = session.client_id === clientId ? 'normal' : 'minimized'
-      }
+      const session = this.sessions.find((item) => item.client_id === clientId)
+      if (session) session.view = 'normal'
     },
 
     toggleMaximize(clientId: string) {
       const selected = this.sessions.find((item) => item.client_id === clientId)
       if (!selected) return
-      for (const session of this.sessions) {
-        if (session.client_id !== clientId) session.view = 'minimized'
+      const nextView = selected.view === 'maximized' ? 'normal' : 'maximized'
+      if (nextView === 'maximized') {
+        for (const session of this.sessions) {
+          if (session.client_id !== clientId && session.view === 'maximized') session.view = 'normal'
+        }
       }
-      selected.view = selected.view === 'maximized' ? 'normal' : 'maximized'
+      selected.view = nextView
     },
 
     markConnecting(clientId: string) {

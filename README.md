@@ -2,7 +2,7 @@
 
 DBAChum is a self-hosted database administration and monitoring workspace built for day-to-day DBA operations.
 
-Current release: **v1.3.0**
+Current release: **v1.4.0**
 
 ## Supported Databases
 
@@ -16,12 +16,18 @@ Current release: **v1.3.0**
 - Database connection and health monitoring
 - Sessions, storage, parameters, jobs, maintenance, and performance views
 - Historical metrics and background telemetry collection
+- Database and tablespace growth analytics
+- Oracle Advisor views for SGA, PGA, Buffer Cache, Shared Pool, Memory Target, Java Pool, Streams Pool, and MTTR
 - Oracle user/schema administration and provisioning
 - Server monitoring and SSH terminal access
+- Global terminal dock with up to three concurrent SSH sessions
+- Context-aware terminal launch from supported alerts and server views
+- Per-profile terminal foreground/background colors and warning/error highlighting
+- Right-click paste in the built-in terminal
 - Alerts
 - User and role management
 - LDAP integration
-- Connection and application settings
+- Connection, profile, and application settings
 - Windows background deployment
 
 ## Requirements
@@ -99,6 +105,6 @@ cd backend
 
 ## Release
 
-Latest stable release: **DBAChum v1.3.0**
+Latest stable release: **DBAChum v1.4.0**
 
 Release packages, checksums, and release notes are available under GitHub Releases.

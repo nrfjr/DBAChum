@@ -1,9 +1,18 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import {
+  computed,
+  nextTick,
+  onBeforeUnmount,
+  onMounted,
+  ref,
+  watch,
+  type CSSProperties
+} from 'vue'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
 
+import { useAuthStore } from '@/stores/auth'
 import { useTerminalSessionsStore } from '@/stores/terminalSessions'
 import { useTerminalShortcutsStore, type TerminalShortcut } from '@/stores/terminalShortcuts'
 import { showToast } from '@/ui/feedback'
@@ -13,6 +22,7 @@ const props = defineProps<{
   chipIndex: number
 }>()
 
+const authStore = useAuthStore()
 const sessionsStore = useTerminalSessionsStore()
 const shortcutsStore = useTerminalShortcutsStore()
 
@@ -52,19 +62,19 @@ const shortcutGroups = computed(() => {
   return [...groups.entries()]
 })
 
-const panelStyle = computed(() => {
-  if (maximized.value || dragLeft.value == null || dragTop.value == null) return undefined
+const panelStyle = computed<CSSProperties | undefined>(() => {
+  if (maximized.value || dragLeft.value == null || dragTop.value == null) {
+    return undefined
+  }
+
   return {
+    position: 'fixed',
     left: `${dragLeft.value}px`,
     top: `${dragTop.value}px`,
     right: 'auto',
     bottom: 'auto',
   }
 })
-
-const chipStyle = computed(() => ({
-  right: `${16 + props.chipIndex * 222}px`,
-}))
 
 function websocketUrl(serverId: string, cols: number, rows: number) {
   const configured = String(import.meta.env.VITE_API_BASE_URL || '/api/v1')
@@ -88,17 +98,28 @@ function terminalSize() {
   }
 }
 
+function highlightedOutput(data: string) {
+  if (!authStore.user?.preferences.terminal_highlight_keywords || data.includes('\x1b')) {
+    return data
+  }
+
+  return data
+    .replace(/\b(WARN|WARNING)\b/gi, '\x1b[33m$1\x1b[39m')
+    .replace(/\b(ERROR|FAILED|FAILURE|FATAL|CRITICAL|ABEND(?:ED)?)\b|(?:ORA|TNS|RMAN|OGG)-\d+/gi, '\x1b[31m$&\x1b[39m')
+}
+
 function writeOutput(data: string) {
   if (!terminal) return
+  const rendered = highlightedOutput(data)
   if (minimized.value) {
-    pendingOutput += data
+    pendingOutput += rendered
     if (pendingOutput.length > MAX_PENDING_OUTPUT) {
       pendingOutput = pendingOutput.slice(-MAX_PENDING_OUTPUT)
       pendingOutputTruncated = true
     }
     return
   }
-  terminal.write(data)
+  terminal.write(rendered)
 }
 
 function flushPendingOutput() {
@@ -235,13 +256,13 @@ async function pasteClipboard(event: MouseEvent) {
   terminal?.focus()
 }
 
+function restoreTerminal() {
+  sessionsStore.restore(props.sessionId)
+}
+
 function minimizeTerminal() {
   shortcutMenuOpen.value = false
   sessionsStore.minimize(props.sessionId)
-}
-
-function restoreTerminal() {
-  sessionsStore.restore(props.sessionId)
 }
 
 function toggleMaximize() {
@@ -307,6 +328,22 @@ function startDrag(event: PointerEvent) {
 }
 
 watch(
+  () => [
+    authStore.user?.preferences.terminal_foreground,
+    authStore.user?.preferences.terminal_background,
+  ],
+  () => {
+    if (!terminal) return
+    terminal.options.theme = {
+      background: authStore.user?.preferences.terminal_background ?? '#0b0f14',
+      foreground: authStore.user?.preferences.terminal_foreground ?? '#d7e0ea',
+      cursor: authStore.user?.preferences.terminal_foreground ?? '#d7e0ea',
+      selectionBackground: '#36546f88',
+    }
+  },
+)
+
+watch(
   () => session.value?.view,
   async (view, previous) => {
     if (view && view !== 'minimized' && previous === 'minimized') {
@@ -328,9 +365,9 @@ onMounted(async () => {
     fontSize: 13,
     fontFamily: 'Consolas, "Cascadia Mono", "Courier New", monospace',
     theme: {
-      background: '#0b0f14',
-      foreground: '#d7e0ea',
-      cursor: '#d7e0ea',
+      background: authStore.user?.preferences.terminal_background ?? '#0b0f14',
+      foreground: authStore.user?.preferences.terminal_foreground ?? '#d7e0ea',
+      cursor: authStore.user?.preferences.terminal_foreground ?? '#d7e0ea',
       selectionBackground: '#36546f88',
     },
   })
@@ -374,23 +411,34 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div v-if="session" class="terminal-session-root">
+  <div
+    v-if="session"
+    class="terminal-session-root"
+    :class="{
+      'terminal-session-root--open': !minimized && !maximized,
+      'terminal-session-root--minimized': minimized,
+      'terminal-session-root--maximized': maximized,
+    }"
+  >
     <button
-      v-show="minimized"
+      v-if="minimized"
       type="button"
       class="terminal-chat-chip"
-      :style="chipStyle"
       :data-state="session.connection_state"
       @click="restoreTerminal"
     >
-      <span class="terminal-status-dot" />
+      <span class="terminal-status-dot" :data-state="session.connection_state" />
       <span class="terminal-chat-chip__label">{{ session.server_name }}</span>
       <small>{{ session.ssh_username ?? session.ssh_profile_name ?? 'SSH' }}</small>
-      <span class="terminal-chat-chip__close" title="Close terminal" @click.stop="closeTerminal">×</span>
+      <span
+        class="terminal-chat-chip__close"
+        title="Close terminal"
+        @click.stop="closeTerminal"
+      >×</span>
     </button>
 
     <section
-      v-show="!minimized"
+      v-else
       class="terminal-window"
       :class="{ 'terminal-window--maximized': maximized }"
       :style="panelStyle"

@@ -70,6 +70,9 @@ export interface UserPreferences {
   theme: ThemePreference
   accent: AccentPreference
   density: DensityPreference
+  terminal_foreground: string
+  terminal_background: string
+  terminal_highlight_keywords: boolean
 }
 
 export interface UserNotificationPreferences {
@@ -114,6 +117,9 @@ export interface PreferencesUpdateInput {
   theme?: ThemePreference
   accent?: AccentPreference
   density?: DensityPreference
+  terminal_foreground?: string
+  terminal_background?: string
+  terminal_highlight_keywords?: boolean
 }
 
 export interface NotificationPreferencesUpdateInput {

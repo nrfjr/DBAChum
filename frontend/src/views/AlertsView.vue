@@ -2,17 +2,25 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
-import { useAlertsStore, type AlertSeverity } from '@/stores/alerts'
+import { useAlertsStore, type AlertItem, type AlertSeverity } from '@/stores/alerts'
 import { useAuthStore } from '@/stores/auth'
+import { useServersStore, type Server } from '@/stores/servers'
+import { useTerminalSessionsStore } from '@/stores/terminalSessions'
 import { hasPermission } from '@/core/permissions'
 import { confirmDialog, showToast } from '@/ui/feedback'
 
 const alertsStore = useAlertsStore()
 const authStore = useAuthStore()
+const serversStore = useServersStore()
+const terminalStore = useTerminalSessionsStore()
 const router = useRouter()
 
 const canManageAlerts = computed(() =>
   hasPermission(authStore.user, 'alerts:manage'),
+)
+
+const canUseTerminal = computed(() =>
+  hasPermission(authStore.user, 'terminal:use'),
 )
 
 const statusFilter = ref<'active' | 'resolved' | 'all'>('active')
@@ -81,8 +89,50 @@ function openSource(sourceType: string, sourceId: string, history = false) {
   }
 }
 
+function terminalReady(server: Server) {
+  return server.enabled && Boolean(server.ssh_profile_id) && Boolean(server.ssh_host_key_fingerprint)
+}
+
+function terminalServerForAlert(alert: AlertItem) {
+  if (!canUseTerminal.value) return null
+
+  if (alert.source_type === 'server') {
+    const server = serversStore.servers.find((item) => item.id === alert.source_id)
+    return server && terminalReady(server) ? server : null
+  }
+
+  if (alert.source_type === 'database') {
+    const candidates = serversStore.servers.filter((server) =>
+      terminalReady(server) && server.database_connection_ids.includes(alert.source_id),
+    )
+    return candidates.length === 1 ? candidates[0] : null
+  }
+
+  return null
+}
+
+function openAlertTerminal(alert: AlertItem) {
+  const server = terminalServerForAlert(alert)
+  if (!server) return
+
+  try {
+    terminalStore.open(server)
+  } catch (cause) {
+    showToast({
+      title: 'Unable to open SSH terminal',
+      message: cause instanceof Error ? cause.message : undefined,
+      tone: 'danger',
+    })
+  }
+}
+
 onMounted(async () => {
-  await refresh()
+  await Promise.all([
+    refresh(),
+    canUseTerminal.value && serversStore.servers.length === 0
+      ? serversStore.load()
+      : Promise.resolve(),
+  ])
   refreshTimer = setInterval(() => {
     void refresh()
   }, 30_000)
@@ -197,6 +247,14 @@ onUnmounted(() => {
             @click="openSource(alert.source_type, alert.source_id)"
           >
             Open {{ alert.source_type }}
+          </button>
+          <button
+            v-if="terminalServerForAlert(alert)"
+            type="button"
+            class="secondary-button"
+            @click="openAlertTerminal(alert)"
+          >
+            Terminal
           </button>
           <button
             v-if="canManageAlerts"

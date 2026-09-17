@@ -70,6 +70,15 @@ class UserPreferences(BaseModel):
     theme: ThemePreference = ThemePreference.SYSTEM
     accent: AccentPreference = AccentPreference.PURPLE
     density: DensityPreference = DensityPreference.COMFORTABLE
+    terminal_foreground: str = Field(
+        default="#d7e0ea",
+        pattern=r"^#[0-9A-Fa-f]{6}$",
+    )
+    terminal_background: str = Field(
+        default="#0b0f14",
+        pattern=r"^#[0-9A-Fa-f]{6}$",
+    )
+    terminal_highlight_keywords: bool = True
 
     @field_validator("timezone")
     @classmethod
@@ -92,6 +101,15 @@ class UserPreferencesUpdate(BaseModel):
     theme: ThemePreference | None = None
     accent: AccentPreference | None = None
     density: DensityPreference | None = None
+    terminal_foreground: str | None = Field(
+        default=None,
+        pattern=r"^#[0-9A-Fa-f]{6}$",
+    )
+    terminal_background: str | None = Field(
+        default=None,
+        pattern=r"^#[0-9A-Fa-f]{6}$",
+    )
+    terminal_highlight_keywords: bool | None = None
 
     @field_validator("timezone")
     @classmethod
