@@ -15,6 +15,7 @@ async def connect_to_mongodb(app: FastAPI) -> None:
     client = AsyncMongoClient(
         settings.mongodb_uri,
         serverSelectionTimeoutMS=3000,
+        tz_aware=True,
     )
 
     database = client[settings.mongodb_database]

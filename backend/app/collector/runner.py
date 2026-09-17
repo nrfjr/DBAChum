@@ -346,6 +346,7 @@ async def run_collector_process() -> None:
     client = AsyncMongoClient(
         settings.mongodb_uri,
         serverSelectionTimeoutMS=3000,
+        tz_aware=True,
     )
     database = client[settings.mongodb_database]
 
