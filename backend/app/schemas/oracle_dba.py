@@ -130,6 +130,51 @@ class OracleActivityResponse(BaseModel):
     warning: str | None = None
     checked_at: datetime
 
+
+class OracleAdvisorCandidate(BaseModel):
+    size_mb: float | None = None
+    size_factor: float | None = None
+    current: bool = False
+    estimated_db_time: float | None = None
+    estimated_db_time_factor: float | None = None
+    estimated_physical_reads: int | None = None
+    estimated_physical_read_factor: float | None = None
+    estimated_time: float | None = None
+    estimated_extra_bytes_rw: int | None = None
+    estimated_cache_hit_percent: float | None = None
+    estimated_overalloc_count: int | None = None
+    estimated_lc_time_saved: float | None = None
+    estimated_lc_time_saved_factor: float | None = None
+    estimated_lc_load_time: float | None = None
+    estimated_lc_load_time_factor: float | None = None
+    estimated_spill_count: int | None = None
+    estimated_spill_time: float | None = None
+    estimated_unspill_count: int | None = None
+    estimated_unspill_time: float | None = None
+    mttr_target_seconds: int | None = None
+    estimated_cache_writes: int | None = None
+    estimated_cache_write_factor: float | None = None
+    estimated_total_writes: int | None = None
+    estimated_total_write_factor: float | None = None
+    estimated_total_ios: int | None = None
+    estimated_total_io_factor: float | None = None
+
+
+class OracleAdvisorSection(BaseModel):
+    key: str
+    label: str
+    available: bool = False
+    advice_status: str | None = None
+    items: list[OracleAdvisorCandidate] = Field(default_factory=list)
+    warning: str | None = None
+
+
+class OracleAdvisorsResponse(BaseModel):
+    available: bool = False
+    sections: list[OracleAdvisorSection] = Field(default_factory=list)
+    checked_at: datetime
+
+
 class OracleDatabaseUserItem(BaseModel):
     username: str
     status: str

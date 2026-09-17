@@ -2,7 +2,7 @@
 
 DBAChum is a self-hosted database administration and monitoring workspace built for day-to-day DBA operations.
 
-Current release: **v1.0.4**
+Current release: **v1.3.0**
 
 ## Supported Databases
 
@@ -99,6 +99,6 @@ cd backend
 
 ## Release
 
-Latest stable release: **DBAChum v1.0.4**
+Latest stable release: **DBAChum v1.3.0**
 
 Release packages, checksums, and release notes are available under GitHub Releases.

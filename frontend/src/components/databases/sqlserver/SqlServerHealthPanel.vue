@@ -122,13 +122,11 @@ onMounted(() => {
         <div>
           <span>Active requests</span>
           <strong>{{ health.workload.active ?? '—' }}</strong>
-          <small>Current database</small>
         </div>
 
         <div>
           <span>Blocked</span>
           <strong>{{ health.workload.blocked ?? '—' }}</strong>
-          <small>Current database</small>
         </div>
 
         <div>

@@ -329,7 +329,7 @@ async function runCompare() {
         <details v-if="result.powerful" class="access-alert-section">
           <summary>⚠ Elevated access target</summary>
           <p>
-            {{ result.target }} matches DBAChum's explicit elevated-access rules.
+            {{ result.target }} matches DBAChum's explicit elevated-access.
           </p>
         </details>
 
@@ -349,6 +349,7 @@ async function runCompare() {
 
         <div class="access-results-toolbar">
           <input
+            class="utility-search-input"
             v-model="resultFilter"
             type="search"
             placeholder="Filter username, status, privilege or source"
@@ -478,6 +479,7 @@ async function runCompare() {
 
         <div class="access-results-toolbar">
           <input
+            class="utility-search-input"
             v-model="compareFilter"
             type="search"
             placeholder="Filter compared access or source path"

@@ -760,7 +760,7 @@ function engineLabel(engine: NotificationEngine) {
               <fieldset class="profile-fieldset notification-section">
                 <legend>Severity</legend>
                 <label v-for="option in severityOptions" :key="option.value" class="notification-check-row">
-                  <input v-model="notifications.severities" type="checkbox" :value="option.value"
+                  <input v-model="notifications.severities" type="checkbox" :value="option.value" class="toggle-switch"
                     title="{{ option.description }}" />
                   <span>
                     <strong>{{ option.label }}</strong>
@@ -771,7 +771,7 @@ function engineLabel(engine: NotificationEngine) {
               <fieldset class="profile-fieldset notification-section">
                 <legend>Database engines</legend>
                 <label v-for="option in engineOptions" :key="option.value" class="notification-check-row">
-                  <input v-model="notifications.engines" type="checkbox" :value="option.value" />
+                  <input v-model="notifications.engines" type="checkbox" :value="option.value" class="toggle-switch"/>
                   <span>{{ option.label }}</span>
                 </label>
 
@@ -791,7 +791,7 @@ function engineLabel(engine: NotificationEngine) {
               <legend>Alert categories</legend>
               <div class="notification-chip-grid">
                 <label v-for="option in categoryOptions" :key="option.value" class="notification-chip">
-                  <input v-model="notifications.categories" type="checkbox" :value="option.value" />
+                  <input v-model="notifications.categories" type="checkbox" :value="option.value" class="toggle-switch" />
                   <span>{{ option.label }}</span>
                 </label>
               </div>
@@ -832,7 +832,7 @@ function engineLabel(engine: NotificationEngine) {
                 <div v-else class="notification-source-list">
                   <label v-for="connection in monitoredConnections" :key="connection.id"
                     class="notification-source-row">
-                    <input v-model="notifications.database_connection_ids" type="checkbox" :value="connection.id" />
+                    <input v-model="notifications.database_connection_ids" type="checkbox" :value="connection.id" class="toggle-switch"/>
                     <span>
                       <strong>{{ connection.name }}</strong>
                       <small>
@@ -859,7 +859,7 @@ function engineLabel(engine: NotificationEngine) {
 
                 <div v-else class="notification-source-list">
                   <label v-for="server in monitoredServers" :key="server.id" class="notification-source-row">
-                    <input v-model="notifications.server_ids" type="checkbox" :value="server.id" />
+                    <input v-model="notifications.server_ids" type="checkbox" :value="server.id" class="toggle-switch"/>
                     <span>
                       <strong>{{ server.name }}</strong>
                       <small>

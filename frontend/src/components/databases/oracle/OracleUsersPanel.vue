@@ -2323,6 +2323,7 @@ onBeforeUnmount(() => {
                   :disabled="clearableProvisioningRuns.length === 0"
                   aria-label="Select all clearable provisioning history"
                   @change="toggleAllProvisioningHistory"
+                  class="toggle-switch"
                 >
               </th>
               <th>User</th>
@@ -2342,6 +2343,7 @@ onBeforeUnmount(() => {
                   type="checkbox"
                   :value="run.run_id"
                   :aria-label="`Select provisioning run for ${run.username}`"
+                  class="toggle-switch"
                 >
                 <span v-else title="Running history cannot be cleared">—</span>
               </td>
@@ -2376,7 +2378,6 @@ onBeforeUnmount(() => {
       <div v-if="retryPasswordRun" class="provisioning-retry-password">
         <div>
           <strong>Retry {{ retryPasswordRun.username }}</strong>
-          <p>Only the remaining step(s) need the original provisioning password. It will be used in memory for this retry and will not be persisted.</p>
         </div>
         <label>
           <span>Original provisioning password</span>
@@ -2386,6 +2387,7 @@ onBeforeUnmount(() => {
               :type="retryShowPassword ? 'text' : 'password'"
               autocomplete="new-password"
               @keyup.enter="submitRetryPassword"
+              class="utility-search-input"
             />
             <button type="button" class="secondary-button" @click="retryShowPassword = !retryShowPassword">
               {{ retryShowPassword ? 'Hide' : 'Show' }}
@@ -2530,6 +2532,7 @@ onBeforeUnmount(() => {
                     :checked="Boolean(selectedAddColumn(column.name.toUpperCase()))"
                     :disabled="currentMappedDisplayColumns.has(column.name.toUpperCase())"
                     @change="toggleAddColumnSelection(column, $event)"
+                    class="toggle-switch"
                   />
                   <span>
                     <strong>{{ column.name }}</strong>
@@ -2548,6 +2551,7 @@ onBeforeUnmount(() => {
                     maxlength="40"
                     autocomplete="off"
                     @input="updateAddColumnLabel(column.name, $event)"
+                    class="utility-search-input"
                   />
                 </label>
               </article>
@@ -2658,7 +2662,6 @@ onBeforeUnmount(() => {
         <div class="modal-header">
           <div>
             <h2>Access inspector · {{ inspectorTargetUsername }}</h2>
-            <p>Read-only view of direct and inherited Oracle access. No grants are changed from this screen.</p>
           </div>
           <button type="button" class="modal-close" aria-label="Close" @click="closeAccessInspector">×</button>
         </div>
@@ -2684,7 +2687,6 @@ onBeforeUnmount(() => {
           <details v-if="inspector.powerful_findings.length" class="access-inspector-section access-powerful-section">
             <summary>Elevated access · {{ inspector.powerful_findings.length }}</summary>
             <div class="access-powerful-body">
-              <p>Explicit flags only — this is not a security score.</p>
               <div class="access-finding-scroll">
                 <div class="access-finding-list">
                   <article v-for="finding in inspector.powerful_findings" :key="`${finding.kind}-${finding.name}-${finding.source}`">
@@ -2744,7 +2746,7 @@ onBeforeUnmount(() => {
           <details class="access-inspector-section">
             <summary>Object privileges · {{ inspector.object_privileges.length }}</summary>
             <div class="access-object-toolbar">
-              <input v-model="inspectorObjectSearch" type="search" placeholder="Filter owner, object, column, privilege or role" />
+              <input class="utility-search-input" v-model="inspectorObjectSearch" type="search" placeholder="Filter owner, object, column, privilege or role" />
               <span>{{ filteredInspectorObjectPrivileges.length }} shown</span>
             </div>
             <div v-if="filteredInspectorObjectPrivileges.length" class="access-table-wrap access-object-table">
@@ -2787,7 +2789,6 @@ onBeforeUnmount(() => {
         <div class="modal-header">
           <div>
             <h2>Edit {{ editTargetUsername }}</h2>
-            <p>Review the exact Oracle changes before applying them.</p>
           </div>
           <button type="button" class="modal-close" aria-label="Close" :disabled="editExecuting" @click="closeEditUser">×</button>
         </div>
@@ -2806,17 +2807,17 @@ onBeforeUnmount(() => {
             <div class="connection-form-row">
               <label>
                 Default tablespace
-                <input v-model="editForm.defaultTablespace" maxlength="30" @input="editPreview = null" />
+                <input class="utility-search-input" v-model="editForm.defaultTablespace" maxlength="30" @input="editPreview = null" />
               </label>
               <label>
                 Temporary tablespace
-                <input v-model="editForm.temporaryTablespace" maxlength="30" @input="editPreview = null" />
+                <input class="utility-search-input" v-model="editForm.temporaryTablespace" maxlength="30" @input="editPreview = null" />
               </label>
             </div>
             <div class="connection-form-row">
               <label>
                 Profile
-                <input v-model="editForm.profile" maxlength="30" @input="editPreview = null" />
+                <input class="utility-search-input" v-model="editForm.profile" maxlength="30" @input="editPreview = null" />
               </label>
               <label class="user-edit-lock-toggle">
                 <span>Account state</span>
@@ -2898,7 +2899,7 @@ onBeforeUnmount(() => {
 
           <label class="user-edit-request-reference">
             <span>Request / ticket <small>optional</small></span>
-            <input v-model="editRequestReference" maxlength="100" placeholder="Change or ticket reference" />
+            <input class="utility-search-input" v-model="editRequestReference" maxlength="100" placeholder="Change or ticket reference" />
           </label>
 
           <div class="connection-form-actions">
@@ -2931,7 +2932,7 @@ onBeforeUnmount(() => {
           <div>
             <h2>Edit provisioned details</h2>
             <p v-if="!provisionedDetailsPreview">
-              {{ provisionedDetailsTargetUsername }} · edit application-table values linked by the immutable Oracle username.
+              {{ provisionedDetailsTargetUsername }}
             </p>
             <p v-else>Review the exact application-table changes before applying them.</p>
           </div>
@@ -2955,9 +2956,6 @@ onBeforeUnmount(() => {
               <strong>Oracle username is locked</strong>
               <span>{{ provisionedDetailsState.username }}</span>
             </div>
-            <p>
-              Columns mapped to the generated username remain unchanged because they are the relationship back to DBA_USERS.
-            </p>
           </div>
 
           <div v-if="provisionedDetailsState.steps.length" class="provisioned-details-steps">
@@ -2999,6 +2997,7 @@ onBeforeUnmount(() => {
                     type="text"
                     autocomplete="on"
                     @input="provisionedDetailsPreview = null"
+                    class="utility-search-input"
                   />
                 </label>
               </div>
@@ -3067,6 +3066,7 @@ onBeforeUnmount(() => {
               maxlength="100"
               autocomplete="on"
               placeholder="Change or ticket reference"
+              class="utility-search-input"
             />
           </label>
 
@@ -3107,11 +3107,11 @@ onBeforeUnmount(() => {
         <div class="connection-form password-reset-form">
           <label>
             New password
-            <input v-model="passwordValue" :type="passwordShow ? 'text' : 'password'" minlength="8" maxlength="128" autocomplete="new-password" />
+            <input class="utility-search-input" v-model="passwordValue" :type="passwordShow ? 'text' : 'password'" minlength="8" maxlength="128" autocomplete="new-password" />
           </label>
           <label>
             Confirm password
-            <input v-model="passwordConfirm" :type="passwordShow ? 'text' : 'password'" minlength="8" maxlength="128" autocomplete="new-password" />
+            <input class="utility-search-input" v-model="passwordConfirm" :type="passwordShow ? 'text' : 'password'" minlength="8" maxlength="128" autocomplete="new-password" />
           </label>
           <div class="oracle-password-actions">
             <button type="button" class="secondary-button" @click="generateResetPassword">Generate password</button>
@@ -3119,7 +3119,7 @@ onBeforeUnmount(() => {
           </div>
           <label>
             Request / ticket (Optional)
-            <input v-model="passwordRequestReference" maxlength="100" placeholder="Change or ticket reference" />
+            <input class="utility-search-input" v-model="passwordRequestReference" maxlength="100" placeholder="Change or ticket reference" />
           </label>
         </div>
 
@@ -3196,7 +3196,6 @@ onBeforeUnmount(() => {
           <div class="deprovision-profile-selector">
             <div>
               <strong>Select what to deprovision</strong>
-              <p>Only provisioning profiles previously used by this Oracle account are shown. One profile is reversed at a time.</p>
             </div>
 
             <label
@@ -3228,7 +3227,6 @@ onBeforeUnmount(() => {
               />
               <span>
                 <strong>Oracle account only</strong>
-                <small>Skip application provisioning tables and LDAP. Drop only the Oracle schema/user.</small>
               </span>
             </label>
 
@@ -3422,6 +3420,7 @@ onBeforeUnmount(() => {
           <label :class="{ 'field-invalid': createFieldErrors.employeeId }">
             <span class="field-label">Employee ID <span class="required-mark" aria-hidden="true">*</span></span>
             <input
+              class="utility-search-input"
               v-model="createForm.employeeId"
               required
               maxlength="100"
@@ -3436,6 +3435,7 @@ onBeforeUnmount(() => {
             <label :class="{ 'field-invalid': createFieldErrors.firstName }">
               <span class="field-label">First name <span class="required-mark" aria-hidden="true">*</span></span>
               <input
+                class="utility-search-input"
                 v-model="createForm.firstName"
                 required
                 maxlength="100"
@@ -3448,6 +3448,7 @@ onBeforeUnmount(() => {
             <label :class="{ 'field-invalid': createFieldErrors.lastName }">
               <span class="field-label">Last name <span class="required-mark" aria-hidden="true">*</span></span>
               <input
+                class="utility-search-input"
                 v-model="createForm.lastName"
                 required
                 maxlength="100"
@@ -3461,6 +3462,7 @@ onBeforeUnmount(() => {
           <label :class="{ 'field-invalid': createFieldErrors.middleName }">
             Middle name (Optional)
             <input
+              class="utility-search-input"
               v-model="createForm.middleName"
               maxlength="100"
               autocomplete="off"
@@ -3474,6 +3476,7 @@ onBeforeUnmount(() => {
               <strong>Generated username</strong>
             </div>
             <input
+              class="utility-search-input"
               :value="createForm.username"
               readonly
               autocomplete="off"
@@ -3517,7 +3520,6 @@ onBeforeUnmount(() => {
                 {{ profile.name }}{{ profile.ready ? '' : ' · Needs attention' }}
               </option>
             </select>
-            <small>Only profiles enabled for this parent Oracle database appear here.</small>
           </label>
 
           <div v-if="selectedProvisioningProfile && !selectedProvisioningProfile.ready" class="utility-warning oracle-create-warning">
@@ -3535,6 +3537,7 @@ onBeforeUnmount(() => {
               autocomplete="new-password"
               placeholder="At least 8 characters"
               @input="setCreateFieldError('password', null)"
+              class="utility-search-input"
             />
             <small v-if="createFieldErrors.password" class="field-error">{{ createFieldErrors.password }}</small>
             <span class="oracle-password-actions">
@@ -3552,6 +3555,7 @@ onBeforeUnmount(() => {
               autocomplete="on"
               placeholder="Existing user whose roles should be reviewed"
               @input="referenceInput"
+              class="utility-search-input"
             />
             <small v-if="createFieldErrors.referenceUsername" class="field-error">{{ createFieldErrors.referenceUsername }}</small>
             <button
@@ -3568,7 +3572,6 @@ onBeforeUnmount(() => {
           <section v-if="reference" class="oracle-role-review access-role-selection">
             <div>
               <h3>Reference roles</h3>
-              <p>Select the roles to copy before moving to Preview. ADMIN OPTION is intentionally not copied.</p>
             </div>
             <div v-if="reference.roles.length === 0" class="empty-state">Reference user has no role grants.</div>
             <template v-else>
@@ -3583,6 +3586,7 @@ onBeforeUnmount(() => {
                   :checked="roleSelected(role.name)"
                   :disabled="role.sensitive"
                   @change="handleRoleToggle(role.name, $event)"
+                  class="toggle-switch"
                 />
                 <span>
                   <strong>{{ role.name }}</strong>
@@ -3602,7 +3606,6 @@ onBeforeUnmount(() => {
 
           <section v-if="reference?.system_privileges.length" class="oracle-system-privileges access-system-privileges">
             <h3>Direct system privileges — review only</h3>
-            <p>Visible for comparison only; DBAChum will not grant these automatically.</p>
             <div class="oracle-privilege-list">
               <span v-for="privilege in reference.system_privileges" :key="privilege.name">
                 {{ privilege.name }}<template v-if="privilege.admin_option"> · ADMIN OPTION</template>
@@ -3611,13 +3614,13 @@ onBeforeUnmount(() => {
           </section>
 
           <div class="connection-form-row">
-            <label>Default tablespace (Optional)<input v-model="createForm.defaultTablespace" maxlength="30" placeholder="Uses reference/default when blank" /></label>
-            <label>Temporary tablespace (Optional)<input v-model="createForm.temporaryTablespace" maxlength="30" placeholder="Uses reference/default when blank" /></label>
+            <label>Default tablespace (Optional)<input class="utility-search-input" v-model="createForm.defaultTablespace" maxlength="30" placeholder="Uses reference/default when blank" /></label>
+            <label>Temporary tablespace (Optional)<input class="utility-search-input" v-model="createForm.temporaryTablespace" maxlength="30" placeholder="Uses reference/default when blank" /></label>
           </div>
-          <label>Profile (Optional)<input v-model="createForm.profile" maxlength="30" placeholder="Uses reference/default when blank" /></label>
+          <label>Profile (Optional)<input class="utility-search-input" v-model="createForm.profile" maxlength="30" placeholder="Uses reference/default when blank" /></label>
           <div class="connection-form-row">
-            <label>Requestor (Optional)<input v-model="createForm.requestorName" name="requestor" maxlength="200" autocomplete="on" placeholder="Requestor full name" /></label>
-            <label>Request / ticket reference (Optional)<input v-model="createForm.requestReference" maxlength="100" placeholder="REQ-12345" /></label>
+            <label>Requestor (Optional)<input class="utility-search-input" v-model="createForm.requestorName" name="requestor" maxlength="200" autocomplete="on" placeholder="Requestor full name" /></label>
+            <label>Request / ticket reference (Optional)<input class="utility-search-input" v-model="createForm.requestReference" maxlength="100" placeholder="REQ-12345" /></label>
           </div>
           <label>Remarks (Optional)<textarea v-model="createForm.remarks" name="remarks" rows="3" maxlength="1000" autocomplete="on" placeholder="Reason, access note, or provisioning remarks"></textarea></label>
 
@@ -3654,7 +3657,6 @@ onBeforeUnmount(() => {
             <section class="oracle-role-review">
             <div>
               <h3>Roles to grant</h3>
-              <p>The role selection was made in Access. Go Back if it needs to change.</p>
             </div>
             <div v-if="selectedRoles.length === 0" class="empty-state">No reference roles selected.</div>
             <div v-else class="oracle-privilege-list">

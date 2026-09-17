@@ -392,7 +392,6 @@ onMounted(() => {
             <div class="modal-header">
                 <div>
                     <h2>Reset password</h2>
-
                     <p>
                         {{ passwordUsername }}
                     </p>

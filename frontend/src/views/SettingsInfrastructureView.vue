@@ -918,7 +918,7 @@ onMounted(async () => {
 
             <div class="terminal-shortcut-server-picker__list">
               <label v-for="item in shortcutServerOptions" :key="item.id" class="terminal-shortcut-server-option">
-                <input v-model="shortcutForm.server_ids" type="checkbox" :value="item.id" />
+                <input v-model="shortcutForm.server_ids" type="checkbox" :value="item.id" class="toggle-switch"/>
                 <span>
                   <strong>{{ item.name }}</strong>
                   <small>

@@ -116,6 +116,50 @@ export interface OracleActivityResponse {
   checked_at: string
 }
 
+export interface OracleAdvisorCandidate {
+  size_mb: number | null
+  size_factor: number | null
+  current: boolean
+  estimated_db_time: number | null
+  estimated_db_time_factor: number | null
+  estimated_physical_reads: number | null
+  estimated_physical_read_factor: number | null
+  estimated_time: number | null
+  estimated_extra_bytes_rw: number | null
+  estimated_cache_hit_percent: number | null
+  estimated_overalloc_count: number | null
+  estimated_lc_time_saved: number | null
+  estimated_lc_time_saved_factor: number | null
+  estimated_lc_load_time: number | null
+  estimated_lc_load_time_factor: number | null
+  estimated_spill_count: number | null
+  estimated_spill_time: number | null
+  estimated_unspill_count: number | null
+  estimated_unspill_time: number | null
+  mttr_target_seconds: number | null
+  estimated_cache_writes: number | null
+  estimated_cache_write_factor: number | null
+  estimated_total_writes: number | null
+  estimated_total_write_factor: number | null
+  estimated_total_ios: number | null
+  estimated_total_io_factor: number | null
+}
+
+export interface OracleAdvisorSection {
+  key: string
+  label: string
+  available: boolean
+  advice_status: string | null
+  items: OracleAdvisorCandidate[]
+  warning: string | null
+}
+
+export interface OracleAdvisorsResponse {
+  available: boolean
+  sections: OracleAdvisorSection[]
+  checked_at: string
+}
+
 export interface OracleDatabaseUser {
   username: string
   status: string
@@ -615,6 +659,11 @@ export const useOracleDbaStore =
         OracleActivityResponse
       >,
 
+      advisors: {} as Record<
+        string,
+        OracleAdvisorsResponse
+      >,
+
       users: {} as Record<
         string,
         OracleDatabaseUsersResponse
@@ -628,6 +677,7 @@ export const useOracleDbaStore =
       loadingSessions: false,
       loadingStorage: false,
       loadingActivity: false,
+      loadingAdvisors: false,
       loadingUsers: false,
       loadingReference: false,
       creatingUser: false,
@@ -635,6 +685,7 @@ export const useOracleDbaStore =
       sessionsError: null as string | null,
       storageError: null as string | null,
       activityError: null as string | null,
+      advisorsError: null as string | null,
       usersError: null as string | null,
       referenceError: null as string | null,
       createUserError: null as string | null,
@@ -695,6 +746,25 @@ export const useOracleDbaStore =
               : 'Unable to load Oracle activity.'
         } finally {
           this.loadingActivity = false
+        }
+      },
+
+      async loadAdvisors(id: string) {
+        this.loadingAdvisors = true
+        this.advisorsError = null
+
+        try {
+          this.advisors[id] =
+            await apiRequest<OracleAdvisorsResponse>(
+              `/databases/${id}/oracle/advisors`,
+            )
+        } catch (error) {
+          this.advisorsError =
+            error instanceof Error
+              ? error.message
+              : 'Unable to load Oracle advisors.'
+        } finally {
+          this.loadingAdvisors = false
         }
       },
 

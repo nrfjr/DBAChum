@@ -405,13 +405,13 @@ async function downloadResultsXlsx() {
           </label>
           <label v-if="useCommonReference" :class="{ 'field-invalid': useCommonReference && !commonReferenceUser.trim() }">
             Common reference user
-            <input v-model="commonReferenceUser" maxlength="30" autocomplete="off" placeholder="RMSUSER01" />
+            <input v-model="commonReferenceUser" maxlength="30" autocomplete="off" placeholder="RMSUSER01" class="utility-search-input"/>
             <small v-if="useCommonReference && !commonReferenceUser.trim()" class="field-error">Reference user is required while this option is enabled.</small>
           </label>
 
           <div class="connection-form-row">
-            <label>Requestor (Optional)<input v-model="requestor" maxlength="200" /></label>
-            <label>Request / ticket (Optional)<input v-model="requestReference" maxlength="100" /></label>
+            <label>Requestor (Optional)<input v-model="requestor" maxlength="200" class="utility-search-input"/></label>
+            <label>Request / ticket (Optional)<input v-model="requestReference" maxlength="100" class="utility-search-input" /></label>
           </div>
           <label>Remarks (Optional)<textarea v-model="remarks" rows="3" maxlength="1000"></textarea></label>
         </div>

@@ -13,6 +13,7 @@ import DatabaseParametersPanel from '@/components/databases/DatabaseParametersPa
 import DatabaseSessionsPanel from '@/components/databases/DatabaseSessionsPanel.vue'
 import DatabaseStoragePanel from '@/components/databases/DatabaseStoragePanel.vue'
 import DatabaseUsersPanel from '@/components/databases/DatabaseUsersPanel.vue'
+import OracleAdvisorPanel from '@/components/databases/oracle/OracleAdvisorPanel.vue'
 import { hasPermission } from '@/core/permissions'
 import {
   engineLabel,
@@ -78,6 +79,7 @@ type DatabaseTab =
   | 'metrics'
   | 'sessions'
   | 'storage'
+  | 'advisor'
   | 'backups'
   | 'users_access'
   | 'parameters'
@@ -89,6 +91,7 @@ const validTabs = new Set<DatabaseTab>([
   'metrics',
   'sessions',
   'storage',
+  'advisor',
   'backups',
   'users_access',
   'parameters',
@@ -103,6 +106,7 @@ const visitedTabs = reactive<Record<DatabaseTab, boolean>>({
   metrics: false,
   sessions: false,
   storage: false,
+  advisor: false,
   backups: false,
   users_access: false,
   parameters: false,
@@ -116,6 +120,7 @@ const tabLabels: Record<DatabaseTab, string> = {
   metrics: 'Metrics',
   sessions: 'Sessions',
   storage: 'Storage',
+  advisor: 'Advisor',
   backups: 'Backups',
   users_access: 'Users / Access',
   parameters: 'Parameters',
@@ -201,6 +206,7 @@ const canUseTerminal = computed(() =>
 )
 
 function tabIsAvailable(tab: DatabaseTab) {
+  if (tab === 'advisor') return connection.value?.engine === 'oracle'
   if (['sessions', 'storage', 'parameters', 'jobs', 'maintenance'].includes(tab)) return supportsDbaUtilities.value
   if (tab === 'users_access') return supportsUsersAndSchemas.value || supportsAccessAndPrivileges.value
   return true
@@ -541,6 +547,7 @@ onUnmounted(() => {
           <button :class="{ active: activeTab === 'metrics' }" @click="selectTab('metrics')">Metrics</button>
           <button :disabled="!supportsDbaUtilities" :class="{ active: activeTab === 'sessions' }" @click="selectTab('sessions')">Sessions</button>
           <button :disabled="!supportsDbaUtilities" :class="{ active: activeTab === 'storage' }" @click="selectTab('storage')">Storage</button>
+          <button v-if="connection.engine === 'oracle'" :class="{ active: activeTab === 'advisor' }" @click="selectTab('advisor')">Advisor</button>
           <button :class="{ active: activeTab === 'backups' }" @click="selectTab('backups')">Backups</button>
           <button v-if="supportsUsersAndSchemas || supportsAccessAndPrivileges" :class="{ active: activeTab === 'users_access' }" @click="selectTab('users_access')">Users / Access</button>
           <button :disabled="!supportsDbaUtilities" :class="{ active: activeTab === 'parameters' }" @click="selectTab('parameters')">Parameters</button>
@@ -637,6 +644,13 @@ onUnmounted(() => {
           :key="`storage-${connection.id}`"
           :connection-id="connection.id"
           :engine="connection.engine"
+        />
+      </div>
+
+      <div v-if="visitedTabs.advisor" v-show="activeTab === 'advisor'" class="database-tab-panel">
+        <OracleAdvisorPanel
+          :key="`advisor-${connection.id}`"
+          :connection-id="connection.id"
         />
       </div>
 

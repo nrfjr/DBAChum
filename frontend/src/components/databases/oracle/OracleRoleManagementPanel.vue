@@ -570,19 +570,19 @@ watch(
           <option value="revoke_object_privilege">Revoke object privilege</option>
         </select></label>
 
-        <label v-if="actionNeedsUser">Username<input v-model="actionUsername" maxlength="30" placeholder="APPUSER" :disabled="Boolean(actionPreview)" /></label>
-        <label v-if="actionNeedsRole">Child role<input v-model="actionValue" list="oracle-role-catalog" maxlength="30" placeholder="APP_READ" :disabled="Boolean(actionPreview)" /></label>
+        <label v-if="actionNeedsUser">Username<input v-model="actionUsername" maxlength="30" placeholder="APPUSER" :disabled="Boolean(actionPreview)" class="utility-search-input"/></label>
+        <label v-if="actionNeedsRole">Child role<input class="utility-search-input" v-model="actionValue" list="oracle-role-catalog" maxlength="30" placeholder="APP_READ" :disabled="Boolean(actionPreview)" /></label>
         <template v-if="actionNeedsSystemPrivilege">
-          <label>System privilege<input v-model="actionPrivilege" list="oracle-system-privilege-catalog" maxlength="128" placeholder="CREATE SESSION" :disabled="Boolean(actionPreview)" /></label>
+          <label>System privilege<input class="utility-search-input" v-model="actionPrivilege" list="oracle-system-privilege-catalog" maxlength="128" placeholder="CREATE SESSION" :disabled="Boolean(actionPreview)" /></label>
         </template>
         <template v-if="actionNeedsObject">
           <div class="role-form-grid">
-            <label>Owner<input v-model="actionOwner" maxlength="30" placeholder="APP" :disabled="Boolean(actionPreview)" /></label>
-            <label>Object<input v-model="actionObject" maxlength="30" placeholder="ORDERS" :disabled="Boolean(actionPreview)" /></label>
+            <label>Owner<input class="utility-search-input" v-model="actionOwner" maxlength="30" placeholder="APP" :disabled="Boolean(actionPreview)" /></label>
+            <label>Object<input class="utility-search-input" v-model="actionObject" maxlength="30" placeholder="ORDERS" :disabled="Boolean(actionPreview)" /></label>
           </div>
-          <label>Object privilege<input v-model="actionPrivilege" list="oracle-object-privilege-catalog" maxlength="128" placeholder="SELECT" :disabled="Boolean(actionPreview)" /></label>
+          <label>Object privilege<input class="utility-search-input" v-model="actionPrivilege" list="oracle-object-privilege-catalog" maxlength="128" placeholder="SELECT" :disabled="Boolean(actionPreview)" /></label>
         </template>
-        <label>Request / ticket reference <small>optional</small><input v-model="actionReference" maxlength="100" placeholder="REQ-12345" /></label>
+        <label>Request / ticket reference <small>optional</small><input class="utility-search-input" v-model="actionReference" maxlength="100" placeholder="REQ-12345" /></label>
 
         <datalist id="oracle-role-catalog"><option v-for="role in catalog?.roles ?? []" :key="role.name" :value="role.name" /></datalist>
         <datalist id="oracle-system-privilege-catalog"><option v-for="item in catalog?.system_privileges_catalog ?? []" :key="item" :value="item" /></datalist>
@@ -617,8 +617,8 @@ watch(
           </section>
           <div v-for="warning in dropPreview.warnings" :key="warning" class="utility-warning role-elevated-warning">{{ warning }}</div>
           <div class="sql-preview"><span>Exact statement</span><code>{{ dropPreview.statement }}</code></div>
-          <label>Type <strong>{{ detail.name }}</strong> to confirm<input v-model="dropConfirmation" maxlength="30" :placeholder="detail.name" /></label>
-          <label>Request / ticket reference <small>optional</small><input v-model="dropReference" maxlength="100" placeholder="REQ-12345" /></label>
+          <label>Type <strong>{{ detail.name }}</strong> to confirm<input class="utility-search-input" v-model="dropConfirmation" maxlength="30" :placeholder="detail.name" /></label>
+          <label>Request / ticket reference <small>optional</small><input class="utility-search-input" v-model="dropReference" maxlength="100" placeholder="REQ-12345" /></label>
         </template>
         <footer>
           <button type="button" class="role-drop-button solid" :disabled="!dropPreview || dropConfirmation.trim().toUpperCase() !== detail.name || dropLoading" @click="executeDropRole">{{ dropLoading ? 'Dropping...' : 'Drop role' }}</button>

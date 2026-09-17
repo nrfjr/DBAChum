@@ -335,7 +335,6 @@ onUnmounted(() => {
           <button type="button" class="database-overview-summary-card" @click="selectTab('databases')">
             <span>Databases</span>
             <strong>{{ databases.length }}</strong>
-            <small>Linked database connections</small>
           </button>
         </section>
 

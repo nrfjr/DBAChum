@@ -6,6 +6,7 @@ import '@xterm/xterm/css/xterm.css'
 
 import { useTerminalSessionsStore } from '@/stores/terminalSessions'
 import { useTerminalShortcutsStore, type TerminalShortcut } from '@/stores/terminalShortcuts'
+import { showToast } from '@/ui/feedback'
 
 const props = defineProps<{
   sessionId: string
@@ -208,6 +209,29 @@ function runShortcut(shortcut: TerminalShortcut) {
 
 function clearTerminal() {
   terminal?.clear()
+  terminal?.focus()
+}
+
+async function pasteClipboard(event: MouseEvent) {
+  if (event.shiftKey || !navigator.clipboard?.readText) return
+  event.preventDefault()
+
+  if (session.value?.connection_state !== 'connected') {
+    terminal?.focus()
+    return
+  }
+
+  try {
+    const text = await navigator.clipboard.readText()
+    if (text) terminal?.paste(text)
+  } catch {
+    showToast({
+      title: 'Paste unavailable',
+      message: 'Allow clipboard access for DBAChum or use Ctrl+Shift+V.',
+      tone: 'warning',
+    })
+  }
+
   terminal?.focus()
 }
 
@@ -418,7 +442,7 @@ onBeforeUnmount(() => {
         <span class="terminal-window__session-count">Terminal {{ chipIndex + 1 }} / {{ sessionsStore.maxTerminals }}</span>
       </div>
 
-      <div ref="terminalHost" class="terminal-window__screen" />
+      <div ref="terminalHost" class="terminal-window__screen" @contextmenu="pasteClipboard" />
     </section>
   </div>
 </template>

@@ -442,6 +442,7 @@ onMounted(async () => {
                     :disabled="clearableDeliveries.length === 0"
                     aria-label="Select all clearable delivery history"
                     @change="toggleAllClearableDeliveries"
+                    class="toggle-switch"
                   >
                 </th>
                 <th>When</th>
@@ -462,6 +463,7 @@ onMounted(async () => {
                     type="checkbox"
                     :value="delivery.id"
                     :aria-label="`Select ${delivery.subject}`"
+                    class="toggle-switch"
                   >
                   <span v-else title="Pending deliveries cannot be cleared">—</span>
                 </td>

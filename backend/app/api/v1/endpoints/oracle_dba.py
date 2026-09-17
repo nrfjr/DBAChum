@@ -10,6 +10,7 @@ from fastapi import (
 
 from app.schemas.oracle_dba import (
     OracleActivityResponse,
+    OracleAdvisorsResponse,
     OracleSessionsResponse,
     OracleStorageResponse,
     OracleDatabaseUsersResponse,
@@ -75,6 +76,7 @@ from app.schemas.provisioning import (
 from app.schemas.user import UserResponse
 from app.services.oracle_dba import (
     load_oracle_activity,
+    load_oracle_advisors,
     load_oracle_sessions,
     load_oracle_storage,
     load_oracle_users,
@@ -190,6 +192,23 @@ async def get_activity(
     current_user: UserResponse = Depends(require_permission(Permission.MONITOR_READ)),
 ):
     return await load_oracle_activity(
+        request.app.state.database,
+        connection_id,
+    )
+
+
+@router.get(
+    "/{connection_id}/oracle/advisors",
+    response_model=OracleAdvisorsResponse,
+)
+async def get_advisors(
+    connection_id: str,
+    request: Request,
+    current_user: UserResponse = Depends(
+        require_permission(Permission.MONITOR_READ)
+    ),
+):
+    return await load_oracle_advisors(
         request.app.state.database,
         connection_id,
     )

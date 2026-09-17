@@ -37,7 +37,8 @@ const sizeColumn = ref('')
 const unitColumn = ref('')
 const defaultUnit = ref('GB')
 const databaseMap = ref<Record<string, string>>({})
-const growthDatabase = ref('')
+const growthSelectedDatabases = ref<string[]>([])
+const growthSelectionReady = ref(false)
 
 type SizeUnitChoice = 'auto' | 'MB' | 'GB' | 'TB'
 type SizeChartKey = 'databaseSize' | 'growth' | 'backupSize' | 'oracleMemory' | 'serverDisk' | 'serverMemory'
@@ -229,16 +230,30 @@ const growthDatabaseOptions = computed(() => {
     .sort((a, b) => a.label.localeCompare(b.label))
 })
 
-const growthSelectedIds = computed(() => {
-  const points = databaseData.value?.growth ?? []
-  const ids = [...new Set(points.map((point) => point.connection_id))]
-  if (growthDatabase.value === '__all__') return ids
-  if (growthDatabase.value) return ids.includes(growthDatabase.value) ? [growthDatabase.value] : []
+const growthTop10Ids = computed(() => {
+  const ids = [...new Set((databaseData.value?.growth ?? []).map((point) => point.connection_id))]
   const currentSizes = new Map((databaseData.value?.items ?? []).map((item) => [item.connection_id, Number(item.database_size_bytes ?? 0)]))
   return ids
     .sort((a, b) => (currentSizes.get(b) ?? 0) - (currentSizes.get(a) ?? 0))
     .slice(0, 10)
 })
+
+const growthSelectedIds = computed(() => {
+  const available = new Set(growthDatabaseOptions.value.map((option) => option.value))
+  return growthSelectedDatabases.value.filter((id) => available.has(id))
+})
+
+function selectGrowthTop10() {
+  growthSelectedDatabases.value = [...growthTop10Ids.value]
+}
+
+function selectAllGrowthDatabases() {
+  growthSelectedDatabases.value = growthDatabaseOptions.value.map((option) => option.value)
+}
+
+function clearGrowthDatabases() {
+  growthSelectedDatabases.value = []
+}
 
 const growthVisiblePoints = computed(() => {
   const selected = new Set(growthSelectedIds.value)
@@ -483,8 +498,17 @@ async function submitImport() {
 }
 
 watch([mode, engine, osFamily, months], () => { void load() })
+watch(engine, () => {
+  growthSelectedDatabases.value = []
+  growthSelectionReady.value = false
+})
 watch(growthDatabaseOptions, (options) => {
-  if (growthDatabase.value && growthDatabase.value !== '__all__' && !options.some((option) => option.value === growthDatabase.value)) growthDatabase.value = ''
+  const available = new Set(options.map((option) => option.value))
+  growthSelectedDatabases.value = growthSelectedDatabases.value.filter((id) => available.has(id))
+  if (!growthSelectionReady.value && options.length) {
+    selectGrowthTop10()
+    growthSelectionReady.value = true
+  }
 })
 watch([() => uiStore.accent, () => uiStore.resolvedTheme], syncAccentColor, { immediate: true })
 
@@ -549,7 +573,30 @@ onMounted(async () => {
         </article>
 
         <article class="analytics-chart-card analytics-chart-card--wide">
-          <header><div title="Month-end size from DBAChum daily snapshots and imported history."><h2>Database Growth</h2></div><div class="analytics-chart-controls"><label class="analytics-unit-select">Database<select class="utility-select-input" v-model="growthDatabase"><option value="">Top 10 by size</option><option value="__all__">All databases</option><option v-for="option in growthDatabaseOptions" :key="option.value" :value="option.value">{{ option.label }}</option></select></label><label class="analytics-unit-select">Unit<select class="utility-select-input" v-model="sizeUnits.growth"><option v-for="option in sizeUnitOptions" :key="option.value" :value="option.value">{{ option.label }}</option></select></label><button v-if="mode === 'databases' && canImport" type="button" class="secondary-button" @click="importOpen = true">Import</button></div></header>
+          <header>
+            <div title="Month-end size from DBAChum daily snapshots and imported history."><h2>Database Growth</h2></div>
+            <div class="analytics-chart-controls">
+              <details v-if="growthDatabaseOptions.length" class="analytics-growth-custom">
+                <summary>Custom</summary>
+                <div class="analytics-growth-custom__menu">
+                  <div class="analytics-growth-picker__actions">
+                    <span>{{ growthSelectedIds.length }} of {{ growthDatabaseOptions.length }} databases</span>
+                    <button type="button" @click="selectGrowthTop10">Top 10</button>
+                    <button type="button" @click="selectAllGrowthDatabases">All</button>
+                    <button type="button" @click="clearGrowthDatabases">Clear</button>
+                  </div>
+                  <div class="analytics-growth-picker__list">
+                    <label v-for="option in growthDatabaseOptions" :key="option.value">
+                      <input v-model="growthSelectedDatabases" type="checkbox" :value="option.value" />
+                      <span>{{ option.label }}</span>
+                    </label>
+                  </div>
+                </div>
+              </details>
+              <label class="analytics-unit-select">Unit<select class="utility-select-input" v-model="sizeUnits.growth"><option v-for="option in sizeUnitOptions" :key="option.value" :value="option.value">{{ option.label }}</option></select></label>
+              <button v-if="mode === 'databases' && canImport" type="button" class="secondary-button" @click="importOpen = true">Import</button>
+            </div>
+          </header>
           <VChart v-if="growthVisiblePoints.length" class="analytics-chart analytics-chart--tall" :option="growthOption" autoresize @click="openDatabaseFromChart" />
           <p v-else class="empty-state">Growth history begins after snapshots are collected or historical data is imported.</p>
         </article>
@@ -716,6 +763,20 @@ onMounted(async () => {
 .analytics-chart-controls { display: flex; align-items: center; justify-content: flex-end; gap: .5rem; flex-wrap: wrap; }
 .analytics-unit-select { display: flex; align-items: center; gap: .4rem; color: var(--text-muted); font-size: .72rem; white-space: nowrap; }
 .analytics-unit-select select { min-width: 5rem; min-height: 2rem; }
+.analytics-growth-custom { position: relative; }
+.analytics-growth-custom summary { display: flex; align-items: center; min-height: 2rem; padding: 0 .7rem; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: inherit; font-size: .75rem; cursor: pointer; list-style: none; }
+.analytics-growth-custom summary::-webkit-details-marker { display: none; }
+.analytics-growth-custom summary::after { content: '▾'; margin-left: .45rem; color: var(--text-muted); }
+.analytics-growth-custom[open] summary::after { content: '▴'; }
+.analytics-growth-custom__menu { position: absolute; top: calc(100% + .4rem); right: 0; z-index: 20; display: grid; gap: .55rem; width: min(32rem, 80vw); padding: .7rem .75rem; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); box-shadow: 0 12px 30px rgba(0, 0, 0, .16); }
+.analytics-growth-picker__actions { display: flex; align-items: center; gap: .45rem; flex-wrap: wrap; }
+.analytics-growth-picker__actions span { margin-right: auto; color: var(--text-muted); font-size: .75rem; }
+.analytics-growth-picker__actions button { padding: .28rem .55rem; border: 1px solid var(--border); border-radius: 7px; background: var(--surface); color: inherit; font-size: .72rem; cursor: pointer; }
+.analytics-growth-picker__actions button:hover { background: var(--surface-hover); }
+.analytics-growth-picker__list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .45rem .9rem; max-height: 16rem; overflow: auto; padding: .1rem 0; }
+.analytics-growth-picker__list label { display: flex; align-items: center; gap: .35rem; min-width: 0; color: var(--text-muted); font-size: .76rem; cursor: pointer; }
+.analytics-growth-picker__list label span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.analytics-growth-picker__list input { margin: 0; }
 .analytics-report__filters { display: flex; align-items: end; justify-content: flex-end; gap: .65rem; flex-wrap: wrap; }
 .analytics-report__filters label { display: grid; gap: .3rem; min-width: 9rem; color: var(--text-muted); font-size: .75rem; }
 .analytics-report__filters select { min-height: 2.35rem; }

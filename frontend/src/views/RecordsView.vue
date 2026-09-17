@@ -913,15 +913,15 @@ onMounted(async () => {
 
             <div class="record-credential-flags">
               <label>
-                <input type="checkbox" :checked="credential.preferred" @change="setPreferredCredential(index)" />
+                <input type="checkbox" :checked="credential.preferred" @change="setPreferredCredential(index)" class="toggle-switch"/>
                 Preferred credential
               </label>
               <label>
-                <input v-model="credential.active" type="checkbox" />
+                <input v-model="credential.active" type="checkbox" class="toggle-switch"/>
                 Active
               </label>
               <label v-if="credential.has_password">
-                <input v-model="credential.clear_password" type="checkbox" />
+                <input v-model="credential.clear_password" type="checkbox" class="toggle-switch"/>
                 Remove stored password
               </label>
             </div>
