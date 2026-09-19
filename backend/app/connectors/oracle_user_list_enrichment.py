@@ -12,6 +12,7 @@ from app.core.exceptions import AppError
 
 
 MAX_BIND_VALUES = 500
+FILTER_OPERATORS = {"=", "!=", "IN", "IS NULL", "IS NOT NULL"}
 
 
 def _display_value(value) -> str | None:
@@ -41,6 +42,7 @@ async def fetch_oracle_user_list_values_multi(
     table_name: str,
     join_column: str,
     display_columns: list[str],
+    filters: list[dict] | None = None,
 ) -> tuple[dict[str, dict[str, str | None]], set[str]]:
     """Fetch several display columns from one mapped source in one query per bind chunk.
 
@@ -65,6 +67,27 @@ async def fetch_oracle_user_list_values_multi(
         seen.add(normalized)
         normalized_display_columns.append(normalized)
 
+    normalized_filters: list[dict] = []
+    for source_filter in filters or []:
+        filter_column = normalize_oracle_identifier(
+            str(source_filter.get("column") or ""),
+            field_name="Filter column",
+        )
+        operator = " ".join(str(source_filter.get("operator") or "=").strip().upper().split())
+        if operator not in FILTER_OPERATORS:
+            raise AppError(
+                "Unsupported source filter operator.",
+                code="ORACLE_USER_LIST_FILTER_INVALID",
+                status_code=400,
+            )
+        normalized_filters.append(
+            {
+                "column": filter_column,
+                "operator": operator,
+                "value": source_filter.get("value"),
+            }
+        )
+
     if not usernames or not normalized_display_columns:
         return {}, set()
 
@@ -86,10 +109,32 @@ async def fetch_oracle_user_list_values_multi(
             binds = {f"u{index}": username for index, username in enumerate(chunk)}
             placeholders = ", ".join(f":u{index}" for index in range(len(chunk)))
             projection = ", ".join([join_ref, *display_refs])
+            where_parts = [f"{join_ref} IN ({placeholders})"]
+            for filter_index, source_filter in enumerate(normalized_filters):
+                filter_ref = quote_oracle_identifier(source_filter["column"])
+                operator = source_filter["operator"]
+                if operator in {"IS NULL", "IS NOT NULL"}:
+                    where_parts.append(f"{filter_ref} {operator}")
+                elif operator == "IN":
+                    filter_values = [
+                        part.strip()
+                        for part in str(source_filter.get("value") or "").split(",")
+                        if part.strip()
+                    ]
+                    filter_placeholders: list[str] = []
+                    for value_index, filter_value in enumerate(filter_values):
+                        bind_name = f"f{filter_index}_{value_index}"
+                        binds[bind_name] = filter_value
+                        filter_placeholders.append(f":{bind_name}")
+                    where_parts.append(f"{filter_ref} IN ({', '.join(filter_placeholders)})")
+                else:
+                    bind_name = f"f{filter_index}"
+                    binds[bind_name] = str(source_filter.get("value") or "")
+                    where_parts.append(f"{filter_ref} {operator} :{bind_name}")
             sql = f"""
                 SELECT {projection}
                 FROM {table_ref}
-                WHERE {join_ref} IN ({placeholders})
+                WHERE {' AND '.join(where_parts)}
             """
             try:
                 rows = await oracle_connection.fetchall(sql, binds)

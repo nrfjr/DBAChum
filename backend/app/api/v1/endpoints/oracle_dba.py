@@ -331,6 +331,7 @@ async def preview_user_list_column(
         join_column=data.join_column,
         display_column=data.display_column,
         label=data.label,
+        filters=[item.model_dump() for item in data.filters],
         base_users=users.get("items") or [],
     )
 
@@ -367,6 +368,7 @@ async def preview_user_list_columns(
         table_name=data.table_name,
         join_column=data.join_column,
         columns=[item.model_dump() for item in data.columns],
+        filters=[item.model_dump() for item in data.filters],
         base_users=users.get("items") or [],
     )
 
@@ -392,6 +394,7 @@ async def add_user_list_columns(
         table_name=data.table_name,
         join_column=data.join_column,
         columns=[item.model_dump() for item in data.columns],
+        filters=[item.model_dump() for item in data.filters],
         created_by=current_user.username,
     )
     return {"items": items}
@@ -419,6 +422,7 @@ async def add_user_list_column(
         join_column=data.join_column,
         display_column=data.display_column,
         label=data.label,
+        filters=[item.model_dump() for item in data.filters],
         created_by=current_user.username,
     )
 

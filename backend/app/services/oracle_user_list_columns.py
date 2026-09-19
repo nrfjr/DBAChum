@@ -15,6 +15,8 @@ from app.services.database_connections import connection_is_active, get_database
 
 
 MAX_EXTRA_COLUMNS = 8
+MAX_SOURCE_FILTERS = 5
+FILTER_OPERATORS = {"=", "!=", "IN", "IS NULL", "IS NOT NULL"}
 BASE_COLUMNS = {
     "USERNAME": "username",
     "STATUS": "status",
@@ -91,6 +93,83 @@ def _clean_label(value: str) -> str:
     return label
 
 
+def _normalize_source_filters(filters: list[dict] | None, column_map: dict[str, dict]) -> list[dict]:
+    items = filters or []
+    if len(items) > MAX_SOURCE_FILTERS:
+        raise AppError(
+            f"A maximum of {MAX_SOURCE_FILTERS} source filters can be configured.",
+            code="ORACLE_USER_LIST_FILTER_LIMIT",
+            status_code=400,
+        )
+
+    normalized_filters: list[dict] = []
+    for item in items:
+        raw_column = str(item.get("column") or "").strip().upper()
+        column = column_map.get(raw_column)
+        if column is None:
+            raise AppError(
+                f"Filter column '{raw_column}' is not available in the source table.",
+                code="ORACLE_USER_LIST_FILTER_COLUMN_NOT_FOUND",
+                status_code=400,
+            )
+
+        operator = " ".join(str(item.get("operator") or "=").strip().upper().split())
+        if operator not in FILTER_OPERATORS:
+            raise AppError(
+                f"Filter operator '{operator}' is not supported.",
+                code="ORACLE_USER_LIST_FILTER_OPERATOR_INVALID",
+                status_code=400,
+            )
+
+        value = item.get("value")
+        if operator in {"IS NULL", "IS NOT NULL"}:
+            normalized_value = None
+        else:
+            normalized_value = str(value or "").strip()
+            if not normalized_value:
+                raise AppError(
+                    f"A value is required for filter '{column['name']} {operator}'.",
+                    code="ORACLE_USER_LIST_FILTER_VALUE_REQUIRED",
+                    status_code=400,
+                )
+            if operator == "IN":
+                values = [part.strip() for part in normalized_value.split(",") if part.strip()]
+                if not values:
+                    raise AppError(
+                        f"At least one value is required for filter '{column['name']} IN'.",
+                        code="ORACLE_USER_LIST_FILTER_VALUE_REQUIRED",
+                        status_code=400,
+                    )
+                if len(values) > 50:
+                    raise AppError(
+                        "IN filters support up to 50 values.",
+                        code="ORACLE_USER_LIST_FILTER_IN_LIMIT",
+                        status_code=400,
+                    )
+                normalized_value = ", ".join(values)
+
+        normalized_filters.append(
+            {
+                "column": str(column["name"]),
+                "operator": operator,
+                "value": normalized_value,
+            }
+        )
+
+    return normalized_filters
+
+
+def _filters_key(filters: list[dict] | None) -> tuple[tuple[str, str, str], ...]:
+    return tuple(
+        (
+            str(item.get("column") or "").upper(),
+            str(item.get("operator") or "=").upper(),
+            str(item.get("value") or ""),
+        )
+        for item in (filters or [])
+    )
+
+
 async def _validate_mappings(
     database,
     connection_id: str,
@@ -101,7 +180,8 @@ async def _validate_mappings(
     table_name: str,
     join_column: str,
     display_columns: list[str],
-) -> tuple[dict, str, dict, dict[str, dict]]:
+    filters: list[dict] | None = None,
+) -> tuple[dict, str, dict, dict[str, dict], list[dict]]:
     await _get_target_oracle_connection(database, connection_id)
     source_id = source_connection_id or connection_id
     source_connection = await _get_source_connection(database, source_id)
@@ -145,7 +225,8 @@ async def _validate_mappings(
             status_code=400,
         )
 
-    return source_connection, normalized_base_column, join, display_map
+    normalized_filters = _normalize_source_filters(filters, column_map)
+    return source_connection, normalized_base_column, join, display_map, normalized_filters
 
 
 async def _validate_mapping(
@@ -158,8 +239,9 @@ async def _validate_mapping(
     table_name: str,
     join_column: str,
     display_column: str,
-) -> tuple[dict, str, dict, dict]:
-    source_connection, normalized_base_column, join, display_map = await _validate_mappings(
+    filters: list[dict] | None = None,
+) -> tuple[dict, str, dict, dict, list[dict]]:
+    source_connection, normalized_base_column, join, display_map, normalized_filters = await _validate_mappings(
         database,
         connection_id,
         source_connection_id=source_connection_id,
@@ -168,8 +250,9 @@ async def _validate_mapping(
         table_name=table_name,
         join_column=join_column,
         display_columns=[display_column],
+        filters=filters,
     )
-    return source_connection, normalized_base_column, join, next(iter(display_map.values()))
+    return source_connection, normalized_base_column, join, next(iter(display_map.values())), normalized_filters
 
 
 def _connection_name(connection: dict | None) -> str | None:
@@ -194,6 +277,7 @@ def _document_to_response(
         "source_connection_name": _connection_name(source_connection),
         "source_engine": source_connection.get("engine") if source_connection else None,
         "base_column": str(document.get("base_column") or "USERNAME").upper(),
+        "filters": document.get("filters") or [],
         "owner": document["owner"],
         "table_name": document["table_name"],
         "join_column": document["join_column"],
@@ -283,6 +367,7 @@ async def preview_oracle_user_list_columns(
     join_column: str,
     columns: list[dict],
     base_users: list[dict],
+    filters: list[dict] | None = None,
 ) -> dict:
     selections: list[dict] = []
     seen_display: set[str] = set()
@@ -304,7 +389,7 @@ async def preview_oracle_user_list_columns(
         seen_display.add(display_column)
         selections.append({"display_column": display_column, "label": label})
 
-    source_connection, normalized_base_column, join, display_map = await _validate_mappings(
+    source_connection, normalized_base_column, join, display_map, normalized_filters = await _validate_mappings(
         database,
         connection_id,
         source_connection_id=source_connection_id,
@@ -313,6 +398,7 @@ async def preview_oracle_user_list_columns(
         table_name=table_name,
         join_column=join_column,
         display_columns=[item["display_column"] for item in selections],
+        filters=filters,
     )
 
     keyed_users = [
@@ -327,6 +413,7 @@ async def preview_oracle_user_list_columns(
         table_name=table_name,
         join_column=str(join["name"]),
         display_columns=[str(display_map[item["display_column"]]["name"]) for item in selections],
+        filters=normalized_filters,
     )
 
     preview_pair = next(
@@ -383,6 +470,7 @@ async def preview_oracle_user_list_column(
     display_column: str,
     label: str,
     base_users: list[dict],
+    filters: list[dict] | None = None,
 ) -> dict:
     result = await preview_oracle_user_list_columns(
         database,
@@ -393,6 +481,7 @@ async def preview_oracle_user_list_column(
         table_name=table_name,
         join_column=join_column,
         columns=[{"display_column": display_column, "label": label}],
+        filters=filters,
         base_users=base_users,
     )
     value = result["values"][0]
@@ -418,6 +507,7 @@ async def create_oracle_user_list_columns(
     join_column: str,
     columns: list[dict],
     created_by: str,
+    filters: list[dict] | None = None,
 ) -> list[dict]:
     selections: list[dict] = []
     seen_display: set[str] = set()
@@ -454,7 +544,7 @@ async def create_oracle_user_list_columns(
             }
         )
 
-    source_connection, normalized_base_column, join, display_map = await _validate_mappings(
+    source_connection, normalized_base_column, join, display_map, normalized_filters = await _validate_mappings(
         database,
         connection_id,
         source_connection_id=source_connection_id,
@@ -463,6 +553,7 @@ async def create_oracle_user_list_columns(
         table_name=table_name,
         join_column=join_column,
         display_columns=[item["display_column"] for item in selections],
+        filters=filters,
     )
     source_id = source_connection_id or connection_id
 
@@ -493,6 +584,7 @@ async def create_oracle_user_list_columns(
             str(item.get("owner") or "").upper(),
             str(item.get("table_name") or "").upper(),
             str(item.get("join_column") or "").upper(),
+            _filters_key(item.get("filters") or []),
             str(item.get("display_column") or "").upper(),
         )
         for item in existing_documents
@@ -511,6 +603,7 @@ async def create_oracle_user_list_columns(
             owner_normalized.upper(),
             table_normalized.upper(),
             join_normalized.upper(),
+            _filters_key(normalized_filters),
             item["display_column"],
         )
         if source_key in existing_sources:
@@ -531,6 +624,7 @@ async def create_oracle_user_list_columns(
             "owner": owner_normalized,
             "table_name": table_normalized,
             "join_column": join_normalized,
+            "filters": normalized_filters,
             "display_column": str(display_map[item["display_column"]]["name"]),
             "created_by": created_by,
             "created_at": now,
@@ -572,6 +666,7 @@ async def create_oracle_user_list_column(
     display_column: str,
     label: str,
     created_by: str,
+    filters: list[dict] | None = None,
 ) -> dict:
     results = await create_oracle_user_list_columns(
         database,
@@ -582,6 +677,7 @@ async def create_oracle_user_list_column(
         table_name=table_name,
         join_column=join_column,
         columns=[{"display_column": display_column, "label": label}],
+        filters=filters,
         created_by=created_by,
     )
     return results[0]
@@ -619,7 +715,7 @@ async def enrich_oracle_user_list(
     for item in items:
         item["extra_values"] = {}
 
-    grouped: OrderedDict[tuple[str, str, str, str, str], list[dict]] = OrderedDict()
+    grouped: OrderedDict[tuple[str, str, str, str, str, tuple[tuple[str, str, str], ...]], list[dict]] = OrderedDict()
     for column in columns:
         key = (
             column["source_connection_id"],
@@ -627,13 +723,14 @@ async def enrich_oracle_user_list(
             column["owner"],
             column["table_name"],
             column["join_column"],
+            _filters_key(column.get("filters") or []),
         )
         grouped.setdefault(key, []).append(column)
 
     source_cache: dict[str, dict] = {connection_id: connection}
     enriched_by_id: dict[str, dict] = {}
 
-    for (source_id, base_column, owner, table_name, join_column), source_columns in grouped.items():
+    for (source_id, base_column, owner, table_name, join_column, _filter_key), source_columns in grouped.items():
         warning = None
         values: dict[str, dict[str, str | None]] = {}
         duplicate_keys: set[str] = set()
@@ -656,6 +753,7 @@ async def enrich_oracle_user_list(
                 table_name=table_name,
                 join_column=join_column,
                 display_columns=[column["display_column"] for column in source_columns],
+                filters=source_columns[0].get("filters") or [],
             )
         except AppError as exc:
             warning = exc.message

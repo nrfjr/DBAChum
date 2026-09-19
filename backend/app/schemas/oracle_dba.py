@@ -189,6 +189,12 @@ class OracleDatabaseUserItem(BaseModel):
     extra_values: dict[str, str | None] = Field(default_factory=dict)
 
 
+class OracleUserListSourceFilter(BaseModel):
+    column: str
+    operator: str = "="
+    value: str | None = None
+
+
 class OracleUserListColumnResponse(BaseModel):
     id: str
     label: str
@@ -196,6 +202,7 @@ class OracleUserListColumnResponse(BaseModel):
     source_connection_name: str | None = None
     source_engine: str | None = None
     base_column: str = "USERNAME"
+    filters: list[OracleUserListSourceFilter] = Field(default_factory=list)
     owner: str
     table_name: str
     join_column: str
@@ -207,6 +214,7 @@ class OracleUserListColumnResponse(BaseModel):
 class OracleUserListColumnRequest(BaseModel):
     source_connection_id: str | None = None
     base_column: str = "USERNAME"
+    filters: list[OracleUserListSourceFilter] = Field(default_factory=list, max_length=5)
     owner: str
     table_name: str
     join_column: str
@@ -222,6 +230,7 @@ class OracleUserListColumnSelection(BaseModel):
 class OracleUserListColumnsRequest(BaseModel):
     source_connection_id: str | None = None
     base_column: str = "USERNAME"
+    filters: list[OracleUserListSourceFilter] = Field(default_factory=list, max_length=5)
     owner: str
     table_name: str
     join_column: str

@@ -16,6 +16,7 @@ from app.core.exceptions import AppError
 
 
 MAX_BIND_VALUES = 500
+FILTER_OPERATORS = {"=", "!=", "IN", "IS NULL", "IS NOT NULL"}
 
 ORACLE_TEXT_TYPES = {"CHAR", "NCHAR", "VARCHAR2", "NVARCHAR2"}
 SQLSERVER_TEXT_TYPES = {"CHAR", "NCHAR", "VARCHAR", "NVARCHAR", "TEXT", "NTEXT"}
@@ -56,6 +57,19 @@ def _quote_sqlserver_identifier(value: str) -> str:
 
 def _quote_mysql_identifier(value: str) -> str:
     return f"`{value.replace('`', '``')}`"
+
+
+
+
+def _filter_values(value: str | None) -> list[str]:
+    return [part.strip() for part in str(value or "").split(",") if part.strip()]
+
+
+def _validated_filter_operator(value: str) -> str:
+    operator = " ".join(str(value or "=").strip().upper().split())
+    if operator not in FILTER_OPERATORS:
+        raise AppError("Unsupported source filter operator.", code="USER_LIST_SOURCE_FILTER_INVALID", status_code=400)
+    return operator
 
 
 def source_join_type_supported(engine: str, data_type: str) -> bool:
@@ -110,6 +124,7 @@ async def fetch_user_list_source_values_multi(
     table_name: str,
     join_column: str,
     display_columns: list[str],
+    filters: list[dict] | None = None,
 ) -> tuple[dict[str, dict[str, str | None]], set[str]]:
     engine = connection.get("engine")
     if engine == "oracle":
@@ -120,6 +135,7 @@ async def fetch_user_list_source_values_multi(
             table_name=table_name,
             join_column=join_column,
             display_columns=display_columns,
+            filters=filters,
         )
     if engine == "sqlserver":
         return await asyncio.to_thread(
@@ -130,6 +146,7 @@ async def fetch_user_list_source_values_multi(
             table_name,
             join_column,
             display_columns,
+            filters or [],
         )
     if engine == "mysql":
         return await asyncio.to_thread(
@@ -140,6 +157,7 @@ async def fetch_user_list_source_values_multi(
             table_name,
             join_column,
             display_columns,
+            filters or [],
         )
     raise AppError("Unsupported database engine.", code="USER_LIST_SOURCE_ENGINE_UNSUPPORTED", status_code=400)
 
@@ -308,6 +326,7 @@ def _fetch_sqlserver_values_sync(
     table_name: str,
     join_column: str,
     display_columns: list[str],
+    filters: list[dict],
 ) -> tuple[dict[str, dict[str, str | None]], set[str]]:
     values: dict[str, dict[str, str | None]] = {}
     duplicate_keys: set[str] = set()
@@ -324,9 +343,24 @@ def _fetch_sqlserver_values_sync(
                     placeholders = ", ".join("?" for _ in chunk)
                     projection = ", ".join([join_ref, *display_refs])
                     requested_keys = {str(key).casefold(): str(key) for key in chunk}
+                    where_parts = [f"{join_ref} IN ({placeholders})"]
+                    params: list[str] = list(chunk)
+                    for source_filter in filters:
+                        filter_ref = _quote_sqlserver_identifier(str(source_filter["column"]))
+                        operator = _validated_filter_operator(str(source_filter.get("operator") or "="))
+                        if operator in {"IS NULL", "IS NOT NULL"}:
+                            where_parts.append(f"{filter_ref} {operator}")
+                        elif operator == "IN":
+                            filter_values = _filter_values(source_filter.get("value"))
+                            filter_placeholders = ", ".join("?" for _ in filter_values)
+                            where_parts.append(f"{filter_ref} IN ({filter_placeholders})")
+                            params.extend(filter_values)
+                        else:
+                            where_parts.append(f"{filter_ref} {operator} ?")
+                            params.append(str(source_filter.get("value") or ""))
                     cursor.execute(
-                        f"SELECT {projection} FROM {table_ref} WHERE {join_ref} IN ({placeholders})",
-                        *chunk,
+                        f"SELECT {projection} FROM {table_ref} WHERE {' AND '.join(where_parts)}",
+                        *params,
                     )
                     for row in cursor.fetchall():
                         raw_key = "" if row[0] is None else str(row[0])
@@ -356,6 +390,7 @@ def _fetch_mysql_values_sync(
     table_name: str,
     join_column: str,
     display_columns: list[str],
+    filters: list[dict],
 ) -> tuple[dict[str, dict[str, str | None]], set[str]]:
     values: dict[str, dict[str, str | None]] = {}
     duplicate_keys: set[str] = set()
@@ -373,9 +408,24 @@ def _fetch_mysql_values_sync(
             placeholders = ", ".join("%s" for _ in chunk)
             projection = ", ".join([join_ref, *display_refs])
             requested_keys = {str(key).casefold(): str(key) for key in chunk}
+            where_parts = [f"{join_ref} IN ({placeholders})"]
+            params: list[str] = list(chunk)
+            for source_filter in filters:
+                filter_ref = _quote_mysql_identifier(str(source_filter["column"]))
+                operator = _validated_filter_operator(str(source_filter.get("operator") or "="))
+                if operator in {"IS NULL", "IS NOT NULL"}:
+                    where_parts.append(f"{filter_ref} {operator}")
+                elif operator == "IN":
+                    filter_values = _filter_values(source_filter.get("value"))
+                    filter_placeholders = ", ".join("%s" for _ in filter_values)
+                    where_parts.append(f"{filter_ref} IN ({filter_placeholders})")
+                    params.extend(filter_values)
+                else:
+                    where_parts.append(f"{filter_ref} {operator} %s")
+                    params.append(str(source_filter.get("value") or ""))
             cursor.execute(
-                f"SELECT {projection} FROM {table_ref} WHERE {join_ref} IN ({placeholders})",
-                tuple(chunk),
+                f"SELECT {projection} FROM {table_ref} WHERE {' AND '.join(where_parts)}",
+                tuple(params),
             )
             for row in cursor.fetchall():
                 raw_key = "" if row[0] is None else str(row[0])

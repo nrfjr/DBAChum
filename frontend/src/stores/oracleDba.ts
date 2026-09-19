@@ -175,6 +175,12 @@ export interface OracleDatabaseUser {
   extra_values: Record<string, string | null>
 }
 
+export interface OracleUserListSourceFilter {
+  column: string
+  operator: string
+  value: string | null
+}
+
 export interface OracleUserListColumn {
   id: string
   label: string
@@ -182,6 +188,7 @@ export interface OracleUserListColumn {
   source_connection_name: string | null
   source_engine: string | null
   base_column: string
+  filters: OracleUserListSourceFilter[]
   owner: string
   table_name: string
   join_column: string
@@ -193,6 +200,7 @@ export interface OracleUserListColumn {
 export interface OracleUserListColumnInput {
   source_connection_id?: string | null
   base_column?: string
+  filters?: OracleUserListSourceFilter[]
   owner: string
   table_name: string
   join_column: string
@@ -208,6 +216,7 @@ export interface OracleUserListColumnSelectionInput {
 export interface OracleUserListColumnsInput {
   source_connection_id?: string | null
   base_column?: string
+  filters?: OracleUserListSourceFilter[]
   owner: string
   table_name: string
   join_column: string

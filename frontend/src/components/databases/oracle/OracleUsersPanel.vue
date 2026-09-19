@@ -18,6 +18,7 @@ import {
   type OracleUserAccessInspector,
   type OracleAccessGrantSource,
   type OracleUserListColumn,
+  type OracleUserListSourceFilter,
   type OracleUserListColumnsPreview,
 } from '@/stores/oracleDba'
 import OracleBulkProvisionModal from '@/components/databases/oracle/OracleBulkProvisionModal.vue'
@@ -228,7 +229,9 @@ const addColumnColumns = ref<OracleMetadataColumn[]>([])
 const addColumnPreview = ref<OracleUserListColumnsPreview | null>(null)
 const addColumnSourceKey = ref('new')
 type AddColumnSelection = { displayColumn: string; label: string }
+type AddColumnFilter = { column: string; operator: string; value: string }
 const addColumnSelections = ref<AddColumnSelection[]>([])
+const addColumnFilters = ref<AddColumnFilter[]>([])
 const addColumnForm = reactive({
   sourceConnectionId: props.connectionId,
   baseColumn: 'USERNAME',
@@ -246,6 +249,7 @@ watch(
     addColumnForm.tableName,
     addColumnForm.joinColumn,
     JSON.stringify(addColumnSelections.value),
+    JSON.stringify(addColumnFilters.value),
   ],
   () => {
     addColumnPreview.value = null
@@ -334,8 +338,16 @@ const canManageUserListColumns = computed(() =>
 
 const extraUserListColumns = computed(() => users.value?.extra_columns ?? [])
 
-function userListSourceKey(column: Pick<OracleUserListColumn, 'source_connection_id' | 'base_column' | 'owner' | 'table_name' | 'join_column'>) {
-  return `${column.source_connection_id}|${column.base_column}|${column.owner}|${column.table_name}|${column.join_column}`
+function userListFilterKey(filters: OracleUserListSourceFilter[]) {
+  return JSON.stringify(filters.map((item) => ({
+    column: item.column.toUpperCase(),
+    operator: item.operator.toUpperCase(),
+    value: item.value ?? '',
+  })))
+}
+
+function userListSourceKey(column: Pick<OracleUserListColumn, 'source_connection_id' | 'base_column' | 'filters' | 'owner' | 'table_name' | 'join_column'>) {
+  return `${column.source_connection_id}|${column.base_column}|${column.owner}|${column.table_name}|${column.join_column}|${userListFilterKey(column.filters)}`
 }
 
 const existingUserListSources = computed(() => {
@@ -345,6 +357,7 @@ const existingUserListSources = computed(() => {
     sourceConnectionName: string
     sourceEngine: string | null
     baseColumn: string
+    filters: OracleUserListSourceFilter[]
     owner: string
     tableName: string
     joinColumn: string
@@ -364,6 +377,7 @@ const existingUserListSources = computed(() => {
       sourceConnectionName: column.source_connection_name ?? column.source_connection_id,
       sourceEngine: column.source_engine,
       baseColumn: column.base_column,
+      filters: column.filters,
       owner: column.owner,
       tableName: column.table_name,
       joinColumn: column.join_column,
@@ -398,6 +412,38 @@ function baseColumnLabel(value: string) {
   return baseColumnOptions.find((item) => item.value === value)?.label ?? value
 }
 
+const sourceFilterOperators = ['=', '!=', 'IN', 'IS NULL', 'IS NOT NULL']
+
+function filterNeedsValue(operator: string) {
+  return !['IS NULL', 'IS NOT NULL'].includes(operator)
+}
+
+function addSourceFilter() {
+  if (addColumnFilters.value.length >= 5) return
+  addColumnFilters.value.push({ column: '', operator: '=', value: '' })
+}
+
+function removeSourceFilter(index: number) {
+  addColumnFilters.value.splice(index, 1)
+}
+
+function sourceFiltersReady() {
+  return addColumnFilters.value.every((item) =>
+    item.column.length > 0
+    && sourceFilterOperators.includes(item.operator)
+    && (!filterNeedsValue(item.operator) || item.value.trim().length > 0),
+  )
+}
+
+function filterSummary(filters: OracleUserListSourceFilter[]) {
+  if (!filters.length) return ''
+  return filters
+    .map((item) => filterNeedsValue(item.operator)
+      ? `${item.column} ${item.operator} ${item.value ?? ''}`
+      : `${item.column} ${item.operator}`)
+    .join(' · ')
+}
+
 function relationshipColumnSupported(column: OracleMetadataColumn) {
   const dataType = column.data_type.toUpperCase()
   const engine = selectedSourceConnection.value?.engine
@@ -411,6 +457,11 @@ const currentMappedDisplayColumns = computed(() => {
   const owner = addColumnForm.owner.trim().toUpperCase()
   const tableName = addColumnForm.tableName.trim().toUpperCase()
   const joinColumn = addColumnForm.joinColumn.trim().toUpperCase()
+  const filtersKey = userListFilterKey(addColumnFilters.value.map((item) => ({
+    column: item.column,
+    operator: item.operator,
+    value: filterNeedsValue(item.operator) ? item.value.trim() : null,
+  })))
   return new Set(
     extraUserListColumns.value
       .filter((column) =>
@@ -418,7 +469,8 @@ const currentMappedDisplayColumns = computed(() => {
         && column.base_column === addColumnForm.baseColumn
         && column.owner.toUpperCase() === owner
         && column.table_name.toUpperCase() === tableName
-        && column.join_column.toUpperCase() === joinColumn,
+        && column.join_column.toUpperCase() === joinColumn
+        && userListFilterKey(column.filters) === filtersKey,
       )
       .map((column) => column.display_column.toUpperCase()),
   )
@@ -1219,6 +1271,7 @@ function resetAddColumn() {
   addColumnPreview.value = null
   addColumnSourceKey.value = 'new'
   addColumnSelections.value = []
+  addColumnFilters.value = []
   addColumnForm.sourceConnectionId = props.connectionId
   addColumnForm.baseColumn = 'USERNAME'
   addColumnForm.owner = ''
@@ -1305,6 +1358,11 @@ async function selectAddColumnSource() {
   addColumnForm.owner = source.owner
   addColumnForm.tableName = source.tableName
   addColumnForm.joinColumn = source.joinColumn
+  addColumnFilters.value = source.filters.map((item) => ({
+    column: item.column,
+    operator: item.operator,
+    value: item.value ?? '',
+  }))
   await loadColumnsForCurrentSource()
 }
 
@@ -1313,6 +1371,7 @@ async function loadAddColumnSchemas() {
   addColumnTables.value = []
   addColumnColumns.value = []
   addColumnSelections.value = []
+  addColumnFilters.value = []
   addColumnForm.owner = ''
   addColumnForm.tableName = ''
   addColumnForm.joinColumn = ''
@@ -1354,6 +1413,7 @@ async function loadAddColumnTables() {
   addColumnTables.value = []
   addColumnColumns.value = []
   addColumnSelections.value = []
+  addColumnFilters.value = []
   addColumnForm.tableName = ''
   addColumnForm.joinColumn = ''
 
@@ -1382,6 +1442,7 @@ async function loadAddColumnColumns() {
   addColumnError.value = null
   addColumnColumns.value = []
   addColumnSelections.value = []
+  addColumnFilters.value = []
   addColumnForm.joinColumn = ''
 
   const owner = addColumnForm.owner.trim()
@@ -1393,22 +1454,6 @@ async function loadAddColumnColumns() {
   await loadColumnsForCurrentSource()
 }
 
-function reuseExistingSourceIfMapped() {
-  if (addColumnSourceKey.value !== 'new') return
-  const owner = addColumnForm.owner.trim().toUpperCase()
-  const tableName = addColumnForm.tableName.trim().toUpperCase()
-  const joinColumn = addColumnForm.joinColumn.trim().toUpperCase()
-  const existing = existingUserListSources.value.find((source) =>
-    source.sourceConnectionId === addColumnForm.sourceConnectionId
-    && source.baseColumn === addColumnForm.baseColumn
-    && source.owner.toUpperCase() === owner
-    && source.tableName.toUpperCase() === tableName
-    && source.joinColumn.toUpperCase() === joinColumn,
-  )
-  if (existing) {
-    addColumnSourceKey.value = existing.key
-  }
-}
 
 function addColumnsPayload() {
   return {
@@ -1417,6 +1462,11 @@ function addColumnsPayload() {
     owner: addColumnForm.owner.trim(),
     table_name: addColumnForm.tableName.trim(),
     join_column: addColumnForm.joinColumn.trim(),
+    filters: addColumnFilters.value.map((item) => ({
+      column: item.column,
+      operator: item.operator,
+      value: filterNeedsValue(item.operator) ? item.value.trim() : null,
+    })),
     columns: addColumnSelections.value.map((item) => ({
       display_column: item.displayColumn,
       label: item.label.trim(),
@@ -1427,6 +1477,7 @@ function addColumnsPayload() {
 function addColumnSelectionReady() {
   return addColumnSelections.value.length > 0
     && addColumnSelections.value.every((item) => item.label.trim().length > 0)
+    && sourceFiltersReady()
 }
 
 async function previewAdditionalColumn() {
@@ -2575,6 +2626,7 @@ onBeforeUnmount(() => {
             <span>Reusing mapped source</span>
             <strong>{{ selectedExistingUserListSource.sourceConnectionName }} · {{ selectedExistingUserListSource.owner }}.{{ selectedExistingUserListSource.tableName }}</strong>
             <small>{{ baseColumnLabel(selectedExistingUserListSource.baseColumn) }} = {{ selectedExistingUserListSource.joinColumn }} · {{ selectedExistingUserListSource.columns.length }} column{{ selectedExistingUserListSource.columns.length === 1 ? '' : 's' }} already displayed.</small>
+            <small v-if="selectedExistingUserListSource.filters.length">{{ filterSummary(selectedExistingUserListSource.filters) }}</small>
           </div>
 
           <div class="user-list-relationship">
@@ -2584,7 +2636,6 @@ onBeforeUnmount(() => {
                 v-model="addColumnForm.baseColumn"
                 class="utility-select-input"
                 :disabled="addColumnSourceKey !== 'new'"
-                @change="reuseExistingSourceIfMapped"
               >
                 <option v-for="option in baseColumnOptions" :key="option.value" :value="option.value">
                   {{ option.label }}
@@ -2597,7 +2648,6 @@ onBeforeUnmount(() => {
               <select
                 v-model="addColumnForm.joinColumn"
                 :disabled="addColumnColumns.length === 0 || addColumnSourceKey !== 'new'"
-                @change="reuseExistingSourceIfMapped"
                 class="utility-select-input"
               >
                 <option value="">Select column</option>
@@ -2611,6 +2661,61 @@ onBeforeUnmount(() => {
               </select>
             </label>
           </div>
+
+          <section v-if="addColumnColumns.length" class="user-list-source-filters">
+            <div class="user-list-source-filters__heading">
+              <strong>Source filters</strong>
+              <button
+                v-if="addColumnSourceKey === 'new'"
+                type="button"
+                class="secondary-button compact-button"
+                :disabled="addColumnFilters.length >= 5"
+                @click="addSourceFilter"
+              >
+                + Add filter
+              </button>
+            </div>
+            <div v-if="addColumnFilters.length" class="user-list-source-filters__list">
+              <div v-for="(sourceFilter, index) in addColumnFilters" :key="index" class="user-list-source-filter-row">
+                <select
+                  v-model="sourceFilter.column"
+                  class="utility-select-input"
+                  :disabled="addColumnSourceKey !== 'new'"
+                >
+                  <option value="">Column</option>
+                  <option v-for="column in addColumnColumns" :key="column.name" :value="column.name">
+                    {{ column.name }}
+                  </option>
+                </select>
+                <select
+                  v-model="sourceFilter.operator"
+                  class="utility-select-input"
+                  :disabled="addColumnSourceKey !== 'new'"
+                >
+                  <option v-for="operator in sourceFilterOperators" :key="operator" :value="operator">
+                    {{ operator }}
+                  </option>
+                </select>
+                <input
+                  v-if="filterNeedsValue(sourceFilter.operator)"
+                  v-model="sourceFilter.value"
+                  type="text"
+                  class="utility-search-input"
+                  :disabled="addColumnSourceKey !== 'new'"
+                  :placeholder="sourceFilter.operator === 'IN' ? 'VERIFIED, ACTIVE' : 'Value'"
+                />
+                <span v-else class="user-list-source-filter-null">No value</span>
+                <button
+                  v-if="addColumnSourceKey === 'new'"
+                  type="button"
+                  class="secondary-button compact-button"
+                  @click="removeSourceFilter(index)"
+                >
+                  Remove
+                </button>
+              </div>
+            </div>
+          </section>
 
           <section v-if="addColumnForm.joinColumn && addColumnColumns.length" class="user-list-column-picker">
             <div class="user-list-column-picker-heading">
@@ -2664,6 +2769,7 @@ onBeforeUnmount(() => {
           <div class="user-list-column-preview-heading">
             <strong>One-row preview</strong>
             <span>{{ selectedSourceConnection?.name ?? 'Source' }} · {{ addColumnForm.owner }}.{{ addColumnForm.tableName }} · {{ baseColumnLabel(addColumnForm.baseColumn) }} = {{ addColumnForm.joinColumn }}</span>
+            <span v-if="addColumnFilters.length">{{ filterSummary(addColumnsPayload().filters) }}</span>
           </div>
           <div class="utility-table-wrap">
             <table class="utility-table">
@@ -2699,6 +2805,7 @@ onBeforeUnmount(() => {
               <div>
                 <strong>{{ source.sourceConnectionName }} · {{ source.owner }}.{{ source.tableName }}</strong>
                 <small>{{ baseColumnLabel(source.baseColumn) }} = {{ source.joinColumn }} · {{ source.sourceEngine?.toUpperCase() ?? 'Unavailable' }}</small>
+                <small v-if="source.filters.length">{{ filterSummary(source.filters) }}</small>
               </div>
               <span>{{ source.columns.length }} column{{ source.columns.length === 1 ? '' : 's' }}</span>
             </div>
@@ -4114,6 +4221,11 @@ onBeforeUnmount(() => {
 .user-list-relationship-equals { align-self: center; font-weight: 800; opacity: .7; }
 .user-list-column-source-summary { display: grid; gap: .2rem; padding: .75rem .85rem; border: 1px dashed var(--border-color); border-radius: .7rem; }
 .user-list-column-source-summary small { opacity: .72; }
+.user-list-source-filters { display: grid; gap: .55rem; padding: .75rem; border: 1px solid var(--border-color); border-radius: .7rem; }
+.user-list-source-filters__heading { display: flex; align-items: center; justify-content: space-between; gap: .7rem; }
+.user-list-source-filters__list { display: grid; gap: .45rem; }
+.user-list-source-filter-row { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(6rem, .5fr) minmax(0, 1fr) auto; gap: .45rem; align-items: center; }
+.user-list-source-filter-null { padding: .55rem .65rem; border: 1px solid var(--border-color); border-radius: .5rem; font-size: .78rem; opacity: .7; }
 .user-list-column-picker { display: grid; gap: .6rem; padding: .75rem; border: 1px solid var(--border-color); border-radius: .7rem; }
 .user-list-column-picker-heading { display: flex; justify-content: space-between; gap: .8rem; align-items: flex-start; }
 .user-list-column-picker-heading > div { display: grid; gap: .15rem; }
@@ -4150,6 +4262,7 @@ onBeforeUnmount(() => {
 
 @media (max-width: 700px) {
   .user-list-relationship,
+  .user-list-source-filter-row,
   .user-list-column-picker-list > article { grid-template-columns: 1fr; }
   .user-list-relationship-equals { display: none; }
   .user-list-column-preview-heading,

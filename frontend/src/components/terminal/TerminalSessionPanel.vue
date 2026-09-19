@@ -411,44 +411,28 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div
-    v-if="session"
-    class="terminal-session-root"
-    :class="{
-      'terminal-session-root--open': !minimized && !maximized,
-      'terminal-session-root--minimized': minimized,
-      'terminal-session-root--maximized': maximized,
-    }"
-  >
-    <button
-      v-if="minimized"
-      type="button"
-      class="terminal-chat-chip"
-      :data-state="session.connection_state"
-      @click="restoreTerminal"
-    >
+  <div v-if="session" class="terminal-session-root" :class="{
+    'terminal-session-root--open': !minimized && !maximized,
+    'terminal-session-root--minimized': minimized,
+    'terminal-session-root--maximized': maximized,
+  }">
+    <button v-show="minimized" type="button" class="terminal-chat-chip" :data-state="session.connection_state"
+      @click="restoreTerminal">
       <span class="terminal-status-dot" :data-state="session.connection_state" />
       <span class="terminal-chat-chip__label">{{ session.server_name }}</span>
       <small>{{ session.ssh_username ?? session.ssh_profile_name ?? 'SSH' }}</small>
-      <span
-        class="terminal-chat-chip__close"
-        title="Close terminal"
-        @click.stop="closeTerminal"
-      >×</span>
+      <span class="terminal-chat-chip__close" title="Close terminal" @click.stop="closeTerminal">×</span>
     </button>
 
-    <section
-      v-else
-      class="terminal-window"
-      :class="{ 'terminal-window--maximized': maximized }"
-      :style="panelStyle"
-    >
+    <section v-show="!minimized" class="terminal-window" :class="{ 'terminal-window--maximized': maximized }"
+      :style="panelStyle">
       <header class="terminal-window__header" @pointerdown="startDrag">
         <div class="terminal-window__identity">
           <span class="terminal-status-dot" :data-state="session.connection_state" />
           <div>
             <strong>{{ session.server_name }}</strong>
-            <small>{{ session.ssh_username ?? session.ssh_profile_name ?? 'SSH' }} · {{ session.status_message }}</small>
+            <small>{{ session.ssh_username ?? session.ssh_profile_name ?? 'SSH' }} · {{ session.status_message
+              }}</small>
           </div>
         </div>
 
@@ -470,13 +454,8 @@ onBeforeUnmount(() => {
             <template v-if="shortcutGroups.length">
               <div v-for="group in shortcutGroups" :key="group[0]" class="terminal-shortcut-group">
                 <strong>{{ group[0] }}</strong>
-                <button
-                  v-for="shortcut in group[1]"
-                  :key="shortcut.id"
-                  type="button"
-                  :title="shortcut.command"
-                  @click="runShortcut(shortcut)"
-                >
+                <button v-for="shortcut in group[1]" :key="shortcut.id" type="button" :title="shortcut.command"
+                  @click="runShortcut(shortcut)">
                   <span>{{ shortcut.name }}</span>
                   <small>{{ shortcut.mode === 'insert' ? 'Insert' : 'Run' }}</small>
                 </button>
@@ -487,7 +466,8 @@ onBeforeUnmount(() => {
         </div>
         <button type="button" class="terminal-tool-button" @click="clearTerminal">Clear</button>
         <button type="button" class="terminal-tool-button" @click="reconnect">Reconnect</button>
-        <span class="terminal-window__session-count">Terminal {{ chipIndex + 1 }} / {{ sessionsStore.maxTerminals }}</span>
+        <span class="terminal-window__session-count">Terminal {{ chipIndex + 1 }} / {{ sessionsStore.maxTerminals
+          }}</span>
       </div>
 
       <div ref="terminalHost" class="terminal-window__screen" @contextmenu="pasteClipboard" />
