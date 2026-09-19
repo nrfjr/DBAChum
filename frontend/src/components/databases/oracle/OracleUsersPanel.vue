@@ -40,6 +40,7 @@ import {
   type OracleMetadataColumn,
 } from '@/stores/provisioning'
 import { useAuthStore } from '@/stores/auth'
+import { useConnectionsStore } from '@/stores/connections'
 import { hasPermission } from '@/core/permissions'
 import { formatUserDateTime } from '@/core/dateTime'
 import { confirmDialog, showToast } from '@/ui/feedback'
@@ -51,6 +52,7 @@ const props = defineProps<{
 const oracleStore = useOracleDbaStore()
 const provisioningStore = useProvisioningStore()
 const authStore = useAuthStore()
+const connectionsStore = useConnectionsStore()
 
 const search = ref('')
 
@@ -228,6 +230,8 @@ const addColumnSourceKey = ref('new')
 type AddColumnSelection = { displayColumn: string; label: string }
 const addColumnSelections = ref<AddColumnSelection[]>([])
 const addColumnForm = reactive({
+  sourceConnectionId: props.connectionId,
+  baseColumn: 'USERNAME',
   owner: '',
   tableName: '',
   joinColumn: '',
@@ -236,6 +240,8 @@ const addColumnForm = reactive({
 watch(
   () => [
     addColumnSourceKey.value,
+    addColumnForm.sourceConnectionId,
+    addColumnForm.baseColumn,
     addColumnForm.owner,
     addColumnForm.tableName,
     addColumnForm.joinColumn,
@@ -328,13 +334,17 @@ const canManageUserListColumns = computed(() =>
 
 const extraUserListColumns = computed(() => users.value?.extra_columns ?? [])
 
-function userListSourceKey(column: Pick<OracleUserListColumn, 'owner' | 'table_name' | 'join_column'>) {
-  return `${column.owner}|${column.table_name}|${column.join_column}`
+function userListSourceKey(column: Pick<OracleUserListColumn, 'source_connection_id' | 'base_column' | 'owner' | 'table_name' | 'join_column'>) {
+  return `${column.source_connection_id}|${column.base_column}|${column.owner}|${column.table_name}|${column.join_column}`
 }
 
 const existingUserListSources = computed(() => {
   const sources = new Map<string, {
     key: string
+    sourceConnectionId: string
+    sourceConnectionName: string
+    sourceEngine: string | null
+    baseColumn: string
     owner: string
     tableName: string
     joinColumn: string
@@ -350,6 +360,10 @@ const existingUserListSources = computed(() => {
     }
     sources.set(key, {
       key,
+      sourceConnectionId: column.source_connection_id,
+      sourceConnectionName: column.source_connection_name ?? column.source_connection_id,
+      sourceEngine: column.source_engine,
+      baseColumn: column.base_column,
       owner: column.owner,
       tableName: column.table_name,
       joinColumn: column.join_column,
@@ -364,6 +378,35 @@ const selectedExistingUserListSource = computed(() =>
   existingUserListSources.value.find((source) => source.key === addColumnSourceKey.value) ?? null,
 )
 
+const sourceConnections = computed(() =>
+  connectionsStore.connections.filter((connection) => connection.active),
+)
+
+const selectedSourceConnection = computed(() =>
+  sourceConnections.value.find((connection) => connection.id === addColumnForm.sourceConnectionId) ?? null,
+)
+
+const baseColumnOptions = [
+  { value: 'USERNAME', label: 'Username' },
+  { value: 'STATUS', label: 'Status' },
+  { value: 'DEFAULT_TABLESPACE', label: 'Default tablespace' },
+  { value: 'TEMPORARY_TABLESPACE', label: 'Temporary tablespace' },
+  { value: 'PROFILE', label: 'Profile' },
+]
+
+function baseColumnLabel(value: string) {
+  return baseColumnOptions.find((item) => item.value === value)?.label ?? value
+}
+
+function relationshipColumnSupported(column: OracleMetadataColumn) {
+  const dataType = column.data_type.toUpperCase()
+  const engine = selectedSourceConnection.value?.engine
+  if (engine === 'oracle') return ['CHAR', 'NCHAR', 'VARCHAR2', 'NVARCHAR2'].includes(dataType)
+  if (engine === 'sqlserver') return ['CHAR', 'NCHAR', 'VARCHAR', 'NVARCHAR', 'TEXT', 'NTEXT'].includes(dataType)
+  if (engine === 'mysql') return ['CHAR', 'VARCHAR', 'TINYTEXT', 'TEXT', 'MEDIUMTEXT', 'LONGTEXT', 'ENUM', 'SET'].includes(dataType)
+  return false
+}
+
 const currentMappedDisplayColumns = computed(() => {
   const owner = addColumnForm.owner.trim().toUpperCase()
   const tableName = addColumnForm.tableName.trim().toUpperCase()
@@ -371,11 +414,13 @@ const currentMappedDisplayColumns = computed(() => {
   return new Set(
     extraUserListColumns.value
       .filter((column) =>
-        column.owner === owner
-        && column.table_name === tableName
-        && column.join_column === joinColumn,
+        column.source_connection_id === addColumnForm.sourceConnectionId
+        && column.base_column === addColumnForm.baseColumn
+        && column.owner.toUpperCase() === owner
+        && column.table_name.toUpperCase() === tableName
+        && column.join_column.toUpperCase() === joinColumn,
       )
-      .map((column) => column.display_column),
+      .map((column) => column.display_column.toUpperCase()),
   )
 })
 
@@ -1174,6 +1219,8 @@ function resetAddColumn() {
   addColumnPreview.value = null
   addColumnSourceKey.value = 'new'
   addColumnSelections.value = []
+  addColumnForm.sourceConnectionId = props.connectionId
+  addColumnForm.baseColumn = 'USERNAME'
   addColumnForm.owner = ''
   addColumnForm.tableName = ''
   addColumnForm.joinColumn = ''
@@ -1219,14 +1266,16 @@ function updateAddColumnLabel(displayColumn: string, event: Event) {
 async function loadColumnsForCurrentSource() {
   addColumnColumns.value = []
   addColumnSelections.value = []
-  const owner = addColumnForm.owner.trim().toUpperCase()
-  const tableName = addColumnForm.tableName.trim().toUpperCase()
-  if (!owner || !tableName) return
+  const sourceConnectionId = addColumnForm.sourceConnectionId
+  const owner = addColumnForm.owner.trim()
+  const tableName = addColumnForm.tableName.trim()
+  if (!sourceConnectionId || !owner || !tableName) return
 
   addColumnLoading.value = true
   try {
-    addColumnColumns.value = await provisioningStore.columns(
+    addColumnColumns.value = await oracleStore.userListSourceColumns(
       props.connectionId,
+      sourceConnectionId,
       owner,
       tableName,
     )
@@ -1245,36 +1294,53 @@ async function selectAddColumnSource() {
   addColumnSelections.value = []
 
   if (addColumnSourceKey.value === 'new') {
-    addColumnTables.value = []
-    addColumnColumns.value = []
-    addColumnForm.owner = ''
-    addColumnForm.tableName = ''
-    addColumnForm.joinColumn = ''
+    await loadAddColumnSchemas()
     return
   }
 
   const source = selectedExistingUserListSource.value
   if (!source) return
+  addColumnForm.sourceConnectionId = source.sourceConnectionId
+  addColumnForm.baseColumn = source.baseColumn
   addColumnForm.owner = source.owner
   addColumnForm.tableName = source.tableName
   addColumnForm.joinColumn = source.joinColumn
   await loadColumnsForCurrentSource()
 }
 
+async function loadAddColumnSchemas() {
+  addColumnSchemas.value = []
+  addColumnTables.value = []
+  addColumnColumns.value = []
+  addColumnSelections.value = []
+  addColumnForm.owner = ''
+  addColumnForm.tableName = ''
+  addColumnForm.joinColumn = ''
+  if (!addColumnForm.sourceConnectionId) return
+
+  addColumnLoading.value = true
+  try {
+    addColumnSchemas.value = await oracleStore.userListSourceSchemas(
+      props.connectionId,
+      addColumnForm.sourceConnectionId,
+    )
+  } catch (error) {
+    addColumnError.value = error instanceof Error
+      ? error.message
+      : 'Unable to load source schemas.'
+  } finally {
+    addColumnLoading.value = false
+  }
+}
+
 async function openAddColumn() {
   secondaryActionsOpen.value = false
   resetAddColumn()
   addColumnOpen.value = true
-  addColumnLoading.value = true
-  try {
-    addColumnSchemas.value = await provisioningStore.schemas(props.connectionId)
-  } catch (error) {
-    addColumnError.value = error instanceof Error
-      ? error.message
-      : 'Unable to load Oracle schemas.'
-  } finally {
-    addColumnLoading.value = false
+  if (!connectionsStore.connections.length) {
+    await connectionsStore.load()
   }
+  await loadAddColumnSchemas()
 }
 
 function closeAddColumn() {
@@ -1291,13 +1357,17 @@ async function loadAddColumnTables() {
   addColumnForm.tableName = ''
   addColumnForm.joinColumn = ''
 
-  const owner = addColumnForm.owner.trim().toUpperCase()
+  const owner = addColumnForm.owner.trim()
   addColumnForm.owner = owner
-  if (!owner) return
+  if (!owner || !addColumnForm.sourceConnectionId) return
 
   addColumnLoading.value = true
   try {
-    addColumnTables.value = await provisioningStore.tables(props.connectionId, owner)
+    addColumnTables.value = await oracleStore.userListSourceTables(
+      props.connectionId,
+      addColumnForm.sourceConnectionId,
+      owner,
+    )
   } catch (error) {
     addColumnError.value = error instanceof Error
       ? error.message
@@ -1314,8 +1384,8 @@ async function loadAddColumnColumns() {
   addColumnSelections.value = []
   addColumnForm.joinColumn = ''
 
-  const owner = addColumnForm.owner.trim().toUpperCase()
-  const tableName = addColumnForm.tableName.trim().toUpperCase()
+  const owner = addColumnForm.owner.trim()
+  const tableName = addColumnForm.tableName.trim()
   addColumnForm.owner = owner
   addColumnForm.tableName = tableName
   if (!owner || !tableName) return
@@ -1329,9 +1399,11 @@ function reuseExistingSourceIfMapped() {
   const tableName = addColumnForm.tableName.trim().toUpperCase()
   const joinColumn = addColumnForm.joinColumn.trim().toUpperCase()
   const existing = existingUserListSources.value.find((source) =>
-    source.owner === owner
-    && source.tableName === tableName
-    && source.joinColumn === joinColumn,
+    source.sourceConnectionId === addColumnForm.sourceConnectionId
+    && source.baseColumn === addColumnForm.baseColumn
+    && source.owner.toUpperCase() === owner
+    && source.tableName.toUpperCase() === tableName
+    && source.joinColumn.toUpperCase() === joinColumn,
   )
   if (existing) {
     addColumnSourceKey.value = existing.key
@@ -1340,9 +1412,11 @@ function reuseExistingSourceIfMapped() {
 
 function addColumnsPayload() {
   return {
-    owner: addColumnForm.owner.trim().toUpperCase(),
-    table_name: addColumnForm.tableName.trim().toUpperCase(),
-    join_column: addColumnForm.joinColumn.trim().toUpperCase(),
+    source_connection_id: addColumnForm.sourceConnectionId,
+    base_column: addColumnForm.baseColumn,
+    owner: addColumnForm.owner.trim(),
+    table_name: addColumnForm.tableName.trim(),
+    join_column: addColumnForm.joinColumn.trim(),
     columns: addColumnSelections.value.map((item) => ({
       display_column: item.displayColumn,
       label: item.label.trim(),
@@ -2113,7 +2187,7 @@ onBeforeUnmount(() => {
                 <th
                   v-for="column in extraUserListColumns"
                   :key="column.id"
-                  :title="column.warning ? `Source unavailable: ${column.warning}` : `${column.owner}.${column.table_name}.${column.display_column}`"
+                  :title="column.warning ? `Source unavailable: ${column.warning}` : `${column.source_connection_name ?? column.source_connection_id} · ${column.owner}.${column.table_name}.${column.display_column}`"
                 >
                   {{ column.label }}<span v-if="column.warning"> ⚠</span>
                 </th>
@@ -2157,7 +2231,7 @@ onBeforeUnmount(() => {
                 <td
                   v-for="column in extraUserListColumns"
                   :key="`${user.username}-${column.id}`"
-                  :title="column.warning ? `Source unavailable: ${column.warning}` : column.duplicate_matches ? `${column.duplicate_matches} user match(es) have duplicate source rows` : undefined"
+                  :title="column.warning ? `Source unavailable: ${column.warning}` : column.duplicate_matches ? `${column.duplicate_matches} relationship key(s) have duplicate source rows` : undefined"
                 >
                   {{ user.extra_values?.[column.id] ?? '—' }}
                 </td>
@@ -2433,18 +2507,36 @@ onBeforeUnmount(() => {
           <label>
             <span>Source mapping</span>
             <select class="utility-select-input" v-model="addColumnSourceKey" :disabled="addColumnLoading" @change="selectAddColumnSource">
-              <option value="new">New table relationship</option>
+              <option value="new">New relationship</option>
               <option
                 v-for="source in existingUserListSources"
                 :key="source.key"
                 :value="source.key"
               >
-                {{ source.owner }}.{{ source.tableName }} · {{ source.joinColumn }} ({{ source.columns.length }} column{{ source.columns.length === 1 ? '' : 's' }})
+                {{ source.sourceConnectionName }} · {{ source.owner }}.{{ source.tableName }} · {{ baseColumnLabel(source.baseColumn) }} = {{ source.joinColumn }}
               </option>
             </select>
           </label>
 
           <template v-if="addColumnSourceKey === 'new'">
+            <label>
+              <span>Source connection</span>
+              <select
+                v-model="addColumnForm.sourceConnectionId"
+                class="utility-select-input"
+                :disabled="addColumnLoading"
+                @change="loadAddColumnSchemas"
+              >
+                <option
+                  v-for="connection in sourceConnections"
+                  :key="connection.id"
+                  :value="connection.id"
+                >
+                  {{ connection.name }} · {{ connection.engine.toUpperCase() }}
+                </option>
+              </select>
+            </label>
+
             <label>
               <span>Schema</span>
               <input
@@ -2481,15 +2573,24 @@ onBeforeUnmount(() => {
 
           <div v-else-if="selectedExistingUserListSource" class="user-list-column-source-summary">
             <span>Reusing mapped source</span>
-            <strong>{{ selectedExistingUserListSource.owner }}.{{ selectedExistingUserListSource.tableName }}</strong>
-            <small>DBA_USERS.USERNAME = {{ selectedExistingUserListSource.joinColumn }} · {{ selectedExistingUserListSource.columns.length }} column{{ selectedExistingUserListSource.columns.length === 1 ? '' : 's' }} already displayed.</small>
+            <strong>{{ selectedExistingUserListSource.sourceConnectionName }} · {{ selectedExistingUserListSource.owner }}.{{ selectedExistingUserListSource.tableName }}</strong>
+            <small>{{ baseColumnLabel(selectedExistingUserListSource.baseColumn) }} = {{ selectedExistingUserListSource.joinColumn }} · {{ selectedExistingUserListSource.columns.length }} column{{ selectedExistingUserListSource.columns.length === 1 ? '' : 's' }} already displayed.</small>
           </div>
 
           <div class="user-list-relationship">
-            <div>
-              <span>Main list</span>
-              <strong>DBA_USERS.USERNAME</strong>
-            </div>
+            <label>
+              <span>Main list relationship column</span>
+              <select
+                v-model="addColumnForm.baseColumn"
+                class="utility-select-input"
+                :disabled="addColumnSourceKey !== 'new'"
+                @change="reuseExistingSourceIfMapped"
+              >
+                <option v-for="option in baseColumnOptions" :key="option.value" :value="option.value">
+                  {{ option.label }}
+                </option>
+              </select>
+            </label>
             <span class="user-list-relationship-equals">=</span>
             <label>
               <span>Source relationship column</span>
@@ -2501,7 +2602,7 @@ onBeforeUnmount(() => {
               >
                 <option value="">Select column</option>
                 <option
-                  v-for="column in addColumnColumns.filter((item) => ['CHAR', 'NCHAR', 'VARCHAR2', 'NVARCHAR2'].includes(item.data_type.toUpperCase()))"
+                  v-for="column in addColumnColumns.filter(relationshipColumnSupported)"
                   :key="column.name"
                   :value="column.name"
                 >
@@ -2557,17 +2658,12 @@ onBeforeUnmount(() => {
               </article>
             </div>
           </section>
-
-          <div class="user-list-column-source-summary">
-            <span>Source connection</span>
-            <strong>Current database connection</strong>
-          </div>
         </div>
 
         <section v-if="addColumnPreview" class="user-list-column-preview">
           <div class="user-list-column-preview-heading">
             <strong>One-row preview</strong>
-            <span>{{ addColumnForm.owner }}.{{ addColumnForm.tableName }} · {{ addColumnForm.joinColumn }}</span>
+            <span>{{ selectedSourceConnection?.name ?? 'Source' }} · {{ addColumnForm.owner }}.{{ addColumnForm.tableName }} · {{ baseColumnLabel(addColumnForm.baseColumn) }} = {{ addColumnForm.joinColumn }}</span>
           </div>
           <div class="utility-table-wrap">
             <table class="utility-table">
@@ -2601,8 +2697,8 @@ onBeforeUnmount(() => {
           <article v-for="source in existingUserListSources" :key="source.key" class="user-list-existing-source">
             <div class="user-list-existing-source-heading">
               <div>
-                <strong>{{ source.owner }}.{{ source.tableName }}</strong>
-                <small>DBA_USERS.USERNAME = {{ source.joinColumn }}</small>
+                <strong>{{ source.sourceConnectionName }} · {{ source.owner }}.{{ source.tableName }}</strong>
+                <small>{{ baseColumnLabel(source.baseColumn) }} = {{ source.joinColumn }} · {{ source.sourceEngine?.toUpperCase() ?? 'Unavailable' }}</small>
               </div>
               <span>{{ source.columns.length }} column{{ source.columns.length === 1 ? '' : 's' }}</span>
             </div>
@@ -2613,7 +2709,7 @@ onBeforeUnmount(() => {
                   <small>{{ column.display_column }}</small>
                   <small v-if="column.warning" class="user-list-column-duplicate">Source unavailable: {{ column.warning }}</small>
                   <small v-else-if="column.duplicate_matches" class="user-list-column-duplicate">
-                    {{ column.duplicate_matches }} user match(es) currently have duplicate source rows.
+                    {{ column.duplicate_matches }} relationship key(s) currently have duplicate source rows.
                   </small>
                 </span>
                 <button type="button" class="secondary-button compact-button" @click="removeAdditionalColumn(column)">

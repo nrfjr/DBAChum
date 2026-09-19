@@ -192,6 +192,10 @@ class OracleDatabaseUserItem(BaseModel):
 class OracleUserListColumnResponse(BaseModel):
     id: str
     label: str
+    source_connection_id: str
+    source_connection_name: str | None = None
+    source_engine: str | None = None
+    base_column: str = "USERNAME"
     owner: str
     table_name: str
     join_column: str
@@ -201,6 +205,8 @@ class OracleUserListColumnResponse(BaseModel):
 
 
 class OracleUserListColumnRequest(BaseModel):
+    source_connection_id: str | None = None
+    base_column: str = "USERNAME"
     owner: str
     table_name: str
     join_column: str
@@ -214,6 +220,8 @@ class OracleUserListColumnSelection(BaseModel):
 
 
 class OracleUserListColumnsRequest(BaseModel):
+    source_connection_id: str | None = None
+    base_column: str = "USERNAME"
     owner: str
     table_name: str
     join_column: str

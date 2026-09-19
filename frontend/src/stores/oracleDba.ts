@@ -1,4 +1,5 @@
 import { defineStore } from 'pinia'
+import type { OracleMetadataSchema, OracleMetadataTable, OracleMetadataColumn } from '@/stores/provisioning'
 
 export interface OracleSession {
   sid: number
@@ -177,6 +178,10 @@ export interface OracleDatabaseUser {
 export interface OracleUserListColumn {
   id: string
   label: string
+  source_connection_id: string
+  source_connection_name: string | null
+  source_engine: string | null
+  base_column: string
   owner: string
   table_name: string
   join_column: string
@@ -186,6 +191,8 @@ export interface OracleUserListColumn {
 }
 
 export interface OracleUserListColumnInput {
+  source_connection_id?: string | null
+  base_column?: string
   owner: string
   table_name: string
   join_column: string
@@ -199,6 +206,8 @@ export interface OracleUserListColumnSelectionInput {
 }
 
 export interface OracleUserListColumnsInput {
+  source_connection_id?: string | null
+  base_column?: string
   owner: string
   table_name: string
   join_column: string
@@ -785,6 +794,31 @@ export const useOracleDbaStore =
         } finally {
           this.loadingUsers = false
         }
+      },
+
+      async userListSourceSchemas(id: string, sourceConnectionId: string) {
+        return apiRequest<OracleMetadataSchema[]>(
+          `/databases/${id}/oracle/user-list-source/${encodeURIComponent(sourceConnectionId)}/schemas`,
+        )
+      },
+
+      async userListSourceTables(id: string, sourceConnectionId: string, owner: string) {
+        return apiRequest<OracleMetadataTable[]>(
+          `/databases/${id}/oracle/user-list-source/${encodeURIComponent(sourceConnectionId)}`
+            + `/schemas/${encodeURIComponent(owner)}/tables`,
+        )
+      },
+
+      async userListSourceColumns(
+        id: string,
+        sourceConnectionId: string,
+        owner: string,
+        tableName: string,
+      ) {
+        return apiRequest<OracleMetadataColumn[]>(
+          `/databases/${id}/oracle/user-list-source/${encodeURIComponent(sourceConnectionId)}`
+            + `/schemas/${encodeURIComponent(owner)}/tables/${encodeURIComponent(tableName)}/columns`,
+        )
       },
 
       async previewUserListColumn(

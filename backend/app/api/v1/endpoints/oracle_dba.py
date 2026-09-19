@@ -72,6 +72,9 @@ from app.schemas.provisioning import (
     BulkProvisionPreviewResponse,
     BulkProvisionExecutionResponse,
     BulkProvisionExportRequest,
+    OracleMetadataSchema,
+    OracleMetadataTable,
+    OracleMetadataColumn,
 )
 from app.schemas.user import UserResponse
 from app.services.oracle_dba import (
@@ -106,6 +109,9 @@ from app.services.oracle_user_list_columns import (
     delete_oracle_user_list_column,
     preview_oracle_user_list_column,
     preview_oracle_user_list_columns,
+    list_user_list_source_schemas_for_connection,
+    list_user_list_source_tables_for_connection,
+    list_user_list_source_columns_for_connection,
 )
 from app.services.oracle_user_lifecycle import (
     load_oracle_user_lifecycle_state,
@@ -229,6 +235,69 @@ async def get_database_users(
         connection_id,
     )
 
+@router.get(
+    "/{connection_id}/oracle/user-list-source/{source_connection_id}/schemas",
+    response_model=list[OracleMetadataSchema],
+)
+async def get_user_list_source_schemas(
+    connection_id: str,
+    source_connection_id: str,
+    request: Request,
+    current_user: UserResponse = Depends(
+        require_permission(Permission.PROVISIONING_MANAGE)
+    ),
+):
+    return await list_user_list_source_schemas_for_connection(
+        request.app.state.database,
+        connection_id,
+        source_connection_id,
+    )
+
+
+@router.get(
+    "/{connection_id}/oracle/user-list-source/{source_connection_id}/schemas/{owner}/tables",
+    response_model=list[OracleMetadataTable],
+)
+async def get_user_list_source_tables(
+    connection_id: str,
+    source_connection_id: str,
+    owner: str,
+    request: Request,
+    current_user: UserResponse = Depends(
+        require_permission(Permission.PROVISIONING_MANAGE)
+    ),
+):
+    return await list_user_list_source_tables_for_connection(
+        request.app.state.database,
+        connection_id,
+        source_connection_id,
+        owner,
+    )
+
+
+@router.get(
+    "/{connection_id}/oracle/user-list-source/{source_connection_id}/schemas/{owner}/tables/{table_name}/columns",
+    response_model=list[OracleMetadataColumn],
+)
+async def get_user_list_source_columns(
+    connection_id: str,
+    source_connection_id: str,
+    owner: str,
+    table_name: str,
+    request: Request,
+    current_user: UserResponse = Depends(
+        require_permission(Permission.PROVISIONING_MANAGE)
+    ),
+):
+    return await list_user_list_source_columns_for_connection(
+        request.app.state.database,
+        connection_id,
+        source_connection_id,
+        owner,
+        table_name,
+    )
+
+
 @router.post(
     "/{connection_id}/oracle/user-list-columns/preview",
     response_model=OracleUserListColumnPreviewResponse,
@@ -255,6 +324,8 @@ async def preview_user_list_column(
     return await preview_oracle_user_list_column(
         request.app.state.database,
         connection_id,
+        source_connection_id=data.source_connection_id,
+        base_column=data.base_column,
         owner=data.owner,
         table_name=data.table_name,
         join_column=data.join_column,
@@ -290,6 +361,8 @@ async def preview_user_list_columns(
     return await preview_oracle_user_list_columns(
         request.app.state.database,
         connection_id,
+        source_connection_id=data.source_connection_id,
+        base_column=data.base_column,
         owner=data.owner,
         table_name=data.table_name,
         join_column=data.join_column,
@@ -313,6 +386,8 @@ async def add_user_list_columns(
     items = await create_oracle_user_list_columns(
         request.app.state.database,
         connection_id,
+        source_connection_id=data.source_connection_id,
+        base_column=data.base_column,
         owner=data.owner,
         table_name=data.table_name,
         join_column=data.join_column,
@@ -337,6 +412,8 @@ async def add_user_list_column(
     return await create_oracle_user_list_column(
         request.app.state.database,
         connection_id,
+        source_connection_id=data.source_connection_id,
+        base_column=data.base_column,
         owner=data.owner,
         table_name=data.table_name,
         join_column=data.join_column,
