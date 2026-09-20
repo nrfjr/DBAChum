@@ -90,6 +90,25 @@ export interface MaintenanceDiagnostics {
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL
 
+const BRANDING_CACHE_KEY = 'dbachum-branding'
+const GENERAL_CACHE_KEY = 'dbachum-general-settings'
+
+function readCache<T>(key: string): T | null {
+  try {
+    const value = localStorage.getItem(key)
+    return value ? JSON.parse(value) as T : null
+  } catch {
+    return null
+  }
+}
+
+function writeCache(key: string, value: unknown) {
+  try {
+    localStorage.setItem(key, JSON.stringify(value))
+  } catch {
+  }
+}
+
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const headers = new Headers(options.headers)
   if (options.body && !(options.body instanceof FormData)) {
@@ -112,8 +131,8 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 
 export const useSystemSettingsStore = defineStore('systemSettings', {
   state: () => ({
-    branding: null as BrandingSettings | null,
-    general: null as GeneralSettings | null,
+    branding: readCache<BrandingSettings>(BRANDING_CACHE_KEY),
+    general: readCache<GeneralSettings>(GENERAL_CACHE_KEY),
     updateStatus: null as ReleaseUpdateStatus | null,
     updateLoading: false,
     updateError: null as string | null,
@@ -138,19 +157,27 @@ export const useSystemSettingsStore = defineStore('systemSettings', {
 
   actions: {
     async loadBranding() {
-      this.branding = await request<BrandingSettings>('/branding')
-      return this.branding
+      const branding = await request<BrandingSettings>('/branding')
+      this.branding = branding
+      writeCache(BRANDING_CACHE_KEY, branding)
+      return branding
     },
     async loadGeneral() {
-      this.general = await request<GeneralSettings>('/settings/general')
-      return this.general
+      const general = await request<GeneralSettings>('/settings/general')
+      this.general = general
+      writeCache(GENERAL_CACHE_KEY, general)
+      return general
     },
     async saveGeneral(payload: Pick<GeneralSettings, 'installation_name' | 'default_page_size' | 'default_analytics_months'>) {
       this.general = await request<GeneralSettings>('/settings/general', {
         method: 'PATCH',
         body: JSON.stringify(payload),
       })
-      if (this.branding) this.branding.installation_name = this.general.installation_name
+      writeCache(GENERAL_CACHE_KEY, this.general)
+      if (this.branding) {
+        this.branding.installation_name = this.general.installation_name
+        writeCache(BRANDING_CACHE_KEY, this.branding)
+      }
       return this.general
     },
     async checkForUpdates(forceRefresh = false) {
@@ -194,12 +221,14 @@ export const useSystemSettingsStore = defineStore('systemSettings', {
         method: 'PUT',
         body,
       })
+      writeCache(BRANDING_CACHE_KEY, this.branding)
       return this.branding
     },
     async removeLogo() {
       this.branding = await request<BrandingSettings>('/settings/general/logo', {
         method: 'DELETE',
       })
+      writeCache(BRANDING_CACHE_KEY, this.branding)
       return this.branding
     },
     async loadMonitoring() {

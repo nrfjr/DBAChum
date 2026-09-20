@@ -21,5 +21,5 @@ async def get_branding_logo(request: Request):
     return Response(
         content=bytes(document["data"]),
         media_type=document["content_type"],
-        headers={"Cache-Control": "public, max-age=3600"},
+        headers={"Cache-Control": "public, max-age=31536000, immutable"},
     )

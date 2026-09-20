@@ -143,6 +143,19 @@ interface LoginPayload {
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL
 
+const PREFERENCES_CACHE_PREFIX = 'dbachum-user-preferences:'
+
+function cachePreferences(user: User | null) {
+  if (!user) return
+  try {
+    localStorage.setItem(
+      `${PREFERENCES_CACHE_PREFIX}${user.id}`,
+      JSON.stringify(user.preferences),
+    )
+  } catch {
+  }
+}
+
 
 async function apiRequest<T>(
   path: string,
@@ -194,8 +207,9 @@ export const useAuthStore = defineStore(
         state.user !== null,
       avatarUrl: (state) => {
         if (!state.user?.has_avatar) return null
+        const userId = encodeURIComponent(state.user.id)
         const version = encodeURIComponent(state.user.avatar_version ?? 'current')
-        return `${API_BASE_URL}/profile/avatar?v=${version}`
+        return `${API_BASE_URL}/profile/avatar?u=${userId}&v=${version}`
       },
     },
 
@@ -215,6 +229,7 @@ export const useAuthStore = defineStore(
 
           if (response.ok) {
             this.user = await response.json()
+            cachePreferences(this.user)
           } else {
             this.user = null
           }
@@ -258,6 +273,7 @@ export const useAuthStore = defineStore(
           const result = await response.json()
 
           this.user = result.user
+          cachePreferences(this.user)
 
           return true
         } finally {
@@ -273,6 +289,7 @@ export const useAuthStore = defineStore(
           body,
         })
         this.user = user
+        cachePreferences(this.user)
         return user
       },
 
@@ -281,6 +298,7 @@ export const useAuthStore = defineStore(
           method: 'DELETE',
         })
         this.user = user
+        cachePreferences(this.user)
         return user
       },
 
@@ -299,6 +317,7 @@ export const useAuthStore = defineStore(
           )
 
           this.user = user
+          cachePreferences(this.user)
           return user
         } finally {
           this.profileSaving = false
@@ -320,6 +339,7 @@ export const useAuthStore = defineStore(
           )
 
           this.user = user
+          cachePreferences(this.user)
           return user
         } finally {
           this.preferencesSaving = false

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 
 import ScrollableDataTable from '@/components/common/ScrollableDataTable.vue'
@@ -7,6 +7,7 @@ import { useServersStore, type Server, type ServerOsFamily, type ServerType } fr
 import {
   useServerMonitoringStore,
   type ServerFilesystemSnapshot,
+  type ServerHealthSnapshot,
 } from '@/stores/serverMonitoring'
 import type { DatabaseConnection } from '@/stores/connections'
 import { useAuthStore } from '@/stores/auth'
@@ -19,6 +20,7 @@ const serversStore = useServersStore()
 const monitoringStore = useServerMonitoringStore()
 const authStore = useAuthStore()
 const terminalStore = useTerminalSessionsStore()
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL
 
 const server = ref<Server | null>(null)
 const databases = ref<DatabaseConnection[]>([])
@@ -27,6 +29,9 @@ const error = ref<string | null>(null)
 const terminalError = ref<string | null>(null)
 const activeTab = ref<'overview' | 'metrics' | 'databases'>('overview')
 const actionMenuOpen = ref(false)
+const liveHealthSource = ref<EventSource | null>(null)
+const liveHealthServerId = ref<string | null>(null)
+const liveHealthConnected = ref(false)
 
 const serverId = computed(() => String(route.params.id ?? ''))
 const canManageServers = computed(() => hasPermission(authStore.user, 'servers:manage'))
@@ -66,6 +71,72 @@ const serverReachabilityTone = computed<'reachable' | 'unreachable' | 'unknown'>
 function selectTab(tab: 'overview' | 'metrics' | 'databases') {
   activeTab.value = tab
   actionMenuOpen.value = false
+}
+
+function stopLiveHealth() {
+  liveHealthSource.value?.close()
+  liveHealthSource.value = null
+  liveHealthServerId.value = null
+  liveHealthConnected.value = false
+}
+
+function startLiveHealth() {
+  const sourceServerId = serverId.value
+  if (liveHealthSource.value && liveHealthServerId.value === sourceServerId) return
+  if (liveHealthSource.value) stopLiveHealth()
+
+  monitoringStore.clearError(sourceServerId)
+  const source = new EventSource(
+    `${API_BASE_URL}/servers/${sourceServerId}/health/live`,
+    { withCredentials: true },
+  )
+
+  source.addEventListener('health', (event) => {
+    const message = event as MessageEvent<string>
+    const snapshot = JSON.parse(message.data) as ServerHealthSnapshot
+    monitoringStore.applyHealth(sourceServerId, snapshot)
+    liveHealthConnected.value = true
+  })
+
+  source.addEventListener('metrics-error', (event) => {
+    const message = event as MessageEvent<string>
+    const payload = JSON.parse(message.data) as { message?: string }
+    monitoringStore.setError(
+      sourceServerId,
+      payload.message ?? 'Unable to collect live server metrics.',
+    )
+  })
+
+  source.onopen = () => {
+    liveHealthConnected.value = true
+  }
+
+  source.onerror = () => {
+    liveHealthConnected.value = false
+  }
+
+  liveHealthServerId.value = sourceServerId
+  liveHealthSource.value = source
+}
+
+function syncLiveHealth() {
+  const shouldRun =
+    activeTab.value === 'metrics'
+    && !document.hidden
+    && sshConfigured.value
+    && sshTrusted.value
+    && canCollectHostMetrics.value
+
+  if (!shouldRun) {
+    stopLiveHealth()
+    return
+  }
+
+  startLiveHealth()
+}
+
+function handleVisibilityChange() {
+  syncLiveHealth()
 }
 
 function closeActionMenu() {
@@ -148,9 +219,7 @@ async function initializeMonitoring() {
   if (!server.value?.ssh_profile_id) return
 
   try {
-    if (server.value.ssh_host_key_fingerprint && canCollectHostMetrics.value) {
-      await monitoringStore.loadHealth(serverId.value)
-    } else if (canTestConnections.value) {
+    if (!server.value.ssh_host_key_fingerprint && canTestConnections.value) {
       await monitoringStore.testSsh(serverId.value)
     }
   } catch {
@@ -186,7 +255,7 @@ async function trustHostKey() {
   try {
     await monitoringStore.trustHostKey(serverId.value, candidate.fingerprint)
     server.value = await serversStore.loadOne(serverId.value)
-    if (canCollectHostMetrics.value) await monitoringStore.loadHealth(serverId.value)
+    syncLiveHealth()
     showToast({ title: 'SSH host key trusted', message: candidate.fingerprint, tone: 'success' })
   } catch (cause) {
     const message = cause instanceof Error ? cause.message : monitoringError.value ?? 'Unable to trust SSH host key.'
@@ -205,8 +274,10 @@ async function refreshHost() {
 }
 
 async function refreshAll() {
+  stopLiveHealth()
   await load()
   await initializeMonitoring()
+  syncLiveHealth()
   showToast({ title: 'Server refreshed', tone: 'success' })
 }
 
@@ -226,14 +297,23 @@ function openTerminal() {
   }
 }
 
+watch(
+  [activeTab, serverId, sshConfigured, sshTrusted, canCollectHostMetrics],
+  () => syncLiveHealth(),
+)
+
 onMounted(async () => {
   document.addEventListener('click', closeActionMenu)
+  document.addEventListener('visibilitychange', handleVisibilityChange)
   await load()
   await initializeMonitoring()
+  syncLiveHealth()
 })
 
 onUnmounted(() => {
+  stopLiveHealth()
   document.removeEventListener('click', closeActionMenu)
+  document.removeEventListener('visibilitychange', handleVisibilityChange)
 })
 </script>
 
@@ -429,7 +509,7 @@ onUnmounted(() => {
             <h2>Host metrics</h2>
           </div>
           <div class="server-monitoring-actions">
-            <span v-if="health" class="server-last-checked">Checked {{ formatCheckedAt(health.checked_at) }}</span>
+            <span v-if="health" class="server-last-checked">{{ liveHealthConnected ? 'Live' : 'Last sample' }} · {{ formatCheckedAt(health.checked_at) }}</span>
             <button type="button" class="secondary-button refresh-button"
               :disabled="!sshConfigured || !sshTrusted || !canCollectHostMetrics || healthLoading" @click="refreshHost">
               {{ healthLoading ? 'Refreshing' : 'Refresh metrics' }}
@@ -451,6 +531,10 @@ onUnmounted(() => {
           assets.
         </div>
         <p v-if="monitoringError" class="login-error">{{ monitoringError }}</p>
+        <div v-if="sshConfigured && sshTrusted && canCollectHostMetrics && !health && !monitoringError" class="empty-state">
+          Connecting live metrics
+          <p class="loading"></p>
+        </div>
 
         <template v-if="health">
           <div class="server-health-metrics">

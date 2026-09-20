@@ -150,6 +150,15 @@ export const useServerMonitoringStore = defineStore('server-monitoring', {
       }
     },
 
+    applyHealth(serverId: string, snapshot: ServerHealthSnapshot) {
+      this.healthByServer[serverId] = snapshot
+      this.errorByServer[serverId] = null
+    },
+
+    setError(serverId: string, message: string | null) {
+      this.errorByServer[serverId] = message
+    },
+
     clearError(serverId: string) {
       this.errorByServer[serverId] = null
     },

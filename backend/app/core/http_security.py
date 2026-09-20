@@ -55,7 +55,7 @@ class SecurityHeadersMiddleware:
                     or path.startswith(
                         f"{self.api_prefix}/"
                     )
-                ):
+                ) and "cache-control" not in headers:
                     headers["Cache-Control"] = (
                         "no-store, max-age=0"
                     )

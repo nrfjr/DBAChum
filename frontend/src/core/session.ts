@@ -37,9 +37,15 @@ export function installSessionFetchInterceptor() {
   interceptorInstalled = true
 
   window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+    const authenticatedAtStart = activityTrackingEnabled
     const response = await nativeFetch(input, init)
     const url = requestUrl(input)
-    if (response.status === 401 && isApiRequest(url) && !isAuthProbe(url)) {
+    if (
+      authenticatedAtStart
+      && response.status === 401
+      && isApiRequest(url)
+      && !isAuthProbe(url)
+    ) {
       announceSessionExpired()
     }
     return response
