@@ -219,7 +219,9 @@ async function initializeMonitoring() {
   if (!server.value?.ssh_profile_id) return
 
   try {
-    if (!server.value.ssh_host_key_fingerprint && canTestConnections.value) {
+    if (server.value.ssh_host_key_fingerprint && canCollectHostMetrics.value) {
+      await monitoringStore.loadHealth(serverId.value)
+    } else if (canTestConnections.value) {
       await monitoringStore.testSsh(serverId.value)
     }
   } catch {
@@ -255,6 +257,9 @@ async function trustHostKey() {
   try {
     await monitoringStore.trustHostKey(serverId.value, candidate.fingerprint)
     server.value = await serversStore.loadOne(serverId.value)
+    if (canCollectHostMetrics.value) {
+      await monitoringStore.loadHealth(serverId.value)
+    }
     syncLiveHealth()
     showToast({ title: 'SSH host key trusted', message: candidate.fingerprint, tone: 'success' })
   } catch (cause) {

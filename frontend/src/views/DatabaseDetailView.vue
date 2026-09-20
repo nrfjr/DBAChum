@@ -166,9 +166,13 @@ function resetVisitedTabs() {
   }
 }
 
-watch(connectionId, () => {
+watch(connectionId, async () => {
   resetVisitedTabs()
+  overviewMetrics.value = null
+  overviewBackups.value = null
+  await loadWorkspaceData()
   applyTabFromRoute()
+  await syncEngineContext()
 })
 
 watch(
@@ -345,6 +349,15 @@ async function loadOverviewSummaries() {
   if (backupsResult.status === 'fulfilled') overviewBackups.value = backupsResult.value
 }
 
+async function loadWorkspaceData() {
+  await Promise.allSettled([
+    serversStore.servers.length === 0 ? serversStore.load() : Promise.resolve(),
+    recordsStore.records.length === 0 ? recordsStore.load() : Promise.resolve(),
+    databasesStore.loadOne(connectionId.value),
+    loadOverviewSummaries(),
+  ])
+}
+
 const readyTerminalServers = computed(() =>
   relatedServers.value.filter(
     (server) => Boolean(server.ssh_profile_id && server.ssh_host_key_fingerprint),
@@ -436,12 +449,7 @@ onMounted(async () => {
     await connectionsStore.load()
   }
 
-  await Promise.allSettled([
-    serversStore.servers.length === 0 ? serversStore.load() : Promise.resolve(),
-    recordsStore.records.length === 0 ? recordsStore.load() : Promise.resolve(),
-    databasesStore.loadOne(connectionId.value),
-    loadOverviewSummaries(),
-  ])
+  await loadWorkspaceData()
 
   applyTabFromRoute()
   await syncEngineContext()
