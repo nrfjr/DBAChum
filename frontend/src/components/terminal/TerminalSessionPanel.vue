@@ -85,6 +85,18 @@ function websocketUrl(serverId: string, cols: number, rows: number) {
   return url.toString()
 }
 
+async function copySelection() {
+  if (!terminal?.hasSelection()) return
+
+  const text = terminal.getSelection()
+  if (!text) return
+
+  try {
+    await navigator.clipboard.writeText(text)
+  } catch {
+  }
+}
+
 function send(payload: Record<string, unknown>) {
   if (socket?.readyState === WebSocket.OPEN) {
     socket.send(JSON.stringify(payload))
@@ -470,7 +482,7 @@ onBeforeUnmount(() => {
           }}</span>
       </div>
 
-      <div ref="terminalHost" class="terminal-window__screen" @contextmenu="pasteClipboard" />
+      <div ref="terminalHost" class="terminal-window__screen" @mouseup="copySelection" @contextmenu="pasteClipboard" />
     </section>
   </div>
 </template>
