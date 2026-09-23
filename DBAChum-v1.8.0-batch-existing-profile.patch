@@ -1,0 +1,675 @@
+diff --git a/backend/app/schemas/provisioning.py b/backend/app/schemas/provisioning.py
+index 85c38ea..f4c0d77 100644
+--- a/backend/app/schemas/provisioning.py
++++ b/backend/app/schemas/provisioning.py
+@@ -683,6 +683,7 @@ class BulkProvisionImportRow(BaseModel):
+     password: str
+     password_mode: Literal["generated", "provided"]
+     username: str | None = None
++    account_exists: bool = False
+     valid: bool = True
+     errors: dict[str, str] = Field(default_factory=dict)
+ 
+@@ -733,6 +734,7 @@ class BulkProvisionExportRow(BaseModel):
+     middle_name: str = Field(default="", max_length=100)
+     last_name: str = Field(default="", max_length=100)
+     username: str = Field(default="", max_length=30)
++    action: str = Field(default="", max_length=32)
+     initial_password: str = Field(default="", max_length=128)
+     status: str = Field(default="", max_length=32)
+     run_or_audit: str = Field(default="", max_length=128)
+@@ -752,6 +754,8 @@ class BulkProvisionPreviewRow(BaseModel):
+     username: str | None = None
+     reference_user: str | None = None
+     password_mode: Literal["generated", "provided"]
++    account_exists: bool = False
++    batch_action: Literal["create", "apply_profile", "already_active"] | None = None
+     valid: bool = True
+     errors: dict[str, str] = Field(default_factory=dict)
+     roles: list[str] = Field(default_factory=list)
+@@ -772,6 +776,8 @@ class BulkProvisionExecutionRow(BaseModel):
+     row_number: int
+     username: str | None = None
+     status: Literal["succeeded", "partial", "failed"]
++    batch_action: Literal["created", "applied", "already_active"]
++    password_applied: bool = False
+     run_id: str | None = None
+     audit_id: str | None = None
+     error: str | None = None
+diff --git a/backend/app/services/bulk_provisioning.py b/backend/app/services/bulk_provisioning.py
+index f483d41..5fea4cb 100644
+--- a/backend/app/services/bulk_provisioning.py
++++ b/backend/app/services/bulk_provisioning.py
+@@ -325,8 +325,7 @@ async def import_bulk_provision_file(
+     existing = await find_existing_oracle_users(target, [value for value in candidates if value])
+     for row in parsed:
+         if row.username and row.username in existing:
+-            row.errors["username"] = "This Oracle username already exists."
+-            row.valid = False
++            row.account_exists = True
+ 
+     valid_count = sum(1 for row in parsed if row.valid)
+     return BulkProvisionImportResponse(
+@@ -367,7 +366,7 @@ def build_bulk_results_xlsx(rows: list[dict[str, object]]) -> bytes:
+     sheet.title = "Provisioning results"
+     headers = [
+         "row", "employee_id", "first_name", "middle_name", "last_name",
+-        "username", "initial_password", "status", "run_or_audit", "error",
++        "username", "action", "initial_password", "status", "run_or_audit", "error",
+     ]
+     sheet.append(headers)
+     for item in rows:
+@@ -376,9 +375,9 @@ def build_bulk_results_xlsx(rows: list[dict[str, object]]) -> bytes:
+         cell.font = Font(bold=True)
+     for cell in sheet["B"]:
+         cell.number_format = "@"
+-    for cell in sheet["G"]:
++    for cell in sheet["H"]:
+         cell.number_format = "@"
+-    widths = [8, 18, 20, 20, 24, 32, 20, 14, 36, 50]
++    widths = [8, 18, 20, 20, 24, 32, 20, 20, 14, 36, 50]
+     for index, width in enumerate(widths, start=1):
+         sheet.column_dimensions[sheet.cell(row=1, column=index).column_letter].width = width
+     buffer = io.BytesIO()
+@@ -393,6 +392,35 @@ def _effective_reference(data: BulkProvisionRequest, row) -> str | None:
+     return normalize_oracle_identifier(value, field_name="Reference user")
+ 
+ 
++async def _active_profile_usernames(
++    database,
++    connection_id: str,
++    profile_id: str | None,
++    usernames: set[str],
++) -> set[str]:
++    if not profile_id or not usernames:
++        return set()
++    cursor = database.provisioning_runs.find(
++        {
++            "parent_connection_id": connection_id,
++            "profile_id": profile_id,
++            "username": {"$in": sorted(usernames)},
++            "status": {"$in": ["succeeded", "partial"]},
++            "$or": [
++                {"deprovisioned_at": {"$exists": False}},
++                {"deprovisioned_at": None},
++            ],
++        },
++        {"username": 1},
++    )
++    documents = await cursor.to_list(MAX_BULK_ROWS * 2)
++    return {
++        str(document.get("username") or "").strip().upper()
++        for document in documents
++        if document.get("username")
++    }
++
++
+ async def preview_bulk_provisioning(
+     database,
+     connection_id: str,
+@@ -427,20 +455,34 @@ async def preview_bulk_provisioning(
+         generated.append(username)
+         row_usernames[row.row_number] = username
+     existing = await find_existing_oracle_users(target, generated)
++    active_profile_users = await _active_profile_usernames(
++        database,
++        connection_id,
++        data.profile_id,
++        existing,
++    )
+ 
+     seen: dict[str, int] = {}
+     rows: list[BulkProvisionPreviewRow] = []
+     for row in data.rows:
+         errors: dict[str, str] = {}
+         username = row_usernames.get(row.row_number)
++        account_exists = bool(username and username in existing)
++        batch_action: str | None = None
+         if not username:
+             errors["username"] = "Unable to generate a valid Oracle username from this row."
+-        elif username in existing:
+-            errors["username"] = "This Oracle username already exists."
+         elif username in seen:
+             errors["username"] = f"Generated username duplicates batch row {seen[username]}."
+         else:
+             seen[username] = row.row_number
++            if account_exists and not data.profile_id:
++                errors["username"] = "This Oracle username already exists. Select a provisioning profile to apply instead of recreating the account."
++            elif account_exists and username in active_profile_users:
++                batch_action = "already_active"
++            elif account_exists:
++                batch_action = "apply_profile"
++            else:
++                batch_action = "create"
+ 
+         reference_user = None
+         try:
+@@ -450,15 +492,17 @@ async def preview_bulk_provisioning(
+ 
+         roles: list[str] = []
+         provisioning = None
+-        if not errors:
++        if not errors and batch_action != "already_active":
+             try:
+                 if data.profile_id:
++                    preserve_existing = batch_action == "apply_profile"
+                     provisioning = await build_provisioning_preview(
+                         database,
+                         data.profile_id,
+                         ProvisioningPreviewRequest(
++                            account_mode="preserve_existing" if preserve_existing else "create_or_reconcile",
+                             username=username,
+-                            password=row.password,
++                            password=None if preserve_existing else row.password,
+                             first_name=row.first_name,
+                             middle_name=row.middle_name,
+                             last_name=row.last_name,
+@@ -472,8 +516,8 @@ async def preview_bulk_provisioning(
+                         requester_ip=requester_ip,
+                         parent_connection_id=connection_id,
+                     )
+-                    if provisioning.account_exists:
+-                        errors["username"] = "This Oracle username already exists."
++                    if batch_action == "create" and provisioning.account_exists:
++                        errors["username"] = "This Oracle username appeared after import. Rebuild the batch preview before execution."
+                     roles = [role.name for role in provisioning.roles if role.will_copy]
+                 elif reference_user:
+                     reference = await get_oracle_reference_user(target, reference_user)
+@@ -494,6 +538,8 @@ async def preview_bulk_provisioning(
+             username=username,
+             reference_user=reference_user,
+             password_mode=row.password_mode,
++            account_exists=account_exists,
++            batch_action=batch_action,
+             valid=not errors,
+             errors=errors,
+             roles=roles,
+@@ -534,16 +580,28 @@ async def execute_bulk_provisioning(
+     for row in data.rows:
+         preview = preview_by_row[row.row_number]
+         try:
++            if preview.batch_action == "already_active":
++                results.append(BulkProvisionExecutionRow(
++                    row_number=row.row_number,
++                    username=preview.username,
++                    status="succeeded",
++                    batch_action="already_active",
++                    password_applied=False,
++                ))
++                continue
++
+             if data.profile_id:
+                 p = preview.provisioning
+                 assert p is not None
++                preserve_existing = preview.batch_action == "apply_profile"
+                 result = await execute_provisioning_profile(
+                     database,
+                     connection_id,
+                     data.profile_id,
+                     ProvisioningExecuteRequest(
++                        account_mode="preserve_existing" if preserve_existing else "create_or_reconcile",
+                         username=preview.username,
+-                        password=row.password,
++                        password=None if preserve_existing else row.password,
+                         first_name=row.first_name,
+                         middle_name=row.middle_name,
+                         last_name=row.last_name,
+@@ -553,9 +611,9 @@ async def execute_bulk_provisioning(
+                         request_reference=data.request_reference,
+                         remarks=data.remarks,
+                         roles=preview.roles,
+-                        default_tablespace=p.default_tablespace,
+-                        temporary_tablespace=p.temporary_tablespace,
+-                        oracle_profile=p.oracle_profile,
++                        default_tablespace=None if preserve_existing else p.default_tablespace,
++                        temporary_tablespace=None if preserve_existing else p.temporary_tablespace,
++                        oracle_profile=None if preserve_existing else p.oracle_profile,
+                     ),
+                     operator,
+                     requester_ip=requester_ip,
+@@ -564,6 +622,8 @@ async def execute_bulk_provisioning(
+                     row_number=row.row_number,
+                     username=result.username,
+                     status=result.status,
++                    batch_action="applied" if preserve_existing else "created",
++                    password_applied=bool(result.account.password_applied),
+                     run_id=result.run_id,
+                     audit_id=result.audit_id,
+                     error=result.error,
+@@ -594,14 +654,17 @@ async def execute_bulk_provisioning(
+                     row_number=row.row_number,
+                     username=created["username"],
+                     status="succeeded",
++                    batch_action="created",
++                    password_applied=True,
+                     audit_id=created["audit_id"],
+                 ))
+         except AppError as exc:
+-
+             results.append(BulkProvisionExecutionRow(
+                 row_number=row.row_number,
+                 username=preview.username,
+                 status="failed",
++                batch_action="applied" if preview.batch_action == "apply_profile" else "created",
++                password_applied=False,
+                 error=exc.message,
+             ))
+         except Exception:
+@@ -609,6 +672,8 @@ async def execute_bulk_provisioning(
+                 row_number=row.row_number,
+                 username=preview.username,
+                 status="failed",
++                batch_action="applied" if preview.batch_action == "apply_profile" else "created",
++                password_applied=False,
+                 error="Bulk provisioning failed unexpectedly for this row.",
+             ))
+ 
+diff --git a/frontend/src/components/databases/oracle/OracleBulkProvisionModal.vue b/frontend/src/components/databases/oracle/OracleBulkProvisionModal.vue
+index 90a9b2a..021e82e 100644
+--- a/frontend/src/components/databases/oracle/OracleBulkProvisionModal.vue
++++ b/frontend/src/components/databases/oracle/OracleBulkProvisionModal.vue
+@@ -6,6 +6,7 @@ import ScrollableDataTable from '@/components/common/ScrollableDataTable.vue'
+ import {
+   useProvisioningStore,
+   type BulkProvisionExecutionResult,
++  type BulkProvisionExecutionRow,
+   type BulkProvisionExportRow,
+   type BulkProvisionImportResult,
+   type BulkProvisionPreviewResult,
+@@ -38,6 +39,7 @@ const resultDownloadOpen = ref(false)
+ 
+ const profiles = computed(() => provisioningStore.profilesByConnection[props.connectionId] ?? [])
+ const canContinueImport = computed(() => Boolean(importResult.value && importResult.value.invalid_count === 0))
++const existingImportCount = computed(() => importResult.value?.rows.filter((row) => row.account_exists).length ?? 0)
+ 
+ function close() {
+   if (!loading.value) emit('close')
+@@ -143,6 +145,11 @@ function goAccess() {
+ 
+ async function buildPreview() {
+   error.value = null
++  if (existingImportCount.value > 0 && !profileId.value) {
++    error.value = 'Select a provisioning profile when the batch contains existing Oracle users.'
++    showToast({ title: 'Provisioning profile required', message: error.value, tone: 'warning' })
++    return
++  }
+   if (useCommonReference.value && !commonReferenceUser.value.trim()) {
+     error.value = 'Enter the common reference user or turn the option off.'
+     showToast({ title: 'Common reference user required', message: error.value, tone: 'warning' })
+@@ -270,6 +277,23 @@ function passwordForRow(rowNumber: number) {
+   return importResult.value?.rows.find((row) => row.row_number === rowNumber)?.password ?? ''
+ }
+ 
++function resultPassword(row: BulkProvisionExecutionRow) {
++  return row.password_applied ? passwordForRow(row.row_number) : ''
++}
++
++function previewActionLabel(value: string | null) {
++  if (value === 'apply_profile') return 'APPLY PROFILE'
++  if (value === 'already_active') return 'ALREADY ACTIVE'
++  if (value === 'create') return 'CREATE'
++  return '—'
++}
++
++function executionActionLabel(value: BulkProvisionExecutionRow['batch_action']) {
++  if (value === 'applied') return 'PROFILE APPLIED'
++  if (value === 'already_active') return 'ALREADY ACTIVE'
++  return 'CREATED'
++}
++
+ function exportRows(): BulkProvisionExportRow[] {
+   const importedRows = importResult.value?.rows ?? []
+   const importedByRow = new Map(importedRows.map((row) => [row.row_number, row]))
+@@ -282,7 +306,8 @@ function exportRows(): BulkProvisionExportRow[] {
+       middle_name: imported?.middle_name ?? '',
+       last_name: imported?.last_name ?? '',
+       username: row.username ?? '',
+-      initial_password: passwordForRow(row.row_number),
++      action: executionActionLabel(row.batch_action),
++      initial_password: resultPassword(row),
+       status: row.status,
+       run_or_audit: row.run_id ?? row.audit_id ?? '',
+       error: row.error ?? '',
+@@ -294,7 +319,7 @@ function downloadResultsCsv() {
+   resultDownloadOpen.value = false
+   if (!execution.value) return
+   const quote = (value: string) => `"${value.replaceAll('"', '""')}"`
+-  const headers = ['row', 'employee_id', 'first_name', 'middle_name', 'last_name', 'username', 'initial_password', 'status', 'run_or_audit', 'error']
++  const headers = ['row', 'employee_id', 'first_name', 'middle_name', 'last_name', 'username', 'action', 'initial_password', 'status', 'run_or_audit', 'error']
+   const lines = [
+     headers.join(','),
+     ...exportRows().map((row) => headers.map((key) => quote(String(row[key as keyof BulkProvisionExportRow] ?? ''))).join(',')),
+@@ -368,7 +393,7 @@ async function downloadResultsXlsx() {
+             <div><span>Invalid</span><strong>{{ importResult.invalid_count }}</strong></div>
+           </div>
+           <ScrollableDataTable max-height="27rem">
+-            <template #header><tr><th>Row</th><th>Employee ID</th><th>First</th><th>Middle</th><th>Last</th><th>Username</th><th>Reference</th><th>Password</th><th>Status</th></tr></template>
++            <template #header><tr><th>Row</th><th>Employee ID</th><th>First</th><th>Middle</th><th>Last</th><th>Username</th><th>Account</th><th>Reference</th><th>Password</th><th>Status</th></tr></template>
+                 <tr v-for="row in importResult.rows" :key="row.row_number" :class="{ 'bulk-row-invalid': !row.valid }">
+                   <td>{{ row.row_number }}</td>
+                   <td :class="{ 'bulk-cell-invalid': row.errors.employee_id }">{{ row.employee_id || '—' }}</td>
+@@ -376,8 +401,9 @@ async function downloadResultsXlsx() {
+                   <td :class="{ 'bulk-cell-invalid': row.errors.middle_name }">{{ row.middle_name || '—' }}</td>
+                   <td :class="{ 'bulk-cell-invalid': row.errors.last_name }">{{ row.last_name || '—' }}</td>
+                   <td :class="{ 'bulk-cell-invalid': row.errors.username }">{{ row.username || '—' }}</td>
++                  <td>{{ row.account_exists ? 'EXISTING' : 'NEW' }}</td>
+                   <td :class="{ 'bulk-cell-invalid': row.errors.reference_user }">{{ row.reference_user || '—' }}</td>
+-                  <td :class="{ 'bulk-cell-invalid': row.errors.password }">{{ row.password_mode.toUpperCase() }}</td>
++                  <td :class="{ 'bulk-cell-invalid': row.errors.password }">{{ row.account_exists ? 'PRESERVE' : row.password_mode.toUpperCase() }}</td>
+                   <td><span class="provisioning-status" :data-status="row.valid ? 'succeeded' : 'failed'">{{ row.valid ? 'VALID' : 'INVALID' }}</span><small v-if="!row.valid" class="field-error bulk-row-error">{{ rowError(row) }}</small></td>
+                 </tr>
+           </ScrollableDataTable>
+@@ -398,8 +424,13 @@ async function downloadResultsXlsx() {
+               <option value="">No provisioning — schema/user only</option>
+               <option v-for="profile in profiles" :key="profile.id" :value="profile.id" :disabled="!profile.ready">{{ profile.name }}{{ profile.ready ? '' : ' · Needs attention' }}</option>
+             </select>
++            <small v-if="existingImportCount">{{ existingImportCount }} existing Oracle account{{ existingImportCount === 1 ? '' : 's' }} will be preserved and receive only the selected provisioning profile.</small>
+           </label>
+ 
++          <div v-if="existingImportCount && !profileId" class="utility-warning">
++            This batch contains existing Oracle users. Select a provisioning profile to continue without recreating or changing their Oracle accounts.
++          </div>
++
+           <label class="bulk-common-reference">
+             <span class="checkbox-row"><input v-model="useCommonReference" type="checkbox" class="toggle-switch"/> Use the same reference user for all rows</span>
+           </label>
+@@ -429,10 +460,12 @@ async function downloadResultsXlsx() {
+           <div><span>Blocked</span><strong>{{ preview.invalid_count }}</strong></div>
+         </div>
+         <ScrollableDataTable max-height="27rem">
+-          <template #header><tr><th>Row</th><th>Username</th><th>Name</th><th>Reference</th><th>Roles</th><th>App steps</th><th>LDAP</th><th>Status</th></tr></template>
++          <template #header><tr><th>Row</th><th>Username</th><th>Account</th><th>Action</th><th>Name</th><th>Reference</th><th>Roles</th><th>App steps</th><th>LDAP</th><th>Status</th></tr></template>
+               <tr v-for="row in preview.rows" :key="row.row_number" :class="{ 'bulk-row-invalid': !row.valid }">
+                 <td>{{ row.row_number }}</td>
+                 <td><strong>{{ row.username || '—' }}</strong></td>
++                <td>{{ row.account_exists ? 'EXISTING' : 'NEW' }}</td>
++                <td><strong>{{ previewActionLabel(row.batch_action) }}</strong></td>
+                 <td>{{ [row.first_name, row.middle_name, row.last_name].filter(Boolean).join(' ') }}</td>
+                 <td>{{ row.reference_user || '—' }}</td>
+                 <td>{{ row.roles.length }}</td>
+@@ -443,7 +476,7 @@ async function downloadResultsXlsx() {
+         </ScrollableDataTable>
+         <p v-if="error" class="login-error">{{ error }}</p>
+         <div class="connection-form-actions">
+-          <button type="button" class="primary-button" :disabled="loading || !preview.ready_to_execute" @click="executeBatch">{{ loading ? 'Provisioning batch...' : `Provision ${preview.row_count} users` }}</button>
++          <button type="button" class="primary-button" :disabled="loading || !preview.ready_to_execute" @click="executeBatch">{{ loading ? 'Processing batch...' : `Process ${preview.row_count} users` }}</button>
+           <button type="button" class="secondary-button" :disabled="loading" @click="step = 'access'">Back</button>
+         </div>
+       </template>
+@@ -465,7 +498,7 @@ async function downloadResultsXlsx() {
+           </div>
+         </div>
+         <ScrollableDataTable max-height="27rem">
+-          <template #header><tr><th>Row</th><th>Username</th><th>Initial password</th><th>Status</th><th>Run / audit</th><th>Error</th></tr></template><tr v-for="row in execution.rows" :key="row.row_number"><td>{{ row.row_number }}</td><td><strong>{{ row.username || '—' }}</strong></td><td><code>{{ showResultPasswords ? passwordForRow(row.row_number) : '••••••••' }}</code></td><td><span class="provisioning-status" :data-status="row.status">{{ row.status.toUpperCase() }}</span></td><td><small>{{ row.run_id || row.audit_id || '—' }}</small></td><td><small :class="{ 'field-error': row.error }">{{ row.error || '—' }}</small></td></tr>        </ScrollableDataTable>
++          <template #header><tr><th>Row</th><th>Username</th><th>Action</th><th>Initial password</th><th>Status</th><th>Run / audit</th><th>Error</th></tr></template><tr v-for="row in execution.rows" :key="row.row_number"><td>{{ row.row_number }}</td><td><strong>{{ row.username || '—' }}</strong></td><td>{{ executionActionLabel(row.batch_action) }}</td><td><code>{{ row.password_applied ? (showResultPasswords ? resultPassword(row) : '••••••••') : '—' }}</code></td><td><span class="provisioning-status" :data-status="row.status">{{ row.status.toUpperCase() }}</span></td><td><small>{{ row.run_id || row.audit_id || '—' }}</small></td><td><small :class="{ 'field-error': row.error }">{{ row.error || '—' }}</small></td></tr>        </ScrollableDataTable>
+         <p v-if="error" class="login-error">{{ error }}</p>
+         <div class="connection-form-actions">
+           <button v-if="retryableResults.length" type="button" class="primary-button" :disabled="loading" @click="retryFailed">{{ loading ? 'Retrying...' : 'Retry failed / partial' }}</button>
+diff --git a/frontend/src/stores/provisioning.ts b/frontend/src/stores/provisioning.ts
+index 8521923..cb1beb4 100644
+--- a/frontend/src/stores/provisioning.ts
++++ b/frontend/src/stores/provisioning.ts
+@@ -394,6 +394,7 @@ export interface BulkProvisionImportRow {
+   password: string
+   password_mode: 'generated' | 'provided'
+   username: string | null
++  account_exists: boolean
+   valid: boolean
+   errors: Record<string, string>
+ }
+@@ -438,6 +439,8 @@ export interface BulkProvisionPreviewRow {
+   username: string | null
+   reference_user: string | null
+   password_mode: 'generated' | 'provided'
++  account_exists: boolean
++  batch_action: 'create' | 'apply_profile' | 'already_active' | null
+   valid: boolean
+   errors: Record<string, string>
+   roles: string[]
+@@ -458,6 +461,8 @@ export interface BulkProvisionExecutionRow {
+   row_number: number
+   username: string | null
+   status: 'succeeded' | 'partial' | 'failed'
++  batch_action: 'created' | 'applied' | 'already_active'
++  password_applied: boolean
+   run_id: string | null
+   audit_id: string | null
+   error: string | null
+@@ -479,6 +484,7 @@ export interface BulkProvisionExportRow {
+   middle_name: string
+   last_name: string
+   username: string
++  action: string
+   initial_password: string
+   status: string
+   run_or_audit: string
+--- a/backend/tests/test_bulk_provisioning.py
++++ b/backend/tests/test_bulk_provisioning.py
+@@ -53,7 +53,7 @@
+ 
+ 
+ @pytest.mark.asyncio
+-async def test_import_marks_existing_oracle_username_invalid(monkeypatch):
++async def test_import_marks_existing_oracle_username_for_profile_application(monkeypatch):
+     async def fake_target(database, connection_id):
+         return {"id": connection_id}
+ 
+@@ -70,8 +70,9 @@
+ 
+     result = await bulk_provisioning.import_bulk_provision_file(None, "db1", upload)
+ 
+-    assert result.invalid_count == 1
+-    assert result.rows[0].errors["username"] == "This Oracle username already exists."
++    assert result.invalid_count == 0
++    assert result.rows[0].valid is True
++    assert result.rows[0].account_exists is True
+ 
+ 
+ def test_bulk_common_reference_is_required_when_enabled():
+@@ -126,3 +127,206 @@
+     assert sheet["A2"].value == "001234"
+     assert sheet["A2"].number_format == "@"
+     workbook.close()
++
++
++def _operator():
++    from datetime import datetime, timezone
++    from app.schemas.user import UserResponse, UserRole
++
++    return UserResponse(
++        id="admin-1",
++        username="admin",
++        display_name="DBA",
++        role=UserRole.ADMIN,
++        is_active=True,
++        created_at=datetime.now(timezone.utc),
++    )
++
++
++def _profile_preview(username: str, account_action: str):
++    from datetime import datetime, timezone
++    from app.schemas.provisioning import ProvisioningPreviewResponse
++
++    return ProvisioningPreviewResponse(
++        dry_run=True,
++        ready_to_execute=True,
++        profile_id="profile-1",
++        profile_name="PROFILE 1",
++        schema_connection_id="db1",
++        schema_connection_name="DB1",
++        username=username,
++        account_exists=account_action != "create",
++        account_action=account_action,
++        operator_username="admin",
++        generated_at=datetime.now(timezone.utc),
++        roles=[],
++        table_steps=[],
++        ldap={"enabled": False},
++        warnings=[],
++    )
++
++
++@pytest.mark.asyncio
++async def test_bulk_preview_applies_profile_to_existing_account(monkeypatch):
++    username = "JSANTOS12345"
++
++    async def fake_target(_database, _connection_id):
++        return {"id": "db1"}
++
++    async def fake_profile(_database, _profile_id):
++        return {"_id": "profile-1", "name": "PROFILE 1", "schema_connection_id": "db1"}
++
++    async def fake_existing(_connection, _usernames):
++        return {username}
++
++    async def fake_active(*_args, **_kwargs):
++        return set()
++
++    async def fake_preview(_database, _profile_id, data, *_args, **_kwargs):
++        assert data.account_mode == "preserve_existing"
++        assert data.password is None
++        assert data.username == username
++        return _profile_preview(username, "preserve")
++
++    monkeypatch.setattr(bulk_provisioning, "get_oracle_target", fake_target)
++    monkeypatch.setattr(bulk_provisioning, "get_provisioning_profile", fake_profile)
++    monkeypatch.setattr(bulk_provisioning, "find_existing_oracle_users", fake_existing)
++    monkeypatch.setattr(bulk_provisioning, "_active_profile_usernames", fake_active)
++    monkeypatch.setattr(bulk_provisioning, "build_provisioning_preview", fake_preview)
++
++    result = await bulk_provisioning.preview_bulk_provisioning(
++        None,
++        "db1",
++        BulkProvisionRequest(
++            profile_id="profile-1",
++            rows=[BulkProvisionRowInput(
++                row_number=2,
++                employee_id="12345",
++                first_name="Juan",
++                last_name="Santos",
++                password="abc12345",
++            )],
++        ),
++        _operator(),
++    )
++
++    assert result.ready_to_execute is True
++    assert result.rows[0].account_exists is True
++    assert result.rows[0].batch_action == "apply_profile"
++    assert result.rows[0].provisioning.account_action == "preserve"
++
++
++@pytest.mark.asyncio
++async def test_bulk_preview_skips_profile_already_active(monkeypatch):
++    username = "JSANTOS12345"
++
++    async def fake_target(_database, _connection_id):
++        return {"id": "db1"}
++
++    async def fake_profile(_database, _profile_id):
++        return {"_id": "profile-1", "name": "PROFILE 1", "schema_connection_id": "db1"}
++
++    async def fake_existing(_connection, _usernames):
++        return {username}
++
++    async def fake_active(*_args, **_kwargs):
++        return {username}
++
++    async def should_not_preview(*_args, **_kwargs):
++        raise AssertionError("already-active rows must not rebuild provisioning")
++
++    monkeypatch.setattr(bulk_provisioning, "get_oracle_target", fake_target)
++    monkeypatch.setattr(bulk_provisioning, "get_provisioning_profile", fake_profile)
++    monkeypatch.setattr(bulk_provisioning, "find_existing_oracle_users", fake_existing)
++    monkeypatch.setattr(bulk_provisioning, "_active_profile_usernames", fake_active)
++    monkeypatch.setattr(bulk_provisioning, "build_provisioning_preview", should_not_preview)
++
++    result = await bulk_provisioning.preview_bulk_provisioning(
++        None,
++        "db1",
++        BulkProvisionRequest(
++            profile_id="profile-1",
++            rows=[BulkProvisionRowInput(
++                row_number=2,
++                employee_id="12345",
++                first_name="Juan",
++                last_name="Santos",
++                password="abc12345",
++            )],
++        ),
++        _operator(),
++    )
++
++    assert result.ready_to_execute is True
++    assert result.rows[0].batch_action == "already_active"
++    assert result.rows[0].provisioning is None
++
++
++@pytest.mark.asyncio
++async def test_bulk_execute_preserves_existing_account(monkeypatch):
++    from types import SimpleNamespace
++    from app.schemas.provisioning import BulkProvisionPreviewResponse, BulkProvisionPreviewRow
++
++    username = "JSANTOS12345"
++    provisioning = _profile_preview(username, "preserve")
++
++    async def fake_bulk_preview(*_args, **_kwargs):
++        return BulkProvisionPreviewResponse(
++            ready_to_execute=True,
++            row_count=1,
++            valid_count=1,
++            invalid_count=0,
++            profile_id="profile-1",
++            profile_name="PROFILE 1",
++            rows=[BulkProvisionPreviewRow(
++                row_number=2,
++                employee_id="12345",
++                first_name="Juan",
++                last_name="Santos",
++                username=username,
++                password_mode="generated",
++                account_exists=True,
++                batch_action="apply_profile",
++                valid=True,
++                roles=[],
++                provisioning=provisioning,
++            )],
++        )
++
++    async def fake_execute(_database, _connection_id, _profile_id, data, *_args, **_kwargs):
++        assert data.account_mode == "preserve_existing"
++        assert data.password is None
++        assert data.default_tablespace is None
++        assert data.temporary_tablespace is None
++        assert data.oracle_profile is None
++        return SimpleNamespace(
++            username=username,
++            status="succeeded",
++            account=SimpleNamespace(password_applied=False),
++            run_id="run-1",
++            audit_id="audit-1",
++            error=None,
++        )
++
++    monkeypatch.setattr(bulk_provisioning, "preview_bulk_provisioning", fake_bulk_preview)
++    monkeypatch.setattr(bulk_provisioning, "execute_provisioning_profile", fake_execute)
++
++    result = await bulk_provisioning.execute_bulk_provisioning(
++        None,
++        "db1",
++        BulkProvisionRequest(
++            profile_id="profile-1",
++            rows=[BulkProvisionRowInput(
++                row_number=2,
++                employee_id="12345",
++                first_name="Juan",
++                last_name="Santos",
++                password="abc12345",
++            )],
++        ),
++        _operator(),
++    )
++
++    assert result.status == "succeeded"
++    assert result.rows[0].batch_action == "applied"
++    assert result.rows[0].password_applied is False

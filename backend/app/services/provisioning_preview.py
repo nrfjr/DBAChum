@@ -10,6 +10,7 @@ from app.connectors.oracle_provisioning import (
     normalize_oracle_identifier,
     oracle_user_exists,
 )
+from app.connectors.oracle_user_lifecycle import get_oracle_user_lifecycle_state
 from app.core.exceptions import AppError
 from app.schemas.provisioning import (
     ProvisioningPreviewColumn,
@@ -82,6 +83,15 @@ def _display_value(value) -> str | None:
     return str(value)
 
 
+def _profile_uses_generated_password(profile: dict) -> bool:
+    return any(
+        mapping.get("value_kind") == "generated"
+        and mapping.get("value_key") == "password"
+        for step in (profile.get("table_steps") or [])
+        for mapping in (step.get("mappings") or [])
+    )
+
+
 async def build_provisioning_preview(
     database,
     profile_id: str,
@@ -146,6 +156,29 @@ async def build_provisioning_preview(
         )
 
     account_exists = await oracle_user_exists(schema_connection, username)
+    preserve_existing = data.account_mode == "preserve_existing"
+    existing_state = None
+
+    if preserve_existing:
+        if not account_exists:
+            raise AppError(
+                "The Oracle account no longer exists. Apply provisioning profile only works with an existing account.",
+                code="PROVISIONING_EXISTING_ACCOUNT_REQUIRED",
+                status_code=409,
+            )
+        if _profile_uses_generated_password(profile):
+            raise AppError(
+                "This provisioning profile writes the generated password to an application table. DBAChum cannot safely apply it to an existing account without resetting the Oracle password.",
+                code="PROVISIONING_EXISTING_ACCOUNT_PASSWORD_MAPPING",
+                status_code=409,
+            )
+        existing_state = await get_oracle_user_lifecycle_state(schema_connection, username)
+    elif not data.password:
+        raise AppError(
+            "Password is required when creating or reconciling an Oracle account.",
+            code="PROVISIONING_PASSWORD_REQUIRED",
+            status_code=400,
+        )
 
     reference_username = _clean_optional(data.reference_user)
     reference = None
@@ -356,15 +389,27 @@ async def build_provisioning_preview(
             )
         )
 
+    if preserve_existing:
+        warnings.append(
+            "Existing Oracle account settings and password will be preserved. Only selected role grants, application-table upserts and eligible LDAP work are included."
+        )
+
     ldap_preview = ProvisioningPreviewLdap(enabled=False)
     if profile.get("ldap_enabled"):
         ldap_profile = await get_ldap_profile_document(
             database, profile["ldap_profile_id"]
         )
+        ldap_template = ldap_profile.get("ldif_template") or DEFAULT_LDIF_TEMPLATE
+        if preserve_existing and "<PASSWORD>" in ldap_template:
+            raise AppError(
+                "This provisioning profile's LDAP template requires <PASSWORD>. DBAChum cannot safely apply it to an existing Oracle account without resetting the password.",
+                code="PROVISIONING_EXISTING_ACCOUNT_LDAP_PASSWORD",
+                status_code=409,
+            )
         render_ldif(
-            ldap_profile.get("ldif_template") or DEFAULT_LDIF_TEMPLATE,
+            ldap_template,
             username=username,
-            password=data.password,
+            password=data.password or "",
             first_name=first_name,
             middle_name=middle_name,
             last_name=last_name,
@@ -390,16 +435,30 @@ async def build_provisioning_preview(
         ),
         username=username,
         account_exists=account_exists,
-        account_action="alter" if account_exists else "create",
+        account_action=(
+            "preserve"
+            if preserve_existing
+            else ("alter" if account_exists else "create")
+        ),
         requester_ip=requester_ip,
         operator_username=operator.username,
         generated_at=now,
         reference_user=(reference.get("username") if reference else None),
-        default_tablespace=(reference.get("default_tablespace") if reference else None),
-        temporary_tablespace=(
-            reference.get("temporary_tablespace") if reference else None
+        default_tablespace=(
+            existing_state.get("default_tablespace")
+            if existing_state
+            else (reference.get("default_tablespace") if reference else None)
         ),
-        oracle_profile=(reference.get("profile") if reference else None),
+        temporary_tablespace=(
+            existing_state.get("temporary_tablespace")
+            if existing_state
+            else (reference.get("temporary_tablespace") if reference else None)
+        ),
+        oracle_profile=(
+            existing_state.get("profile")
+            if existing_state
+            else (reference.get("profile") if reference else None)
+        ),
         roles=preview_roles,
         table_steps=table_steps,
         ldap=ldap_preview,

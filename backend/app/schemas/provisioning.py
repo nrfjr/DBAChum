@@ -294,8 +294,9 @@ class ProvisioningSourceOption(BaseModel):
     kind: Literal["form", "generated"]
 
 class ProvisioningPreviewRequest(BaseModel):
+    account_mode: Literal["create_or_reconcile", "preserve_existing"] = "create_or_reconcile"
     username: str | None = Field(default=None, max_length=30)
-    password: str = Field(min_length=8, max_length=128)
+    password: str | None = Field(default=None, min_length=8, max_length=128)
     first_name: str | None = Field(default=None, max_length=100)
     middle_name: str | None = Field(default=None, max_length=100)
     last_name: str | None = Field(default=None, max_length=100)
@@ -354,7 +355,7 @@ class ProvisioningPreviewResponse(BaseModel):
     schema_connection_name: str
     username: str
     account_exists: bool = False
-    account_action: Literal["create", "alter"] = "create"
+    account_action: Literal["create", "alter", "preserve"] = "create"
     requester_ip: str | None = None
     operator_username: str
     generated_at: datetime
@@ -682,6 +683,7 @@ class BulkProvisionImportRow(BaseModel):
     password: str
     password_mode: Literal["generated", "provided"]
     username: str | None = None
+    account_exists: bool = False
     valid: bool = True
     errors: dict[str, str] = Field(default_factory=dict)
 
@@ -732,6 +734,7 @@ class BulkProvisionExportRow(BaseModel):
     middle_name: str = Field(default="", max_length=100)
     last_name: str = Field(default="", max_length=100)
     username: str = Field(default="", max_length=30)
+    action: str = Field(default="", max_length=32)
     initial_password: str = Field(default="", max_length=128)
     status: str = Field(default="", max_length=32)
     run_or_audit: str = Field(default="", max_length=128)
@@ -751,6 +754,8 @@ class BulkProvisionPreviewRow(BaseModel):
     username: str | None = None
     reference_user: str | None = None
     password_mode: Literal["generated", "provided"]
+    account_exists: bool = False
+    batch_action: Literal["create", "apply_profile", "already_active"] | None = None
     valid: bool = True
     errors: dict[str, str] = Field(default_factory=dict)
     roles: list[str] = Field(default_factory=list)
@@ -771,6 +776,8 @@ class BulkProvisionExecutionRow(BaseModel):
     row_number: int
     username: str | None = None
     status: Literal["succeeded", "partial", "failed"]
+    batch_action: Literal["created", "applied", "already_active"]
+    password_applied: bool = False
     run_id: str | None = None
     audit_id: str | None = None
     error: str | None = None

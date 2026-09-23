@@ -45,8 +45,9 @@ export interface ProvisioningProfile extends ProvisioningProfileInput {
 
 
 export interface ProvisioningPreviewInput {
+  account_mode?: 'create_or_reconcile' | 'preserve_existing'
   username: string | null
-  password: string
+  password: string | null
   first_name: string | null
   middle_name: string | null
   last_name: string | null
@@ -105,7 +106,7 @@ export interface ProvisioningPreviewResult {
   schema_connection_name: string
   username: string
   account_exists: boolean
-  account_action: 'create' | 'alter'
+  account_action: 'create' | 'alter' | 'preserve'
   requester_ip: string | null
   operator_username: string
   generated_at: string
@@ -393,6 +394,7 @@ export interface BulkProvisionImportRow {
   password: string
   password_mode: 'generated' | 'provided'
   username: string | null
+  account_exists: boolean
   valid: boolean
   errors: Record<string, string>
 }
@@ -437,6 +439,8 @@ export interface BulkProvisionPreviewRow {
   username: string | null
   reference_user: string | null
   password_mode: 'generated' | 'provided'
+  account_exists: boolean
+  batch_action: 'create' | 'apply_profile' | 'already_active' | null
   valid: boolean
   errors: Record<string, string>
   roles: string[]
@@ -457,6 +461,8 @@ export interface BulkProvisionExecutionRow {
   row_number: number
   username: string | null
   status: 'succeeded' | 'partial' | 'failed'
+  batch_action: 'created' | 'applied' | 'already_active'
+  password_applied: boolean
   run_id: string | null
   audit_id: string | null
   error: string | null
@@ -478,6 +484,7 @@ export interface BulkProvisionExportRow {
   middle_name: string
   last_name: string
   username: string
+  action: string
   initial_password: string
   status: string
   run_or_audit: string

@@ -162,6 +162,7 @@ function formatDeprovisionMatch(values: Record<string, string | null>) {
     .join(', ')
 }
 
+type CreateMode = 'create' | 'apply_profile'
 type CreateStep = 'identity' | 'access' | 'review' | 'success'
 
 interface CreateUserForm {
@@ -201,7 +202,11 @@ function emptyCreateForm(): CreateUserForm {
 }
 
 const createOpen = ref(false)
+const createMode = ref<CreateMode>('create')
 const createStep = ref<CreateStep>('identity')
+const applyProfileState = ref<OracleUserLifecycleState | null>(null)
+const applyProfileLoading = ref(false)
+const applyProfileOptions = ref<OracleUserDeprovisionProfileOption[]>([])
 const createError = ref<string | null>(null)
 const reference = ref<OracleReferenceUser | null>(null)
 const selectedRoles = ref<string[]>([])
@@ -328,9 +333,11 @@ const provisioningRuns = computed(() =>
   provisioningStore.runsByConnection[props.connectionId] ?? [],
 )
 
-const canClearProvisioningHistory = computed(() =>
+const canManageProvisioning = computed(() =>
   hasPermission(authStore.user, 'provisioning:manage'),
 )
+
+const canClearProvisioningHistory = computed(() => canManageProvisioning.value)
 
 const canManageUserListColumns = computed(() =>
   hasPermission(authStore.user, 'provisioning:manage'),
@@ -1228,6 +1235,16 @@ const availableProvisioningProfiles = computed(() =>
   provisioningStore.profilesByConnection[props.connectionId] ?? [],
 )
 
+const activeApplyProfileIds = computed(() =>
+  new Set(applyProfileOptions.value.map((profile) => profile.profile_id)),
+)
+
+const selectableProvisioningProfiles = computed(() =>
+  createMode.value === 'apply_profile'
+    ? availableProvisioningProfiles.value.filter((profile) => !activeApplyProfileIds.value.has(profile.id))
+    : availableProvisioningProfiles.value,
+)
+
 const selectedProvisioningProfile = computed(() =>
   availableProvisioningProfiles.value.find(
     (profile) => profile.id === createForm.provisioningProfileId,
@@ -1236,7 +1253,11 @@ const selectedProvisioningProfile = computed(() =>
 
 function resetCreate() {
   Object.assign(createForm, emptyCreateForm())
+  createMode.value = 'create'
   createStep.value = 'identity'
+  applyProfileState.value = null
+  applyProfileLoading.value = false
+  applyProfileOptions.value = []
   createError.value = null
   Object.keys(createFieldErrors).forEach((key) => delete createFieldErrors[key])
   usernameChecking.value = false
@@ -1563,6 +1584,41 @@ function openCreate() {
   createOpen.value = true
 }
 
+async function openApplyProvisioning(user: OracleDatabaseUser) {
+  resetCreate()
+  createMode.value = 'apply_profile'
+  createStep.value = 'access'
+  createForm.username = user.username
+  createOpen.value = true
+  applyProfileLoading.value = true
+
+  try {
+    const [state, activeProfiles] = await Promise.all([
+      oracleStore.loadUserLifecycleState(props.connectionId, user.username),
+      provisioningStore.loadOracleUserDeprovisionProfiles(props.connectionId, user.username),
+      availableProvisioningProfiles.value.length === 0
+        ? provisioningStore.loadProfilesForConnection(props.connectionId)
+        : Promise.resolve(),
+    ])
+    applyProfileState.value = state
+    applyProfileOptions.value = activeProfiles
+    createForm.defaultTablespace = state.default_tablespace ?? ''
+    createForm.temporaryTablespace = state.temporary_tablespace ?? ''
+    createForm.profile = state.profile ?? ''
+
+    const latestRun = provisioningRuns.value.find(
+      (run) => run.username.trim().toUpperCase() === user.username.trim().toUpperCase(),
+    )
+    if (latestRun?.employee_id) createForm.employeeId = latestRun.employee_id
+  } catch (error) {
+    createError.value = error instanceof Error
+      ? error.message
+      : 'Unable to load the existing account for provisioning.'
+  } finally {
+    applyProfileLoading.value = false
+  }
+}
+
 function openBulkCreate() {
   createActionsOpen.value = false
   bulkCreateOpen.value = true
@@ -1792,15 +1848,20 @@ async function reviewCreate() {
     return
   }
 
-  if (createForm.password.length < 8) {
-    setCreateFieldError('password', 'Password must contain at least 8 characters.')
+  if (createMode.value === 'create') {
+    if (createForm.password.length < 8) {
+      setCreateFieldError('password', 'Password must contain at least 8 characters.')
+      return
+    }
+    if (createForm.password.includes('"') || [...createForm.password].some((character) => character.charCodeAt(0) < 32)) {
+      setCreateFieldError('password', 'Password cannot contain double quotes or control characters.')
+      return
+    }
+    setCreateFieldError('password', null)
+  } else if (!createForm.provisioningProfileId) {
+    createError.value = 'Select a provisioning profile to apply to this existing Oracle account.'
     return
   }
-  if (createForm.password.includes('"') || [...createForm.password].some((character) => character.charCodeAt(0) < 32)) {
-    setCreateFieldError('password', 'Password cannot contain double quotes or control characters.')
-    return
-  }
-  setCreateFieldError('password', null)
 
   createForm.firstName = normalizePersonName(createForm.firstName)
   createForm.middleName = normalizePersonName(createForm.middleName)
@@ -1829,8 +1890,9 @@ async function reviewCreate() {
         props.connectionId,
         createForm.provisioningProfileId,
         {
+          account_mode: createMode.value === 'apply_profile' ? 'preserve_existing' : 'create_or_reconcile',
           username: createForm.username,
-          password: createForm.password,
+          password: createMode.value === 'apply_profile' ? null : createForm.password,
           first_name: createForm.firstName || null,
           middle_name: createForm.middleName || null,
           last_name: createForm.lastName || null,
@@ -1935,8 +1997,9 @@ async function executeProvisioning() {
       props.connectionId,
       createForm.provisioningProfileId,
       {
+        account_mode: createMode.value === 'apply_profile' ? 'preserve_existing' : 'create_or_reconcile',
         username: createForm.username,
-        password: createForm.password,
+        password: createMode.value === 'apply_profile' ? null : createForm.password,
         first_name: createForm.firstName || null,
         middle_name: createForm.middleName || null,
         last_name: createForm.lastName || null,
@@ -1946,13 +2009,13 @@ async function executeProvisioning() {
         request_reference: createForm.requestReference.trim() || null,
         remarks: createForm.remarks.trim() || null,
         roles: [...selectedRoles.value],
-        default_tablespace: createForm.defaultTablespace || null,
-        temporary_tablespace: createForm.temporaryTablespace || null,
-        oracle_profile: createForm.profile || null,
+        default_tablespace: createMode.value === 'apply_profile' ? null : (createForm.defaultTablespace || null),
+        temporary_tablespace: createMode.value === 'apply_profile' ? null : (createForm.temporaryTablespace || null),
+        oracle_profile: createMode.value === 'apply_profile' ? null : (createForm.profile || null),
       },
     )
 
-    resultPassword.value = provisioningResult.value.account.password_applied
+    resultPassword.value = createMode.value === 'create' && provisioningResult.value.account.password_applied
       ? submittedPassword
       : ''
     createForm.password = ''
@@ -2300,6 +2363,14 @@ onBeforeUnmount(() => {
                     </button>
                     <button type="button" role="menuitem" @click="openProvisionedDetails(user)">
                       Edit provisioned details
+                    </button>
+                    <button
+                      v-if="canManageProvisioning"
+                      type="button"
+                      role="menuitem"
+                      @click="openApplyProvisioning(user)"
+                    >
+                      Apply provisioning profile
                     </button>
                     <button type="button" role="menuitem" @click="openPasswordReset(user)">
                       Change password
@@ -3592,11 +3663,11 @@ onBeforeUnmount(() => {
         class="modal-panel oracle-user-modal"
         role="dialog"
         aria-modal="true"
-        aria-label="Create Oracle user"
+        :aria-label="createMode === 'apply_profile' ? `Apply provisioning profile to ${createForm.username}` : 'Create Oracle user'"
       >
         <div class="modal-header">
           <div>
-            <h2>Create User</h2>
+            <h2>{{ createMode === 'apply_profile' ? `Apply Provisioning Profile · ${createForm.username}` : 'Create User' }}</h2>
           </div>
 
           <button
@@ -3609,10 +3680,14 @@ onBeforeUnmount(() => {
           </button>
         </div>
 
-        <div class="wizard-steps single-create-steps" aria-label="Create user progress">
+        <div v-if="createMode === 'create'" class="wizard-steps single-create-steps" aria-label="Create user progress">
           <span :class="{ active: createStep === 'identity' }">1 · Identity</span>
           <span :class="{ active: createStep === 'access' }">2 · Access</span>
           <span :class="{ active: createStep === 'review' }">3 · Preview</span>
+        </div>
+        <div v-else class="wizard-steps single-create-steps" aria-label="Apply provisioning profile progress">
+          <span :class="{ active: createStep === 'access' }">1 · Provisioning</span>
+          <span :class="{ active: createStep === 'review' }">2 · Preview</span>
         </div>
 
         <form
@@ -3705,17 +3780,28 @@ onBeforeUnmount(() => {
           class="connection-form oracle-user-form"
           @submit.prevent="reviewCreate"
         >
-          <div class="preview-callout identity-confirmation">
+          <div v-if="createMode === 'create'" class="preview-callout identity-confirmation">
             <div><span>Username</span><strong>{{ createForm.username }}</strong></div>
             <div><span>Employee</span><strong>{{ [createForm.firstName, createForm.middleName, createForm.lastName].filter(Boolean).join(' ') }} · {{ createForm.employeeId }}</strong></div>
           </div>
 
+          <div v-else-if="applyProfileLoading" class="empty-state">Loading current Oracle account...</div>
+          <div v-else-if="applyProfileState" class="preview-summary-grid">
+            <div><span>Username</span><strong>{{ applyProfileState.username }}</strong></div>
+            <div><span>Status</span><strong>{{ applyProfileState.status }}</strong></div>
+            <div><span>Default tablespace</span><strong>{{ applyProfileState.default_tablespace ?? '—' }}</strong></div>
+            <div><span>Temporary tablespace</span><strong>{{ applyProfileState.temporary_tablespace ?? '—' }}</strong></div>
+            <div><span>Oracle profile</span><strong>{{ applyProfileState.profile ?? '—' }}</strong></div>
+            <div><span>Current roles</span><strong>{{ applyProfileState.roles.length }}</strong></div>
+          </div>
+
           <label>
             Application provisioning
-            <select v-model="createForm.provisioningProfileId">
-              <option value="">No provisioning — schema/user only</option>
+            <select v-model="createForm.provisioningProfileId" :disabled="applyProfileLoading">
+              <option v-if="createMode === 'create'" value="">No provisioning — schema/user only</option>
+              <option v-else value="" disabled>Select a provisioning profile</option>
               <option
-                v-for="profile in availableProvisioningProfiles"
+                v-for="profile in selectableProvisioningProfiles"
                 :key="profile.id"
                 :value="profile.id"
                 :disabled="!profile.ready"
@@ -3723,13 +3809,36 @@ onBeforeUnmount(() => {
                 {{ profile.name }}{{ profile.ready ? '' : ' · Needs attention' }}
               </option>
             </select>
+            <small v-if="createMode === 'create'">Only profiles enabled for this parent Oracle database appear here.</small>
+            <small v-else>Profiles already active for this Oracle account are excluded.</small>
           </label>
+
+          <div v-if="createMode === 'apply_profile' && applyProfileOptions.length" class="preview-callout">
+            <strong>Already active</strong>
+            <span>{{ applyProfileOptions.map((profile) => profile.profile_name).join(', ') }}</span>
+          </div>
+          <div v-if="createMode === 'apply_profile' && !applyProfileLoading && selectableProvisioningProfiles.filter((profile) => profile.ready).length === 0" class="utility-warning oracle-create-warning">
+            No additional ready provisioning profile is available for this account.
+          </div>
 
           <div v-if="selectedProvisioningProfile && !selectedProvisioningProfile.ready" class="utility-warning oracle-create-warning">
             {{ selectedProvisioningProfile.issues.join(' ') }}
           </div>
 
-          <label :class="{ 'field-invalid': createFieldErrors.password }">
+          <section v-if="createMode === 'apply_profile'" class="preview-section">
+            <h3>Provisioning inputs</h3>
+            <small>These values are used only when the selected profile maps them into application tables or LDAP. Oracle account fields above stay unchanged.</small>
+            <div class="connection-form-row">
+              <label>Employee ID (Optional)<input class="utility-search-input" v-model="createForm.employeeId" maxlength="100" autocomplete="off" /></label>
+              <label>First name (Optional)<input class="utility-search-input" v-model="createForm.firstName" maxlength="100" autocomplete="off" /></label>
+            </div>
+            <div class="connection-form-row">
+              <label>Middle name (Optional)<input class="utility-search-input" v-model="createForm.middleName" maxlength="100" autocomplete="off" /></label>
+              <label>Last name (Optional)<input class="utility-search-input" v-model="createForm.lastName" maxlength="100" autocomplete="off" /></label>
+            </div>
+          </section>
+
+          <label v-if="createMode === 'create'" :class="{ 'field-invalid': createFieldErrors.password }">
             <span class="field-label">Initial password <span class="required-mark" aria-hidden="true">*</span></span>
             <input
               v-model="createForm.password"
@@ -3816,11 +3925,17 @@ onBeforeUnmount(() => {
             </div>
           </section>
 
-          <div class="connection-form-row">
-            <label>Default tablespace (Optional)<input class="utility-search-input" v-model="createForm.defaultTablespace" maxlength="30" placeholder="Uses reference/default when blank" /></label>
-            <label>Temporary tablespace (Optional)<input class="utility-search-input" v-model="createForm.temporaryTablespace" maxlength="30" placeholder="Uses reference/default when blank" /></label>
+          <template v-if="createMode === 'create'">
+            <div class="connection-form-row">
+              <label>Default tablespace (Optional)<input class="utility-search-input" v-model="createForm.defaultTablespace" maxlength="30" placeholder="Uses reference/default when blank" /></label>
+              <label>Temporary tablespace (Optional)<input class="utility-search-input" v-model="createForm.temporaryTablespace" maxlength="30" placeholder="Uses reference/default when blank" /></label>
+            </div>
+            <label>Profile (Optional)<input class="utility-search-input" v-model="createForm.profile" maxlength="30" placeholder="Uses reference/default when blank" /></label>
+          </template>
+          <div v-else class="preview-callout">
+            <strong>Oracle account preserved</strong>
+            <span>Password, default tablespace, temporary tablespace, Oracle profile and account status will not be changed.</span>
           </div>
-          <label>Profile (Optional)<input class="utility-search-input" v-model="createForm.profile" maxlength="30" placeholder="Uses reference/default when blank" /></label>
           <div class="connection-form-row">
             <label>Requestor (Optional)<input class="utility-search-input" v-model="createForm.requestorName" name="requestor" maxlength="200" autocomplete="on" placeholder="Requestor full name" /></label>
             <label>Request / ticket reference (Optional)<input class="utility-search-input" v-model="createForm.requestReference" maxlength="100" placeholder="REQ-12345" /></label>
@@ -3832,7 +3947,14 @@ onBeforeUnmount(() => {
             <button type="submit" class="primary-button" :disabled="oracleStore.loadingReference || previewLoading">
               {{ previewLoading ? 'Building preview...' : oracleStore.loadingReference ? 'Inspecting reference...' : 'Next' }}
             </button>
-            <button type="button" class="secondary-button" :disabled="previewLoading" @click="createStep = 'identity'">Back</button>
+            <button
+              type="button"
+              class="secondary-button"
+              :disabled="previewLoading"
+              @click="createMode === 'apply_profile' ? closeCreate() : (createStep = 'identity')"
+            >
+              {{ createMode === 'apply_profile' ? 'Cancel' : 'Back' }}
+            </button>
           </div>
         </form>
 
@@ -3846,7 +3968,7 @@ onBeforeUnmount(() => {
               <strong>{{ createForm.username }}</strong>
             </summary>
             <div class="oracle-user-review-summary">
-              <div><span>Employee</span><strong>{{ createForm.employeeId }} · {{ [createForm.firstName, createForm.middleName, createForm.lastName].filter(Boolean).join(' ') }}</strong></div>
+              <div v-if="createMode === 'create' || createForm.employeeId || createForm.firstName || createForm.middleName || createForm.lastName"><span>Provisioning identity</span><strong>{{ [createForm.employeeId, [createForm.firstName, createForm.middleName, createForm.lastName].filter(Boolean).join(' ')].filter(Boolean).join(' · ') || 'Not supplied' }}</strong></div>
               <div><span>Provisioning</span><strong>{{ selectedProvisioningProfile?.name ?? 'No provisioning' }}</strong></div>
               <div><span>Reference user</span><strong>{{ reference?.username ?? 'None' }}</strong></div>
               <div><span>Default tablespace</span><strong>{{ createForm.defaultTablespace || 'Database default' }}</strong></div>
@@ -3873,7 +3995,7 @@ onBeforeUnmount(() => {
             <details class="wizard-review-details">
               <summary><span>Oracle execution plan</span><strong>{{ provisioningPreview.account_action.toUpperCase() }}</strong></summary>
               <div class="preview-summary-grid">
-                <div><span>Oracle account</span><strong>{{ provisioningPreview.account_exists ? 'Existing → ALTER / reconcile' : 'Not found → CREATE' }}</strong></div>
+                <div><span>Oracle account</span><strong>{{ provisioningPreview.account_action === 'preserve' ? 'Existing → PRESERVE' : provisioningPreview.account_exists ? 'Existing → ALTER / reconcile' : 'Not found → CREATE' }}</strong></div>
                 <div><span>Parent database</span><strong>{{ provisioningPreview.schema_connection_name }}</strong></div>
                 <div><span>Requester IP</span><strong>{{ provisioningPreview.requester_ip || 'Unavailable' }}</strong></div>
               </div>
@@ -3967,7 +4089,7 @@ onBeforeUnmount(() => {
               :disabled="provisioningExecuting || !provisioningPreview.ready_to_execute"
               @click="executeProvisioning"
             >
-              {{ provisioningExecuting ? 'Provisioning' : `Provision ${createForm.username}` }}
+              {{ provisioningExecuting ? 'Provisioning' : createMode === 'apply_profile' ? `Apply ${selectedProvisioningProfile?.name ?? 'profile'}` : `Provision ${createForm.username}` }}
               <p v-if="provisioningExecuting" class="loading"></p>
             </button>
 
@@ -4064,6 +4186,7 @@ onBeforeUnmount(() => {
 
           <div class="connection-form-actions">
             <button
+              v-if="createMode === 'create'"
               type="button"
               class="primary-button"
               @click="createAnotherUser"
@@ -4072,7 +4195,7 @@ onBeforeUnmount(() => {
             </button>
             <button
               type="button"
-              class="secondary-button"
+              :class="createMode === 'apply_profile' ? 'primary-button' : 'secondary-button'"
               @click="closeCreate"
             >
               Done

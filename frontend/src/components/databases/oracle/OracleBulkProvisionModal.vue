@@ -6,6 +6,7 @@ import ScrollableDataTable from '@/components/common/ScrollableDataTable.vue'
 import {
   useProvisioningStore,
   type BulkProvisionExecutionResult,
+  type BulkProvisionExecutionRow,
   type BulkProvisionExportRow,
   type BulkProvisionImportResult,
   type BulkProvisionPreviewResult,
@@ -38,6 +39,7 @@ const resultDownloadOpen = ref(false)
 
 const profiles = computed(() => provisioningStore.profilesByConnection[props.connectionId] ?? [])
 const canContinueImport = computed(() => Boolean(importResult.value && importResult.value.invalid_count === 0))
+const existingImportCount = computed(() => importResult.value?.rows.filter((row) => row.account_exists).length ?? 0)
 
 function close() {
   if (!loading.value) emit('close')
@@ -143,6 +145,11 @@ function goAccess() {
 
 async function buildPreview() {
   error.value = null
+  if (existingImportCount.value > 0 && !profileId.value) {
+    error.value = 'Select a provisioning profile when the batch contains existing Oracle users.'
+    showToast({ title: 'Provisioning profile required', message: error.value, tone: 'warning' })
+    return
+  }
   if (useCommonReference.value && !commonReferenceUser.value.trim()) {
     error.value = 'Enter the common reference user or turn the option off.'
     showToast({ title: 'Common reference user required', message: error.value, tone: 'warning' })
@@ -270,6 +277,23 @@ function passwordForRow(rowNumber: number) {
   return importResult.value?.rows.find((row) => row.row_number === rowNumber)?.password ?? ''
 }
 
+function resultPassword(row: BulkProvisionExecutionRow) {
+  return row.password_applied ? passwordForRow(row.row_number) : ''
+}
+
+function previewActionLabel(value: string | null) {
+  if (value === 'apply_profile') return 'APPLY PROFILE'
+  if (value === 'already_active') return 'ALREADY ACTIVE'
+  if (value === 'create') return 'CREATE'
+  return '—'
+}
+
+function executionActionLabel(value: BulkProvisionExecutionRow['batch_action']) {
+  if (value === 'applied') return 'PROFILE APPLIED'
+  if (value === 'already_active') return 'ALREADY ACTIVE'
+  return 'CREATED'
+}
+
 function exportRows(): BulkProvisionExportRow[] {
   const importedRows = importResult.value?.rows ?? []
   const importedByRow = new Map(importedRows.map((row) => [row.row_number, row]))
@@ -282,7 +306,8 @@ function exportRows(): BulkProvisionExportRow[] {
       middle_name: imported?.middle_name ?? '',
       last_name: imported?.last_name ?? '',
       username: row.username ?? '',
-      initial_password: passwordForRow(row.row_number),
+      action: executionActionLabel(row.batch_action),
+      initial_password: resultPassword(row),
       status: row.status,
       run_or_audit: row.run_id ?? row.audit_id ?? '',
       error: row.error ?? '',
@@ -294,7 +319,7 @@ function downloadResultsCsv() {
   resultDownloadOpen.value = false
   if (!execution.value) return
   const quote = (value: string) => `"${value.replaceAll('"', '""')}"`
-  const headers = ['row', 'employee_id', 'first_name', 'middle_name', 'last_name', 'username', 'initial_password', 'status', 'run_or_audit', 'error']
+  const headers = ['row', 'employee_id', 'first_name', 'middle_name', 'last_name', 'username', 'action', 'initial_password', 'status', 'run_or_audit', 'error']
   const lines = [
     headers.join(','),
     ...exportRows().map((row) => headers.map((key) => quote(String(row[key as keyof BulkProvisionExportRow] ?? ''))).join(',')),
@@ -368,7 +393,7 @@ async function downloadResultsXlsx() {
             <div><span>Invalid</span><strong>{{ importResult.invalid_count }}</strong></div>
           </div>
           <ScrollableDataTable max-height="27rem">
-            <template #header><tr><th>Row</th><th>Employee ID</th><th>First</th><th>Middle</th><th>Last</th><th>Username</th><th>Reference</th><th>Password</th><th>Status</th></tr></template>
+            <template #header><tr><th>Row</th><th>Employee ID</th><th>First</th><th>Middle</th><th>Last</th><th>Username</th><th>Account</th><th>Reference</th><th>Password</th><th>Status</th></tr></template>
                 <tr v-for="row in importResult.rows" :key="row.row_number" :class="{ 'bulk-row-invalid': !row.valid }">
                   <td>{{ row.row_number }}</td>
                   <td :class="{ 'bulk-cell-invalid': row.errors.employee_id }">{{ row.employee_id || '—' }}</td>
@@ -376,8 +401,9 @@ async function downloadResultsXlsx() {
                   <td :class="{ 'bulk-cell-invalid': row.errors.middle_name }">{{ row.middle_name || '—' }}</td>
                   <td :class="{ 'bulk-cell-invalid': row.errors.last_name }">{{ row.last_name || '—' }}</td>
                   <td :class="{ 'bulk-cell-invalid': row.errors.username }">{{ row.username || '—' }}</td>
+                  <td>{{ row.account_exists ? 'EXISTING' : 'NEW' }}</td>
                   <td :class="{ 'bulk-cell-invalid': row.errors.reference_user }">{{ row.reference_user || '—' }}</td>
-                  <td :class="{ 'bulk-cell-invalid': row.errors.password }">{{ row.password_mode.toUpperCase() }}</td>
+                  <td :class="{ 'bulk-cell-invalid': row.errors.password }">{{ row.account_exists ? 'PRESERVE' : row.password_mode.toUpperCase() }}</td>
                   <td><span class="provisioning-status" :data-status="row.valid ? 'succeeded' : 'failed'">{{ row.valid ? 'VALID' : 'INVALID' }}</span><small v-if="!row.valid" class="field-error bulk-row-error">{{ rowError(row) }}</small></td>
                 </tr>
           </ScrollableDataTable>
@@ -398,7 +424,12 @@ async function downloadResultsXlsx() {
               <option value="">No provisioning — schema/user only</option>
               <option v-for="profile in profiles" :key="profile.id" :value="profile.id" :disabled="!profile.ready">{{ profile.name }}{{ profile.ready ? '' : ' · Needs attention' }}</option>
             </select>
+            <small v-if="existingImportCount">{{ existingImportCount }} existing Oracle account{{ existingImportCount === 1 ? '' : 's' }} will be preserved and receive only the selected provisioning profile.</small>
           </label>
+
+          <div v-if="existingImportCount && !profileId" class="utility-warning">
+            This batch contains existing Oracle users. Select a provisioning profile to continue without recreating or changing their Oracle accounts.
+          </div>
 
           <label class="bulk-common-reference">
             <span class="checkbox-row"><input v-model="useCommonReference" type="checkbox" class="toggle-switch"/> Use the same reference user for all rows</span>
@@ -429,10 +460,12 @@ async function downloadResultsXlsx() {
           <div><span>Blocked</span><strong>{{ preview.invalid_count }}</strong></div>
         </div>
         <ScrollableDataTable max-height="27rem">
-          <template #header><tr><th>Row</th><th>Username</th><th>Name</th><th>Reference</th><th>Roles</th><th>App steps</th><th>LDAP</th><th>Status</th></tr></template>
+          <template #header><tr><th>Row</th><th>Username</th><th>Account</th><th>Action</th><th>Name</th><th>Reference</th><th>Roles</th><th>App steps</th><th>LDAP</th><th>Status</th></tr></template>
               <tr v-for="row in preview.rows" :key="row.row_number" :class="{ 'bulk-row-invalid': !row.valid }">
                 <td>{{ row.row_number }}</td>
                 <td><strong>{{ row.username || '—' }}</strong></td>
+                <td>{{ row.account_exists ? 'EXISTING' : 'NEW' }}</td>
+                <td><strong>{{ previewActionLabel(row.batch_action) }}</strong></td>
                 <td>{{ [row.first_name, row.middle_name, row.last_name].filter(Boolean).join(' ') }}</td>
                 <td>{{ row.reference_user || '—' }}</td>
                 <td>{{ row.roles.length }}</td>
@@ -443,7 +476,7 @@ async function downloadResultsXlsx() {
         </ScrollableDataTable>
         <p v-if="error" class="login-error">{{ error }}</p>
         <div class="connection-form-actions">
-          <button type="button" class="primary-button" :disabled="loading || !preview.ready_to_execute" @click="executeBatch">{{ loading ? 'Provisioning batch...' : `Provision ${preview.row_count} users` }}</button>
+          <button type="button" class="primary-button" :disabled="loading || !preview.ready_to_execute" @click="executeBatch">{{ loading ? 'Processing batch...' : `Process ${preview.row_count} users` }}</button>
           <button type="button" class="secondary-button" :disabled="loading" @click="step = 'access'">Back</button>
         </div>
       </template>
@@ -465,7 +498,7 @@ async function downloadResultsXlsx() {
           </div>
         </div>
         <ScrollableDataTable max-height="27rem">
-          <template #header><tr><th>Row</th><th>Username</th><th>Initial password</th><th>Status</th><th>Run / audit</th><th>Error</th></tr></template><tr v-for="row in execution.rows" :key="row.row_number"><td>{{ row.row_number }}</td><td><strong>{{ row.username || '—' }}</strong></td><td><code>{{ showResultPasswords ? passwordForRow(row.row_number) : '••••••••' }}</code></td><td><span class="provisioning-status" :data-status="row.status">{{ row.status.toUpperCase() }}</span></td><td><small>{{ row.run_id || row.audit_id || '—' }}</small></td><td><small :class="{ 'field-error': row.error }">{{ row.error || '—' }}</small></td></tr>        </ScrollableDataTable>
+          <template #header><tr><th>Row</th><th>Username</th><th>Action</th><th>Initial password</th><th>Status</th><th>Run / audit</th><th>Error</th></tr></template><tr v-for="row in execution.rows" :key="row.row_number"><td>{{ row.row_number }}</td><td><strong>{{ row.username || '—' }}</strong></td><td>{{ executionActionLabel(row.batch_action) }}</td><td><code>{{ row.password_applied ? (showResultPasswords ? resultPassword(row) : '••••••••') : '—' }}</code></td><td><span class="provisioning-status" :data-status="row.status">{{ row.status.toUpperCase() }}</span></td><td><small>{{ row.run_id || row.audit_id || '—' }}</small></td><td><small :class="{ 'field-error': row.error }">{{ row.error || '—' }}</small></td></tr>        </ScrollableDataTable>
         <p v-if="error" class="login-error">{{ error }}</p>
         <div class="connection-form-actions">
           <button v-if="retryableResults.length" type="button" class="primary-button" :disabled="loading" @click="retryFailed">{{ loading ? 'Retrying...' : 'Retry failed / partial' }}</button>

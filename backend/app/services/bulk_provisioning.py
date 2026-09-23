@@ -325,8 +325,7 @@ async def import_bulk_provision_file(
     existing = await find_existing_oracle_users(target, [value for value in candidates if value])
     for row in parsed:
         if row.username and row.username in existing:
-            row.errors["username"] = "This Oracle username already exists."
-            row.valid = False
+            row.account_exists = True
 
     valid_count = sum(1 for row in parsed if row.valid)
     return BulkProvisionImportResponse(
@@ -367,7 +366,7 @@ def build_bulk_results_xlsx(rows: list[dict[str, object]]) -> bytes:
     sheet.title = "Provisioning results"
     headers = [
         "row", "employee_id", "first_name", "middle_name", "last_name",
-        "username", "initial_password", "status", "run_or_audit", "error",
+        "username", "action", "initial_password", "status", "run_or_audit", "error",
     ]
     sheet.append(headers)
     for item in rows:
@@ -376,9 +375,9 @@ def build_bulk_results_xlsx(rows: list[dict[str, object]]) -> bytes:
         cell.font = Font(bold=True)
     for cell in sheet["B"]:
         cell.number_format = "@"
-    for cell in sheet["G"]:
+    for cell in sheet["H"]:
         cell.number_format = "@"
-    widths = [8, 18, 20, 20, 24, 32, 20, 14, 36, 50]
+    widths = [8, 18, 20, 20, 24, 32, 20, 20, 14, 36, 50]
     for index, width in enumerate(widths, start=1):
         sheet.column_dimensions[sheet.cell(row=1, column=index).column_letter].width = width
     buffer = io.BytesIO()
@@ -391,6 +390,35 @@ def _effective_reference(data: BulkProvisionRequest, row) -> str | None:
     if not value:
         return None
     return normalize_oracle_identifier(value, field_name="Reference user")
+
+
+async def _active_profile_usernames(
+    database,
+    connection_id: str,
+    profile_id: str | None,
+    usernames: set[str],
+) -> set[str]:
+    if not profile_id or not usernames:
+        return set()
+    cursor = database.provisioning_runs.find(
+        {
+            "parent_connection_id": connection_id,
+            "profile_id": profile_id,
+            "username": {"$in": sorted(usernames)},
+            "status": {"$in": ["succeeded", "partial"]},
+            "$or": [
+                {"deprovisioned_at": {"$exists": False}},
+                {"deprovisioned_at": None},
+            ],
+        },
+        {"username": 1},
+    )
+    documents = await cursor.to_list(MAX_BULK_ROWS * 2)
+    return {
+        str(document.get("username") or "").strip().upper()
+        for document in documents
+        if document.get("username")
+    }
 
 
 async def preview_bulk_provisioning(
@@ -427,20 +455,34 @@ async def preview_bulk_provisioning(
         generated.append(username)
         row_usernames[row.row_number] = username
     existing = await find_existing_oracle_users(target, generated)
+    active_profile_users = await _active_profile_usernames(
+        database,
+        connection_id,
+        data.profile_id,
+        existing,
+    )
 
     seen: dict[str, int] = {}
     rows: list[BulkProvisionPreviewRow] = []
     for row in data.rows:
         errors: dict[str, str] = {}
         username = row_usernames.get(row.row_number)
+        account_exists = bool(username and username in existing)
+        batch_action: str | None = None
         if not username:
             errors["username"] = "Unable to generate a valid Oracle username from this row."
-        elif username in existing:
-            errors["username"] = "This Oracle username already exists."
         elif username in seen:
             errors["username"] = f"Generated username duplicates batch row {seen[username]}."
         else:
             seen[username] = row.row_number
+            if account_exists and not data.profile_id:
+                errors["username"] = "This Oracle username already exists. Select a provisioning profile to apply instead of recreating the account."
+            elif account_exists and username in active_profile_users:
+                batch_action = "already_active"
+            elif account_exists:
+                batch_action = "apply_profile"
+            else:
+                batch_action = "create"
 
         reference_user = None
         try:
@@ -450,15 +492,17 @@ async def preview_bulk_provisioning(
 
         roles: list[str] = []
         provisioning = None
-        if not errors:
+        if not errors and batch_action != "already_active":
             try:
                 if data.profile_id:
+                    preserve_existing = batch_action == "apply_profile"
                     provisioning = await build_provisioning_preview(
                         database,
                         data.profile_id,
                         ProvisioningPreviewRequest(
+                            account_mode="preserve_existing" if preserve_existing else "create_or_reconcile",
                             username=username,
-                            password=row.password,
+                            password=None if preserve_existing else row.password,
                             first_name=row.first_name,
                             middle_name=row.middle_name,
                             last_name=row.last_name,
@@ -472,8 +516,8 @@ async def preview_bulk_provisioning(
                         requester_ip=requester_ip,
                         parent_connection_id=connection_id,
                     )
-                    if provisioning.account_exists:
-                        errors["username"] = "This Oracle username already exists."
+                    if batch_action == "create" and provisioning.account_exists:
+                        errors["username"] = "This Oracle username appeared after import. Rebuild the batch preview before execution."
                     roles = [role.name for role in provisioning.roles if role.will_copy]
                 elif reference_user:
                     reference = await get_oracle_reference_user(target, reference_user)
@@ -494,6 +538,8 @@ async def preview_bulk_provisioning(
             username=username,
             reference_user=reference_user,
             password_mode=row.password_mode,
+            account_exists=account_exists,
+            batch_action=batch_action,
             valid=not errors,
             errors=errors,
             roles=roles,
@@ -534,16 +580,28 @@ async def execute_bulk_provisioning(
     for row in data.rows:
         preview = preview_by_row[row.row_number]
         try:
+            if preview.batch_action == "already_active":
+                results.append(BulkProvisionExecutionRow(
+                    row_number=row.row_number,
+                    username=preview.username,
+                    status="succeeded",
+                    batch_action="already_active",
+                    password_applied=False,
+                ))
+                continue
+
             if data.profile_id:
                 p = preview.provisioning
                 assert p is not None
+                preserve_existing = preview.batch_action == "apply_profile"
                 result = await execute_provisioning_profile(
                     database,
                     connection_id,
                     data.profile_id,
                     ProvisioningExecuteRequest(
+                        account_mode="preserve_existing" if preserve_existing else "create_or_reconcile",
                         username=preview.username,
-                        password=row.password,
+                        password=None if preserve_existing else row.password,
                         first_name=row.first_name,
                         middle_name=row.middle_name,
                         last_name=row.last_name,
@@ -553,9 +611,9 @@ async def execute_bulk_provisioning(
                         request_reference=data.request_reference,
                         remarks=data.remarks,
                         roles=preview.roles,
-                        default_tablespace=p.default_tablespace,
-                        temporary_tablespace=p.temporary_tablespace,
-                        oracle_profile=p.oracle_profile,
+                        default_tablespace=None if preserve_existing else p.default_tablespace,
+                        temporary_tablespace=None if preserve_existing else p.temporary_tablespace,
+                        oracle_profile=None if preserve_existing else p.oracle_profile,
                     ),
                     operator,
                     requester_ip=requester_ip,
@@ -564,6 +622,8 @@ async def execute_bulk_provisioning(
                     row_number=row.row_number,
                     username=result.username,
                     status=result.status,
+                    batch_action="applied" if preserve_existing else "created",
+                    password_applied=bool(result.account.password_applied),
                     run_id=result.run_id,
                     audit_id=result.audit_id,
                     error=result.error,
@@ -594,14 +654,17 @@ async def execute_bulk_provisioning(
                     row_number=row.row_number,
                     username=created["username"],
                     status="succeeded",
+                    batch_action="created",
+                    password_applied=True,
                     audit_id=created["audit_id"],
                 ))
         except AppError as exc:
-
             results.append(BulkProvisionExecutionRow(
                 row_number=row.row_number,
                 username=preview.username,
                 status="failed",
+                batch_action="applied" if preview.batch_action == "apply_profile" else "created",
+                password_applied=False,
                 error=exc.message,
             ))
         except Exception:
@@ -609,6 +672,8 @@ async def execute_bulk_provisioning(
                 row_number=row.row_number,
                 username=preview.username,
                 status="failed",
+                batch_action="applied" if preview.batch_action == "apply_profile" else "created",
+                password_applied=False,
                 error="Bulk provisioning failed unexpectedly for this row.",
             ))
 

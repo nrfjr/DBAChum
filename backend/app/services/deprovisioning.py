@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 
 from app.connectors.oracle_provisioning import (
     count_oracle_rows_by_match,
+    fetch_oracle_provisioning_row,
     delete_oracle_provisioning_row,
     drop_oracle_user,
     get_oracle_user_deprovision_state,
@@ -26,7 +27,7 @@ from app.services.database_actions import finish_database_action, start_database
 from app.services.database_connections import get_database_connection
 from app.services.ldap_directory import delete_ldap_entry, find_ldap_entries_for_username
 from app.services.provisioning import effective_match_columns, get_ldap_profile_document
-from app.services.provisioning_execution import _safe_error
+from app.services.provisioning_execution import _display_value, _safe_error
 
 
 def _is_protected_oracle_user(username: str) -> bool:
@@ -131,6 +132,15 @@ def _step_dict(step) -> dict:
     raise TypeError("Unsupported provisioning table step.")
 
 
+def _persisted_values_match(current: dict[str, object], expected: dict[str, object]) -> bool:
+    for column, expected_value in expected.items():
+        if expected_value == "<redacted>":
+            return False
+        if _display_value(current.get(column)) != (None if expected_value is None else str(expected_value)):
+            return False
+    return True
+
+
 def _deprovision_match_values(
     step: dict,
     *,
@@ -227,6 +237,7 @@ async def build_oracle_user_deprovision_preview(
     lifecycle_run_count = 0
     lifecycle_inputs: dict = {}
     profiles: list[dict] = []
+    selected_run: dict = {}
     remaining_profile_count = len(profile_options)
 
     if account_only:
@@ -238,7 +249,7 @@ async def build_oracle_user_deprovision_preview(
                 code="ORACLE_DEPROVISION_PROFILE_REQUIRED",
                 status_code=400,
             )
-        lifecycle_run_count, lifecycle_inputs, selected_profile, _latest_run = await _selected_lifecycle_context(
+        lifecycle_run_count, lifecycle_inputs, selected_profile, selected_run = await _selected_lifecycle_context(
             database,
             parent_connection_id,
             username,
@@ -322,18 +333,66 @@ async def build_oracle_user_deprovision_preview(
             )
         )
 
+    recorded_steps = {
+        int(step.get("index")): step
+        for step in (selected_run.get("table_steps") or [])
+        if step.get("index") is not None
+    }
+
     seen_targets: set[tuple] = set()
     for profile in profiles:
         selected_id = str(profile.get("id") or "")
         profile_name = str(profile.get("name") or selected_id or "Provisioning profile")
         for index, raw_step in enumerate(profile.get("table_steps") or [], start=1):
             step = _step_dict(raw_step)
+            recorded = recorded_steps.get(index)
+            recorded_action = str((recorded or {}).get("action") or "")
             match_values, match_issue = _deprovision_match_values(
                 step,
                 username=username,
                 lifecycle_inputs=lifecycle_inputs,
             )
             label = f"{profile_name} · Step {index} · {step.get('owner')}.{step.get('table_name')}"
+
+            if recorded_action == "unchanged":
+                items.append(
+                    OracleUserDeprovisionPreviewItem(
+                        component="table",
+                        label=label,
+                        planned_action="No application row change to reverse",
+                        state="no_action",
+                        reason="This provisioning profile reused an existing row without changing it.",
+                        profile_id=selected_id or None,
+                        profile_name=profile_name,
+                        step_index=index,
+                        connection_id=step.get("connection_id"),
+                        owner=step.get("owner"),
+                        table_name=step.get("table_name"),
+                    )
+                )
+                continue
+
+            if recorded_action == "updated":
+                reason = (
+                    "This provisioning profile updated a row that already existed. DBAChum will not delete that shared row automatically because it may belong to another active profile or pre-existing application state."
+                )
+                blocked_reasons.append(label + ": " + reason)
+                items.append(
+                    OracleUserDeprovisionPreviewItem(
+                        component="table",
+                        label=label,
+                        planned_action="Manual review required — preserve shared row",
+                        state="blocked",
+                        reason=reason,
+                        profile_id=selected_id or None,
+                        profile_name=profile_name,
+                        step_index=index,
+                        connection_id=step.get("connection_id"),
+                        owner=step.get("owner"),
+                        table_name=step.get("table_name"),
+                    )
+                )
+                continue
 
             if match_issue:
                 blocked_reasons.append(label + ": " + match_issue)
@@ -369,12 +428,48 @@ async def build_oracle_user_deprovision_preview(
 
             try:
                 step_connection = await get_database_connection(database, step["connection_id"])
-                existing_rows = await count_oracle_rows_by_match(
-                    step_connection,
-                    owner=step["owner"],
-                    table_name=step["table_name"],
-                    match_values=match_values,
-                )
+                expected_after = (recorded or {}).get("after_values") or {}
+                if recorded_action == "inserted" and expected_after:
+                    live = await fetch_oracle_provisioning_row(
+                        step_connection,
+                        owner=step["owner"],
+                        table_name=step["table_name"],
+                        match_values=match_values,
+                        columns=list(expected_after.keys()),
+                    )
+                    existing_rows = int(live.get("existing_rows") or 0)
+                    if existing_rows == 1 and not _persisted_values_match(
+                        live.get("values") or {}, expected_after
+                    ):
+                        reason = (
+                            "The row no longer matches the values recorded when this profile inserted it. A later profile or manual change may now depend on the row, so automatic deletion is blocked."
+                        )
+                        blocked_reasons.append(label + ": " + reason)
+                        items.append(
+                            OracleUserDeprovisionPreviewItem(
+                                component="table",
+                                label=label,
+                                planned_action="Manual review required — preserve changed row",
+                                state="blocked",
+                                reason=reason,
+                                profile_id=selected_id or None,
+                                profile_name=profile_name,
+                                step_index=index,
+                                connection_id=step.get("connection_id"),
+                                owner=step.get("owner"),
+                                table_name=step.get("table_name"),
+                                match_values={k: None if v is None else str(v) for k, v in match_values.items()},
+                                existing_rows=existing_rows,
+                            )
+                        )
+                        continue
+                else:
+                    existing_rows = await count_oracle_rows_by_match(
+                        step_connection,
+                        owner=step["owner"],
+                        table_name=step["table_name"],
+                        match_values=match_values,
+                    )
             except Exception as exc:
                 reason = "Live provisioning-table check failed: " + _safe_error(exc)
                 blocked_reasons.append(label + ": " + reason)

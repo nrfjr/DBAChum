@@ -8,9 +8,11 @@ from app.connectors.oracle_provisioning import (
     get_oracle_reference_user,
     is_sensitive_reference_role,
     normalize_oracle_identifier,
+    reconcile_oracle_roles,
     reconcile_oracle_user,
     upsert_oracle_provisioning_row,
 )
+from app.connectors.oracle_user_lifecycle import get_oracle_user_lifecycle_state
 from app.core.exceptions import AppError
 from app.schemas.database_action import (
     DatabaseActionRisk,
@@ -201,6 +203,27 @@ async def execute_provisioning_profile(
     profile = await get_provisioning_profile(database, profile_id)
     parent_connection = await get_database_connection(database, parent_connection_id)
     username = preview.username
+    preserve_existing = data.account_mode == "preserve_existing"
+
+    if preserve_existing:
+        active_profile_run = await database.provisioning_runs.find_one(
+            {
+                "parent_connection_id": parent_connection_id,
+                "username": username,
+                "profile_id": profile_id,
+                "status": {"$in": ["succeeded", "partial"]},
+                "$or": [
+                    {"deprovisioned_at": {"$exists": False}},
+                    {"deprovisioned_at": None},
+                ],
+            }
+        )
+        if active_profile_run is not None:
+            raise AppError(
+                "This provisioning profile is already active for the selected Oracle account.",
+                code="PROVISIONING_PROFILE_ALREADY_ACTIVE",
+                status_code=409,
+            )
 
     first_name = normalize_person_name(data.first_name)
     middle_name = normalize_person_name(data.middle_name)
@@ -302,15 +325,16 @@ async def execute_provisioning_profile(
         "remarks": _clean_optional(data.remarks),
         "reference_user": reference_username,
         "account_existed_before": preview.account_exists,
+        "account_mode": data.account_mode,
         "input_snapshot": {
             **form_values,
             "username": username,
         },
         "desired_roles": selected_roles,
         "account_settings": {
-            "default_tablespace": _clean_optional(data.default_tablespace),
-            "temporary_tablespace": _clean_optional(data.temporary_tablespace),
-            "oracle_profile": _clean_optional(data.oracle_profile),
+            "default_tablespace": (preview.default_tablespace if preserve_existing else _clean_optional(data.default_tablespace)),
+            "temporary_tablespace": (preview.temporary_tablespace if preserve_existing else _clean_optional(data.temporary_tablespace)),
+            "oracle_profile": (preview.oracle_profile if preserve_existing else _clean_optional(data.oracle_profile)),
         },
         "generated_context": {
             "username": username,
@@ -338,7 +362,7 @@ async def execute_provisioning_profile(
         database,
         connection_id=parent_connection_id,
         engine="oracle",
-        action="provision_user",
+        action=("apply_provisioning_profile" if preserve_existing else "provision_user"),
         target=username,
         operator=operator,
         risk=DatabaseActionRisk.SENSITIVE,
@@ -352,6 +376,7 @@ async def execute_provisioning_profile(
             "requester_ip": requester_ip,
             "reference_user": reference_username,
             "selected_roles": selected_roles,
+            "account_mode": data.account_mode,
             "password_stored_in_audit": False,
         },
     )
@@ -369,54 +394,77 @@ async def execute_provisioning_profile(
     overall_error: str | None = None
 
     try:
-        try:
-            account_raw = await reconcile_oracle_user(
+        if preserve_existing:
+            state = await get_oracle_user_lifecycle_state(parent_connection, username)
+            role_raw = await reconcile_oracle_roles(
                 parent_connection,
                 username=username,
-                password=data.password,
                 roles=selected_roles,
-                default_tablespace=_clean_optional(data.default_tablespace),
-                temporary_tablespace=_clean_optional(data.temporary_tablespace),
-                profile=_clean_optional(data.oracle_profile),
             )
-        except OracleUserReconcilePartialError as exc:
             account = ProvisioningExecutionAccount(
-                action=("created" if exc.account_action == "created" else "altered"),
-                password_applied=True,
-                default_tablespace=_clean_optional(data.default_tablespace),
-                temporary_tablespace=_clean_optional(data.temporary_tablespace),
-                oracle_profile=_clean_optional(data.oracle_profile),
-                error=str(exc),
+                action="unchanged",
+                password_applied=False,
+                default_tablespace=state.get("default_tablespace"),
+                temporary_tablespace=state.get("temporary_tablespace"),
+                oracle_profile=state.get("profile"),
             )
             role_results = [
                 ProvisioningExecutionRole(name=role, action="granted")
-                for role in exc.roles_added
+                for role in role_raw.get("roles_added", [])
             ] + [
                 ProvisioningExecutionRole(name=role, action="already_present")
-                for role in exc.roles_already_present
+                for role in role_raw.get("roles_already_present", [])
+            ]
+            mutated = bool(role_raw.get("roles_added"))
+        else:
+            try:
+                account_raw = await reconcile_oracle_user(
+                    parent_connection,
+                    username=username,
+                    password=data.password or "",
+                    roles=selected_roles,
+                    default_tablespace=_clean_optional(data.default_tablespace),
+                    temporary_tablespace=_clean_optional(data.temporary_tablespace),
+                    profile=_clean_optional(data.oracle_profile),
+                )
+            except OracleUserReconcilePartialError as exc:
+                account = ProvisioningExecutionAccount(
+                    action=("created" if exc.account_action == "created" else "altered"),
+                    password_applied=True,
+                    default_tablespace=_clean_optional(data.default_tablespace),
+                    temporary_tablespace=_clean_optional(data.temporary_tablespace),
+                    oracle_profile=_clean_optional(data.oracle_profile),
+                    error=str(exc),
+                )
+                role_results = [
+                    ProvisioningExecutionRole(name=role, action="granted")
+                    for role in exc.roles_added
+                ] + [
+                    ProvisioningExecutionRole(name=role, action="already_present")
+                    for role in exc.roles_already_present
+                ]
+                mutated = True
+                raise AppError(
+                    "Oracle account was changed, but role reconciliation failed: " + str(exc),
+                    code="PROVISIONING_ORACLE_ACCOUNT_PARTIAL",
+                    status_code=409,
+                ) from exc
+
+            account = ProvisioningExecutionAccount(
+                action=account_raw["account_action"],
+                password_applied=account_raw["password_applied"],
+                default_tablespace=account_raw.get("default_tablespace"),
+                temporary_tablespace=account_raw.get("temporary_tablespace"),
+                oracle_profile=account_raw.get("profile"),
+            )
+            role_results = [
+                ProvisioningExecutionRole(name=role, action="granted")
+                for role in account_raw.get("roles_added", [])
+            ] + [
+                ProvisioningExecutionRole(name=role, action="already_present")
+                for role in account_raw.get("roles_already_present", [])
             ]
             mutated = True
-            raise AppError(
-                "Oracle account was changed, but role reconciliation failed: " + str(exc),
-                code="PROVISIONING_ORACLE_ACCOUNT_PARTIAL",
-                status_code=409,
-            ) from exc
-
-        account = ProvisioningExecutionAccount(
-            action=account_raw["account_action"],
-            password_applied=account_raw["password_applied"],
-            default_tablespace=account_raw.get("default_tablespace"),
-            temporary_tablespace=account_raw.get("temporary_tablespace"),
-            oracle_profile=account_raw.get("profile"),
-        )
-        role_results = [
-            ProvisioningExecutionRole(name=role, action="granted")
-            for role in account_raw.get("roles_added", [])
-        ] + [
-            ProvisioningExecutionRole(name=role, action="already_present")
-            for role in account_raw.get("roles_already_present", [])
-        ]
-        mutated = True
         await _update_run(
             database,
             run_id,
@@ -550,7 +598,7 @@ async def execute_provisioning_profile(
                 ldif_content = render_ldif(
                     ldap_profile.get("ldif_template") or DEFAULT_LDIF_TEMPLATE,
                     username=username,
-                    password=data.password,
+                    password=data.password or "",
                     first_name=first_name,
                     middle_name=middle_name,
                     last_name=last_name,
