@@ -52,3 +52,6 @@ backups/
 
 # Generated production packages
 release/
+
+# Patch files
+*.patch
