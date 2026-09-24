@@ -1,5 +1,24 @@
 import { defineStore } from 'pinia'
 
+
+export type ProvisioningFormRequirement = 'required' | 'optional'
+
+export interface ProvisioningFormRequirementSet {
+  middle_name: ProvisioningFormRequirement
+  reference_user: ProvisioningFormRequirement
+  requestor: ProvisioningFormRequirement
+  request_reference: ProvisioningFormRequirement
+  remarks: ProvisioningFormRequirement
+  provisioning_profile: ProvisioningFormRequirement
+}
+
+export interface ProvisioningFormRequirements {
+  single_user: ProvisioningFormRequirementSet
+  batch_user: ProvisioningFormRequirementSet
+  updated_at: string | null
+  updated_by: string | null
+}
+
 export type ProvisioningValueKind =
   | 'form'
   | 'generated'
@@ -619,6 +638,7 @@ export const useProvisioningStore = defineStore('provisioning', {
   state: () => ({
     profiles: [] as ProvisioningProfile[],
     profilesByConnection: {} as Record<string, ProvisioningProfile[]>,
+    formRequirements: null as ProvisioningFormRequirements | null,
     sources: [] as ProvisioningSourceOption[],
     runsByConnection: {} as Record<string, ProvisioningRunSummary[]>,
     ldapProfiles: [] as LdapProfile[],
@@ -628,6 +648,23 @@ export const useProvisioningStore = defineStore('provisioning', {
   }),
 
   actions: {
+    async loadFormRequirements() {
+      this.formRequirements = await apiRequest<ProvisioningFormRequirements>(
+        '/provisioning/form-requirements',
+      )
+      return this.formRequirements
+    },
+
+    async saveFormRequirements(
+      data: Pick<ProvisioningFormRequirements, 'single_user' | 'batch_user'>,
+    ) {
+      this.formRequirements = await apiRequest<ProvisioningFormRequirements>(
+        '/provisioning/form-requirements',
+        { method: 'PUT', body: JSON.stringify(data) },
+      )
+      return this.formRequirements
+    },
+
     async loadProfiles() {
       this.loading = true
       this.error = null

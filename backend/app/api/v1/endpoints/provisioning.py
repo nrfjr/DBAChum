@@ -13,6 +13,8 @@ from app.schemas.provisioning import (
     OracleMetadataSchema,
     OracleMetadataSequence,
     OracleMetadataTable,
+    ProvisioningFormRequirementsResponse,
+    ProvisioningFormRequirementsUpdate,
     ProvisioningProfileCreate,
     ProvisioningProfileResponse,
     ProvisioningProfileUpdate,
@@ -25,6 +27,7 @@ from app.services.provisioning import (
     delete_ldap_profile,
     delete_provisioning_profile,
     get_ldap_settings,
+    get_provisioning_form_requirements,
     list_ldap_profiles,
     list_provisioning_profiles,
     list_provisioning_sources,
@@ -35,10 +38,42 @@ from app.services.provisioning import (
     test_ldap_profile,
     update_ldap_profile,
     update_ldap_settings,
+    update_provisioning_form_requirements,
     update_provisioning_profile,
 )
 
 router = APIRouter(prefix="/provisioning", tags=["provisioning"])
+
+
+@router.get(
+    "/form-requirements",
+    response_model=ProvisioningFormRequirementsResponse,
+)
+async def read_form_requirements(
+    request: Request,
+    current_user: UserResponse = Depends(
+        require_permission(Permission.DBA_OPERATE)
+    ),
+):
+    return await get_provisioning_form_requirements(request.app.state.database)
+
+
+@router.put(
+    "/form-requirements",
+    response_model=ProvisioningFormRequirementsResponse,
+)
+async def write_form_requirements(
+    data: ProvisioningFormRequirementsUpdate,
+    request: Request,
+    current_user: UserResponse = Depends(
+        require_permission(Permission.PROVISIONING_MANAGE)
+    ),
+):
+    return await update_provisioning_form_requirements(
+        request.app.state.database,
+        data,
+        username=str(current_user.username),
+    )
 
 
 @router.get("/profiles", response_model=list[ProvisioningProfileResponse])

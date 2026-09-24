@@ -33,7 +33,11 @@ from app.schemas.user import UserResponse
 from app.services.database_connections import get_database_connection
 from app.services.ldap_ldif import normalize_employee_id, normalize_person_name
 from app.services.oracle_dba import get_oracle_target, provision_oracle_user
-from app.services.provisioning import get_provisioning_profile
+from app.services.provisioning import (
+    get_provisioning_form_requirements,
+    get_provisioning_profile,
+    validate_provisioning_form_requirements,
+)
 from app.services.provisioning_execution import execute_provisioning_profile
 from app.services.provisioning_preview import (
     build_provisioning_preview,
@@ -41,8 +45,8 @@ from app.services.provisioning_preview import (
 )
 
 
-REQUIRED_HEADERS = ["employee_id", "first_name", "last_name"]
-OPTIONAL_HEADERS = ["middle_name", "password", "reference_user"]
+BASE_REQUIRED_HEADERS = ["employee_id", "first_name", "last_name"]
+BASE_OPTIONAL_HEADERS = ["middle_name", "password", "reference_user"]
 MAX_BULK_ROWS = 500
 MAX_UPLOAD_BYTES = 5 * 1024 * 1024
 
@@ -181,7 +185,7 @@ def _rows_from_xlsx(contents: bytes) -> tuple[list[str], list[list[object]]]:
         workbook.close()
 
 
-def _map_headers(headers: Iterable[object]) -> dict[str, int]:
+def _map_headers(headers: Iterable[object], required_headers: list[str]) -> dict[str, int]:
     mapped: dict[str, int] = {}
     duplicates: set[str] = set()
     for index, raw in enumerate(headers):
@@ -198,7 +202,7 @@ def _map_headers(headers: Iterable[object]) -> dict[str, int]:
             code="BULK_IMPORT_DUPLICATE_HEADERS",
             status_code=400,
         )
-    missing = [header for header in REQUIRED_HEADERS if header not in mapped]
+    missing = [header for header in required_headers if header not in mapped]
     if missing:
         raise AppError(
             "Missing required spreadsheet header(s): " + ", ".join(missing) + ".",
@@ -220,6 +224,15 @@ async def import_bulk_provision_file(
     connection_id: str,
     upload: UploadFile,
 ) -> BulkProvisionImportResponse:
+    requirements = await get_provisioning_form_requirements(database)
+    batch_requirements = requirements.batch_user
+    middle_name_required = batch_requirements.middle_name == "required"
+    required_headers = list(BASE_REQUIRED_HEADERS)
+    optional_headers = list(BASE_OPTIONAL_HEADERS)
+    if middle_name_required:
+        required_headers.append("middle_name")
+        optional_headers.remove("middle_name")
+
     filename = upload.filename or "upload"
     extension = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
     if extension not in {"csv", "xlsx"}:
@@ -238,7 +251,7 @@ async def import_bulk_provision_file(
         )
 
     headers, raw_rows = _rows_from_csv(contents) if extension == "csv" else _rows_from_xlsx(contents)
-    mapped = _map_headers(headers)
+    mapped = _map_headers(headers, required_headers)
 
     parsed: list[BulkProvisionImportRow] = []
     seen_usernames: dict[str, int] = {}
@@ -259,7 +272,11 @@ async def import_bulk_provision_file(
         first_name, error = _validate_name(_value(raw_row, mapped, "first_name"), "First name", required=True)
         if error:
             errors["first_name"] = error
-        middle_name, error = _validate_name(_value(raw_row, mapped, "middle_name"), "Middle name", required=False)
+        middle_name, error = _validate_name(
+            _value(raw_row, mapped, "middle_name"),
+            "Middle name",
+            required=middle_name_required,
+        )
         if error:
             errors["middle_name"] = error
         last_name, error = _validate_name(_value(raw_row, mapped, "last_name"), "Last name", required=True)
@@ -330,8 +347,8 @@ async def import_bulk_provision_file(
     valid_count = sum(1 for row in parsed if row.valid)
     return BulkProvisionImportResponse(
         filename=filename,
-        required_headers=REQUIRED_HEADERS,
-        optional_headers=OPTIONAL_HEADERS,
+        required_headers=required_headers,
+        optional_headers=optional_headers,
         row_count=len(parsed),
         valid_count=valid_count,
         invalid_count=len(parsed) - valid_count,
@@ -428,6 +445,17 @@ async def preview_bulk_provisioning(
     operator: UserResponse,
     requester_ip: str | None = None,
 ) -> BulkProvisionPreviewResponse:
+    requirements = await get_provisioning_form_requirements(database)
+    validate_provisioning_form_requirements(
+        requirements,
+        "batch_user",
+        requestor=data.requestor,
+        request_reference=data.request_reference,
+        remarks=data.remarks,
+        provisioning_profile=data.profile_id,
+        include_fields={"requestor", "request_reference", "remarks", "provisioning_profile"},
+    )
+
     target = await get_oracle_target(database, connection_id)
     profile_name = None
     if data.profile_id:
@@ -489,6 +517,22 @@ async def preview_bulk_provisioning(
             reference_user = _effective_reference(data, row)
         except AppError as exc:
             errors["reference_user"] = exc.message
+
+        try:
+            validate_provisioning_form_requirements(
+                requirements,
+                "batch_user",
+                middle_name=row.middle_name,
+                reference_user=reference_user,
+                include_fields={"middle_name", "reference_user"},
+            )
+        except AppError as exc:
+            if requirements.batch_user.middle_name == "required" and not (row.middle_name or "").strip():
+                errors["middle_name"] = "Middle name is required."
+            if requirements.batch_user.reference_user == "required" and not (reference_user or "").strip():
+                errors["reference_user"] = "Reference user is required."
+            if not errors:
+                errors["row"] = exc.message
 
         roles: list[str] = []
         provisioning = None

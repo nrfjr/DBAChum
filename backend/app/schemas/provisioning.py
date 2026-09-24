@@ -293,6 +293,29 @@ class ProvisioningSourceOption(BaseModel):
     label: str
     kind: Literal["form", "generated"]
 
+
+ProvisioningFormRequirement = Literal["required", "optional"]
+
+
+class ProvisioningFormRequirementSet(BaseModel):
+    middle_name: ProvisioningFormRequirement = "optional"
+    reference_user: ProvisioningFormRequirement = "optional"
+    requestor: ProvisioningFormRequirement = "optional"
+    request_reference: ProvisioningFormRequirement = "optional"
+    remarks: ProvisioningFormRequirement = "optional"
+    provisioning_profile: ProvisioningFormRequirement = "optional"
+
+
+class ProvisioningFormRequirementsUpdate(BaseModel):
+    single_user: ProvisioningFormRequirementSet = Field(default_factory=ProvisioningFormRequirementSet)
+    batch_user: ProvisioningFormRequirementSet = Field(default_factory=ProvisioningFormRequirementSet)
+
+
+class ProvisioningFormRequirementsResponse(ProvisioningFormRequirementsUpdate):
+    updated_at: datetime | None = None
+    updated_by: str | None = None
+
+
 class ProvisioningPreviewRequest(BaseModel):
     account_mode: Literal["create_or_reconcile", "preserve_existing"] = "create_or_reconcile"
     username: str | None = Field(default=None, max_length=30)

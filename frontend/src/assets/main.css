@@ -2684,15 +2684,39 @@ button {
 }
 
 .user-edit-modal {
-  --modal-width: 820px;
+  --modal-width: 940px;
+  overflow-x: hidden;
+}
+
+.user-edit-section-label {
+  margin-top: 1rem;
+  font-size: 0.88rem;
+  font-weight: 700;
 }
 
 .user-edit-fields {
-  margin-top: 1rem;
+  margin-top: 0.6rem;
+}
+
+.user-edit-fields .connection-form-row {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.user-edit-fields label,
+.user-edit-fields input {
+  min-width: 0;
 }
 
 .user-edit-lock-toggle {
   align-content: start;
+}
+
+.user-edit-lock-toggle .checkbox-row {
+  min-height: 40px;
+  padding: 0.62rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 0.65rem;
+  background: var(--surface);
 }
 
 .checkbox-row {
@@ -2710,6 +2734,28 @@ button {
 .user-edit-system-privileges,
 .user-edit-change-list {
   margin-top: 1rem;
+}
+
+.user-edit-system-privileges {
+  border: 1px solid var(--border);
+  border-radius: 0.7rem;
+  overflow: hidden;
+}
+
+.user-edit-system-privileges summary {
+  padding: 0.7rem 0.8rem;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.user-edit-system-privileges .oracle-privilege-list {
+  padding: 0.8rem;
+  border-top: 1px solid var(--border);
+}
+
+.user-edit-actions {
+  justify-content: flex-end;
+  flex-wrap: wrap;
 }
 
 .user-edit-section-heading {
@@ -2732,16 +2778,30 @@ button {
 }
 
 .user-edit-section-heading input {
-  width: min(260px, 100%);
+  width: min(280px, 100%);
+  min-width: 0;
 }
 
 .user-edit-role-list {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.5rem;
-  max-height: 330px;
+  max-height: clamp(18rem, 42vh, 24rem);
+  overflow-x: hidden;
   overflow-y: auto;
   padding-right: 0.2rem;
+}
+
+.user-edit-role-list .oracle-role-option {
+  min-width: 0;
+}
+
+.user-edit-role-list .oracle-role-option > span {
+  min-width: 0;
+}
+
+.user-edit-role-list .oracle-role-option strong {
+  overflow-wrap: anywhere;
 }
 
 .user-edit-change-list {
@@ -2789,6 +2849,7 @@ button {
     overflow-x: auto;
   }
 
+  .user-edit-fields .connection-form-row,
   .user-edit-role-list {
     grid-template-columns: 1fr;
   }

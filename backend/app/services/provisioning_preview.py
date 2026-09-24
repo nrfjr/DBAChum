@@ -34,8 +34,10 @@ from app.services.ldap_ldif import (
 from app.services.provisioning import (
     effective_match_columns,
     get_ldap_profile_document,
+    get_provisioning_form_requirements,
     get_provisioning_profile,
     validate_profile_dependencies,
+    validate_provisioning_form_requirements,
 )
 
 
@@ -125,6 +127,19 @@ async def build_provisioning_preview(
             "Provisioning profile is not ready: " + " ".join(issues),
             code="PROVISIONING_PROFILE_NOT_READY",
             status_code=400,
+        )
+
+    if data.account_mode == "create_or_reconcile":
+        requirements = await get_provisioning_form_requirements(database)
+        validate_provisioning_form_requirements(
+            requirements,
+            "single_user",
+            middle_name=data.middle_name,
+            reference_user=data.reference_user,
+            requestor=data.requestor,
+            request_reference=data.request_reference,
+            remarks=data.remarks,
+            provisioning_profile=profile_id,
         )
 
     schema_connection = await get_database_connection(

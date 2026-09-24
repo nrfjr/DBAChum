@@ -20,6 +20,8 @@ from app.schemas.provisioning import (
     LdapProfileUpdate,
     LdapSettingsResponse,
     LdapSettingsUpdate,
+    ProvisioningFormRequirementsResponse,
+    ProvisioningFormRequirementsUpdate,
     ProvisioningProfileCreate,
     ProvisioningProfileResponse,
     ProvisioningProfileUpdate,
@@ -34,6 +36,8 @@ from app.services.ldap_ldif import DEFAULT_LDIF_TEMPLATE
 
 LEGACY_LDAP_PROFILE_ID = "global"
 LEGACY_LDAP_PROFILE_NAME = "Default LDAP"
+PROVISIONING_FORM_REQUIREMENTS_ID = "form_requirements"
+PROVISIONING_SETTINGS_COLLECTION = "provisioning_settings"
 
 FORM_SOURCE_OPTIONS = [
     {"key": "first_name", "label": "First name", "kind": "form"},
@@ -53,6 +57,122 @@ GENERATED_SOURCE_OPTIONS = [
     {"key": "requester_ip", "label": "Requester machine IP", "kind": "generated"},
     {"key": "current_datetime", "label": "Current date/time", "kind": "generated"},
 ]
+
+
+
+def _default_form_requirements() -> dict:
+    return {
+        "single_user": {
+            "middle_name": "optional",
+            "reference_user": "optional",
+            "requestor": "optional",
+            "request_reference": "optional",
+            "remarks": "optional",
+            "provisioning_profile": "optional",
+        },
+        "batch_user": {
+            "middle_name": "optional",
+            "reference_user": "optional",
+            "requestor": "optional",
+            "request_reference": "optional",
+            "remarks": "optional",
+            "provisioning_profile": "optional",
+        },
+    }
+
+
+def _merge_form_requirements(document: dict | None) -> dict:
+    merged = _default_form_requirements()
+    if not document:
+        return merged
+    for scope in ("single_user", "batch_user"):
+        values = document.get(scope)
+        if not isinstance(values, dict):
+            continue
+        for key in merged[scope]:
+            if values.get(key) in {"required", "optional"}:
+                merged[scope][key] = values[key]
+    return merged
+
+
+async def get_provisioning_form_requirements(database) -> ProvisioningFormRequirementsResponse:
+    document = await database[PROVISIONING_SETTINGS_COLLECTION].find_one(
+        {"_id": PROVISIONING_FORM_REQUIREMENTS_ID}
+    )
+    values = _merge_form_requirements(document)
+    return ProvisioningFormRequirementsResponse(
+        **values,
+        updated_at=document.get("updated_at") if document else None,
+        updated_by=document.get("updated_by") if document else None,
+    )
+
+
+async def update_provisioning_form_requirements(
+    database,
+    data: ProvisioningFormRequirementsUpdate,
+    *,
+    username: str,
+) -> ProvisioningFormRequirementsResponse:
+    now = datetime.now(timezone.utc)
+    values = data.model_dump()
+    await database[PROVISIONING_SETTINGS_COLLECTION].update_one(
+        {"_id": PROVISIONING_FORM_REQUIREMENTS_ID},
+        {
+            "$set": {
+                **values,
+                "updated_at": now,
+                "updated_by": username,
+            },
+            "$setOnInsert": {"created_at": now},
+        },
+        upsert=True,
+    )
+    return ProvisioningFormRequirementsResponse(
+        **values,
+        updated_at=now,
+        updated_by=username,
+    )
+
+
+def _required(value: object) -> bool:
+    return bool(str(value or "").strip())
+
+
+def validate_provisioning_form_requirements(
+    requirements: ProvisioningFormRequirementsResponse | dict,
+    scope: str,
+    *,
+    middle_name: str | None = None,
+    reference_user: str | None = None,
+    requestor: str | None = None,
+    request_reference: str | None = None,
+    remarks: str | None = None,
+    provisioning_profile: str | None = None,
+    include_fields: set[str] | None = None,
+) -> None:
+    values = requirements.model_dump() if hasattr(requirements, "model_dump") else requirements
+    configured = values.get(scope) or {}
+    fields = (
+        ("middle_name", "Middle name", middle_name),
+        ("reference_user", "Reference user", reference_user),
+        ("requestor", "Requestor", requestor),
+        ("request_reference", "Request / ticket", request_reference),
+        ("remarks", "Remarks", remarks),
+        ("provisioning_profile", "Provisioning profile", provisioning_profile),
+    )
+    missing = [
+        label
+        for key, label, value in fields
+        if (include_fields is None or key in include_fields)
+        and configured.get(key) == "required"
+        and not _required(value)
+    ]
+    if missing:
+        raise AppError(
+            "Required provisioning form field(s) are missing: " + ", ".join(missing) + ".",
+            code="PROVISIONING_FORM_REQUIRED_FIELDS",
+            status_code=400,
+        )
 
 
 def normalize_profile_name(name: str) -> str:

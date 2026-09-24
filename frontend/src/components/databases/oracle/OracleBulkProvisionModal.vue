@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 
 import ScrollableDataTable from '@/components/common/ScrollableDataTable.vue'
 
@@ -12,6 +12,7 @@ import {
   type BulkProvisionPreviewResult,
   type BulkProvisionRequest,
   type BulkProvisionRowInput,
+  type ProvisioningFormRequirementSet,
 } from '@/stores/provisioning'
 import { showToast } from '@/ui/feedback'
 
@@ -40,6 +41,36 @@ const resultDownloadOpen = ref(false)
 const profiles = computed(() => provisioningStore.profilesByConnection[props.connectionId] ?? [])
 const canContinueImport = computed(() => Boolean(importResult.value && importResult.value.invalid_count === 0))
 const existingImportCount = computed(() => importResult.value?.rows.filter((row) => row.account_exists).length ?? 0)
+
+const defaultBatchFormRequirements: ProvisioningFormRequirementSet = {
+  middle_name: 'optional',
+  reference_user: 'optional',
+  requestor: 'optional',
+  request_reference: 'optional',
+  remarks: 'optional',
+  provisioning_profile: 'optional',
+}
+
+const batchFormRequirements = computed(() =>
+  provisioningStore.formRequirements?.batch_user ?? defaultBatchFormRequirements,
+)
+
+function batchFieldRequired(field: keyof ProvisioningFormRequirementSet) {
+  return batchFormRequirements.value[field] === 'required'
+}
+
+const requiredSpreadsheetHeaders = computed(() => [
+  'employee_id',
+  'first_name',
+  ...(batchFieldRequired('middle_name') ? ['middle_name'] : []),
+  'last_name',
+])
+
+const optionalSpreadsheetHeaders = computed(() => [
+  ...(!batchFieldRequired('middle_name') ? ['middle_name'] : []),
+  'password',
+  'reference_user',
+])
 
 function close() {
   if (!loading.value) emit('close')
@@ -143,8 +174,43 @@ function goAccess() {
   step.value = 'access'
 }
 
+function validateAccessRequirements() {
+  if (batchFieldRequired('provisioning_profile') && !profileId.value) {
+    error.value = 'Provisioning profile is required for batch user creation.'
+    return false
+  }
+  if (batchFieldRequired('requestor') && !requestor.value.trim()) {
+    error.value = 'Requestor is required.'
+    return false
+  }
+  if (batchFieldRequired('request_reference') && !requestReference.value.trim()) {
+    error.value = 'Request / ticket is required.'
+    return false
+  }
+  if (batchFieldRequired('remarks') && !remarks.value.trim()) {
+    error.value = 'Remarks are required.'
+    return false
+  }
+  if (batchFieldRequired('reference_user')) {
+    if (useCommonReference.value) {
+      if (!commonReferenceUser.value.trim()) {
+        error.value = 'Reference user is required.'
+        return false
+      }
+    } else if ((importResult.value?.rows ?? []).some((row) => !row.reference_user?.trim())) {
+      error.value = 'Reference user is required for every row. Provide it in the spreadsheet or enable the common reference user.'
+      return false
+    }
+  }
+  return true
+}
+
 async function buildPreview() {
   error.value = null
+  if (!validateAccessRequirements()) {
+    showToast({ title: 'Required field missing', message: error.value ?? '', tone: 'warning' })
+    return
+  }
   if (existingImportCount.value > 0 && !profileId.value) {
     error.value = 'Select a provisioning profile when the batch contains existing Oracle users.'
     showToast({ title: 'Provisioning profile required', message: error.value, tone: 'warning' })
@@ -343,6 +409,12 @@ async function downloadResultsXlsx() {
     showToast({ title: 'Unable to export XLSX results', message, tone: 'danger' })
   }
 }
+
+onMounted(() => {
+  if (!provisioningStore.formRequirements) {
+    void provisioningStore.loadFormRequirements()
+  }
+})
 </script>
 
 <template>
@@ -366,8 +438,9 @@ async function downloadResultsXlsx() {
       <template v-if="step === 'import'">
         <div class="bulk-header-guide">
           <strong>Spreadsheet headers</strong>
-          <p>Required: <code>employee_id</code>, <code>first_name</code>, <code>last_name</code></p>
-          <p>Optional: <code>middle_name</code>, <code>password</code>, <code>reference_user</code></p>
+          <p>Required: <code v-for="header in requiredSpreadsheetHeaders" :key="`required-${header}`">{{ header }}</code></p>
+          <p>Optional: <code v-for="header in optionalSpreadsheetHeaders" :key="`optional-${header}`">{{ header }}</code></p>
+          <small v-if="batchFieldRequired('reference_user')">Reference user is required.</small>
         </div>
 
         <div class="bulk-file-row">
@@ -418,10 +491,11 @@ async function downloadResultsXlsx() {
 
       <template v-else-if="step === 'access'">
         <div class="connection-form">
-          <label>
-            Application provisioning
+          <label :class="{ 'field-invalid': batchFieldRequired('provisioning_profile') && !profileId }">
+            <span class="field-label">Application provisioning <span v-if="batchFieldRequired('provisioning_profile')" class="required-mark" aria-hidden="true">*</span><small v-else>optional</small></span>
             <select v-model="profileId">
-              <option value="">No provisioning — schema/user only</option>
+              <option v-if="!batchFieldRequired('provisioning_profile')" value="">No provisioning — schema/user only</option>
+              <option v-else value="" disabled>Select a provisioning profile</option>
               <option v-for="profile in profiles" :key="profile.id" :value="profile.id" :disabled="!profile.ready">{{ profile.name }}{{ profile.ready ? '' : ' · Needs attention' }}</option>
             </select>
             <small v-if="existingImportCount">{{ existingImportCount }} existing Oracle account{{ existingImportCount === 1 ? '' : 's' }} will be preserved and receive only the selected provisioning profile.</small>
@@ -433,6 +507,7 @@ async function downloadResultsXlsx() {
 
           <label class="bulk-common-reference">
             <span class="checkbox-row"><input v-model="useCommonReference" type="checkbox" class="toggle-switch"/> Use the same reference user for all rows</span>
+            <small v-if="batchFieldRequired('reference_user')">Reference user is required for this batch.</small>
           </label>
           <label v-if="useCommonReference" :class="{ 'field-invalid': useCommonReference && !commonReferenceUser.trim() }">
             Common reference user
@@ -440,16 +515,30 @@ async function downloadResultsXlsx() {
             <small v-if="useCommonReference && !commonReferenceUser.trim()" class="field-error">Reference user is required while this option is enabled.</small>
           </label>
 
-          <div class="connection-form-row">
-            <label>Requestor (Optional)<input v-model="requestor" maxlength="200" class="utility-search-input"/></label>
-            <label>Request / ticket (Optional)<input v-model="requestReference" maxlength="100" class="utility-search-input" /></label>
-          </div>
-          <label>Remarks (Optional)<textarea v-model="remarks" rows="3" maxlength="1000"></textarea></label>
+          <section class="bulk-request-section">
+            <div class="bulk-section-heading">
+              <strong>Request details</strong>
+            </div>
+            <div class="bulk-request-grid">
+              <label :class="{ 'field-invalid': batchFieldRequired('requestor') && !requestor.trim() }">
+                <span class="field-label">Requestor <span v-if="batchFieldRequired('requestor')" class="required-mark" aria-hidden="true">*</span><small v-else>optional</small></span>
+                <input v-model="requestor" :required="batchFieldRequired('requestor')" maxlength="200" class="utility-search-input" placeholder="Requestor full name" />
+              </label>
+              <label :class="{ 'field-invalid': batchFieldRequired('request_reference') && !requestReference.trim() }">
+                <span class="field-label">Request / ticket <span v-if="batchFieldRequired('request_reference')" class="required-mark" aria-hidden="true">*</span><small v-else>optional</small></span>
+                <input v-model="requestReference" :required="batchFieldRequired('request_reference')" maxlength="100" class="utility-search-input" placeholder="REQ-12345" />
+              </label>
+            </div>
+            <label class="bulk-remarks-field" :class="{ 'field-invalid': batchFieldRequired('remarks') && !remarks.trim() }">
+              <span class="field-label">Remarks <span v-if="batchFieldRequired('remarks')" class="required-mark" aria-hidden="true">*</span><small v-else>optional</small></span>
+              <textarea v-model="remarks" :required="batchFieldRequired('remarks')" rows="3" maxlength="1000" placeholder="Additional provisioning notes"></textarea>
+            </label>
+          </section>
         </div>
         <p v-if="error" class="login-error">{{ error }}</p>
-        <div class="connection-form-actions">
-          <button type="button" class="primary-button" :disabled="loading" @click="buildPreview">{{ loading ? 'Building preview...' : 'Next' }}</button>
+        <div class="connection-form-actions bulk-form-actions">
           <button type="button" class="secondary-button" :disabled="loading" @click="step = 'import'">Back</button>
+          <button type="button" class="primary-button" :disabled="loading" @click="buildPreview">{{ loading ? 'Building preview...' : 'Next' }}</button>
         </div>
       </template>
 
@@ -510,12 +599,18 @@ async function downloadResultsXlsx() {
 </template>
 
 <style scoped>
-.oracle-bulk-modal { width: min(1180px, calc(100vw - 2rem)); max-height: calc(100vh - 2rem); overflow: auto; }
+.oracle-bulk-modal { width: min(1180px, calc(100vw - 2rem)); max-height: calc(100vh - 2rem); overflow-x: hidden; overflow-y: auto; }
+.preview-summary-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .75rem; margin-bottom: 1rem; }
+.preview-summary-grid > div { display: grid; gap: .2rem; min-width: 0; padding: .8rem .9rem; border: 1px solid var(--border-color); border-radius: .7rem; background: var(--color-surface-secondary); }
+.preview-summary-grid span { font-size: .76rem; opacity: .7; }
+.preview-summary-grid strong { font-size: 1.15rem; }
 .wizard-steps { display: grid; grid-template-columns: repeat(4, 1fr); gap: .5rem; margin-bottom: 1rem; }
 .wizard-steps span { padding: .55rem .7rem; border: 1px solid var(--border-color); border-radius: .6rem; font-size: .82rem; opacity: .65; text-align: center; }
 .wizard-steps span.active { opacity: 1; font-weight: 700; border-color: var(--accent); }
 .bulk-header-guide { display: grid; gap: .35rem; padding: .9rem; margin-bottom: 1rem; border: 1px solid var(--border-color); border-radius: .7rem; }
-.bulk-header-guide p { margin: 0; }
+.bulk-header-guide p { margin: 0; display: flex; align-items: center; gap: .35rem; flex-wrap: wrap; }
+.bulk-header-guide code + code::before { content: ','; margin-right: .1rem; }
+.bulk-header-guide small { opacity: .72; }
 .bulk-file-row { display: flex; align-items: end; gap: .75rem; flex-wrap: wrap; margin-bottom: 1rem; }
 .bulk-file-picker { display: grid; gap: .4rem; margin-bottom: 0; min-width: min(520px, 100%); }
 .bulk-preview-table { max-height: 430px; overflow: auto; margin-top: 1rem; }
@@ -532,5 +627,21 @@ async function downloadResultsXlsx() {
 .bulk-result-password-actions { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; margin-top: .8rem; }
 .bulk-result-password-actions small { opacity: .72; }
 .bulk-common-reference { padding: .75rem; border: 1px solid var(--border-color); border-radius: .65rem; }
-@media (max-width: 800px) { .wizard-steps { grid-template-columns: 1fr 1fr; } }
+.bulk-request-section { display: grid; gap: .8rem; padding: .9rem; border: 1px solid var(--border-color); border-radius: .75rem; background: color-mix(in srgb, var(--color-surface-secondary) 55%, transparent); }
+.bulk-section-heading { display: grid; gap: .15rem; }
+.bulk-section-heading small { opacity: .7; }
+.bulk-request-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .75rem; }
+.bulk-request-grid > label, .bulk-remarks-field { min-width: 0; }
+.bulk-request-grid input, .bulk-remarks-field textarea { width: 100%; min-width: 0; }
+.bulk-remarks-field textarea { resize: vertical; padding: .7rem .8rem; border: 1px solid var(--border-color); border-radius: .65rem; background: var(--color-surface); color: inherit; }
+.bulk-remarks-field textarea:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+.bulk-form-actions { justify-content: flex-end; flex-wrap: wrap; }
+@media (max-width: 800px) {
+  .wizard-steps { grid-template-columns: 1fr 1fr; }
+  .preview-summary-grid, .bulk-request-grid { grid-template-columns: 1fr; }
+}
+@media (max-width: 520px) {
+  .bulk-form-actions { flex-direction: column-reverse; }
+  .bulk-form-actions button { width: 100%; }
+}
 </style>

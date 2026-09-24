@@ -28,6 +28,7 @@ import FloatingActionMenu from '@/components/common/FloatingActionMenu.vue'
 import {
   useProvisioningStore,
   type ProvisioningExecutionResult,
+  type ProvisioningFormRequirementSet,
   type ProvisioningPreviewResult,
   type ProvisioningRunSummary,
   type OracleUserDeprovisionProfileOption,
@@ -1235,6 +1236,8 @@ const availableProvisioningProfiles = computed(() =>
   provisioningStore.profilesByConnection[props.connectionId] ?? [],
 )
 
+const hasProvisioningProfiles = computed(() => availableProvisioningProfiles.value.length > 0)
+
 const activeApplyProfileIds = computed(() =>
   new Set(applyProfileOptions.value.map((profile) => profile.profile_id)),
 )
@@ -1250,6 +1253,47 @@ const selectedProvisioningProfile = computed(() =>
     (profile) => profile.id === createForm.provisioningProfileId,
   ) ?? null,
 )
+
+const defaultSingleFormRequirements: ProvisioningFormRequirementSet = {
+  middle_name: 'optional',
+  reference_user: 'optional',
+  requestor: 'optional',
+  request_reference: 'optional',
+  remarks: 'optional',
+  provisioning_profile: 'optional',
+}
+
+const singleFormRequirements = computed(() =>
+  provisioningStore.formRequirements?.single_user ?? defaultSingleFormRequirements,
+)
+
+function singleFieldRequired(field: keyof ProvisioningFormRequirementSet) {
+  return createMode.value === 'create' && singleFormRequirements.value[field] === 'required'
+}
+
+function validateConfiguredCreateRequirements() {
+  if (createMode.value !== 'create') return true
+
+  let valid = true
+  const checks: Array<[keyof ProvisioningFormRequirementSet, string, string, string]> = [
+    ['reference_user', 'referenceUsername', 'Reference user', createForm.referenceUsername],
+    ['requestor', 'requestorName', 'Requestor', createForm.requestorName],
+    ['request_reference', 'requestReference', 'Request / ticket', createForm.requestReference],
+    ['remarks', 'remarks', 'Remarks', createForm.remarks],
+    ['provisioning_profile', 'provisioningProfileId', 'Provisioning profile', createForm.provisioningProfileId],
+  ]
+
+  for (const [requirement, field, label, value] of checks) {
+    if (singleFieldRequired(requirement) && !value.trim()) {
+      setCreateFieldError(field, `${label} is required.`)
+      valid = false
+    } else {
+      setCreateFieldError(field, null)
+    }
+  }
+
+  return valid
+}
 
 function resetCreate() {
   Object.assign(createForm, emptyCreateForm())
@@ -1670,7 +1714,7 @@ function validateIdentityFields() {
 
   const nameFields: Array<[keyof Pick<CreateUserForm, 'firstName' | 'middleName' | 'lastName'>, string, boolean]> = [
     ['firstName', 'First name', true],
-    ['middleName', 'Middle name', false],
+    ['middleName', 'Middle name', singleFieldRequired('middle_name')],
     ['lastName', 'Last name', true],
   ]
   for (const [field, label, required] of nameFields) {
@@ -1697,7 +1741,7 @@ const identityReady = computed(() =>
       && /^[A-Za-z0-9]+$/.test(createForm.employeeId.trim())
       && validPersonNameInput(createForm.firstName, true)
       && validPersonNameInput(createForm.lastName, true)
-      && validPersonNameInput(createForm.middleName, false),
+      && validPersonNameInput(createForm.middleName, singleFieldRequired('middle_name')),
   ),
 )
 
@@ -1837,6 +1881,8 @@ function referenceInput() {
 async function reviewCreate() {
   createError.value = null
   provisioningPreview.value = null
+
+  if (!validateConfiguredCreateRequirements()) return
 
   const username = createForm.username
     .trim()
@@ -2129,6 +2175,7 @@ onMounted(() => {
     props.connectionId,
   )
   provisioningStore.loadProfilesForConnection(props.connectionId)
+  provisioningStore.loadFormRequirements()
   loadProvisioningHistory()
 })
 
@@ -2361,11 +2408,16 @@ onBeforeUnmount(() => {
                     <button type="button" role="menuitem" @click="openEditUser(user)">
                       Edit access
                     </button>
-                    <button type="button" role="menuitem" @click="openProvisionedDetails(user)">
+                    <button
+                      v-if="hasProvisioningProfiles"
+                      type="button"
+                      role="menuitem"
+                      @click="openProvisionedDetails(user)"
+                    >
                       Edit provisioned details
                     </button>
                     <button
-                      v-if="canManageProvisioning"
+                      v-if="canManageProvisioning && hasProvisioningProfiles"
                       type="button"
                       role="menuitem"
                       @click="openApplyProvisioning(user)"
@@ -3077,6 +3129,7 @@ onBeforeUnmount(() => {
             <div><span>Direct system privileges</span><strong>{{ editState.system_privileges.length }}</strong></div>
           </div>
 
+          <div class="user-edit-section-label">Account settings</div>
           <div class="connection-form user-edit-fields">
             <div class="connection-form-row">
               <label>
@@ -3138,7 +3191,7 @@ onBeforeUnmount(() => {
           </section>
 
           <details v-if="editState.system_privileges.length" class="user-edit-system-privileges">
-            <summary>Direct system privileges · review only</summary>
+            <summary>Direct system privileges · {{ editState.system_privileges.length }} · review only</summary>
             <div class="oracle-privilege-list">
               <span v-for="privilege in editState.system_privileges" :key="privilege.name">
                 {{ privilege.name }}<template v-if="privilege.admin_option"> · ADMIN OPTION</template>
@@ -3148,11 +3201,11 @@ onBeforeUnmount(() => {
 
           <div v-for="warning in editState.warnings" :key="warning" class="utility-warning">{{ warning }}</div>
 
-          <div class="connection-form-actions">
+          <div class="connection-form-actions user-edit-actions">
+            <button type="button" class="secondary-button" @click="closeEditUser">Cancel</button>
             <button type="button" class="primary-button" :disabled="editLoading" @click="previewEditUser">
               {{ editLoading ? 'Building preview...' : 'Review changes' }}
             </button>
-            <button type="button" class="secondary-button" @click="closeEditUser">Cancel</button>
           </div>
         </template>
 
@@ -3176,7 +3229,8 @@ onBeforeUnmount(() => {
             <input class="utility-search-input" v-model="editRequestReference" maxlength="100" placeholder="Change or ticket reference" />
           </label>
 
-          <div class="connection-form-actions">
+          <div class="connection-form-actions user-edit-actions">
+            <button type="button" class="secondary-button" :disabled="editExecuting" @click="editPreview = null">Back</button>
             <button
               type="button"
               class="primary-button"
@@ -3185,7 +3239,6 @@ onBeforeUnmount(() => {
             >
               {{ editExecuting ? 'Applying...' : 'Apply changes' }}
             </button>
-            <button type="button" class="secondary-button" :disabled="editExecuting" @click="editPreview = null">Back</button>
           </div>
         </template>
       </section>
@@ -3504,10 +3557,6 @@ onBeforeUnmount(() => {
               </span>
             </label>
 
-            <div v-if="deprovisionProfileOptions.length === 0" class="utility-warning">
-              No active DBAChum provisioning profile history was found for this account. Oracle account only is still available.
-            </div>
-
             <button
               type="button"
               class="secondary-button"
@@ -3738,10 +3787,15 @@ onBeforeUnmount(() => {
           </div>
 
           <label :class="{ 'field-invalid': createFieldErrors.middleName }">
-            Middle name (Optional)
+            <span class="field-label">
+              Middle name
+              <span v-if="singleFieldRequired('middle_name')" class="required-mark" aria-hidden="true">*</span>
+              <small v-else>optional</small>
+            </span>
             <input
               class="utility-search-input"
               v-model="createForm.middleName"
+              :required="singleFieldRequired('middle_name')"
               maxlength="100"
               autocomplete="off"
               @input="identityInput('middleName')"
@@ -3795,10 +3849,18 @@ onBeforeUnmount(() => {
             <div><span>Current roles</span><strong>{{ applyProfileState.roles.length }}</strong></div>
           </div>
 
-          <label>
-            Application provisioning
-            <select v-model="createForm.provisioningProfileId" :disabled="applyProfileLoading">
-              <option v-if="createMode === 'create'" value="">No provisioning — schema/user only</option>
+          <label :class="{ 'field-invalid': createFieldErrors.provisioningProfileId }">
+            <span class="field-label">
+              Application provisioning
+              <span v-if="singleFieldRequired('provisioning_profile') || createMode === 'apply_profile'" class="required-mark" aria-hidden="true">*</span>
+              <small v-else-if="createMode === 'create'">optional</small>
+            </span>
+            <select
+              v-model="createForm.provisioningProfileId"
+              :disabled="applyProfileLoading"
+              @change="setCreateFieldError('provisioningProfileId', null)"
+            >
+              <option v-if="createMode === 'create' && !singleFieldRequired('provisioning_profile')" value="">No provisioning — schema/user only</option>
               <option v-else value="" disabled>Select a provisioning profile</option>
               <option
                 v-for="profile in selectableProvisioningProfiles"
@@ -3811,6 +3873,7 @@ onBeforeUnmount(() => {
             </select>
             <small v-if="createMode === 'create'">Only profiles enabled for this parent Oracle database appear here.</small>
             <small v-else>Profiles already active for this Oracle account are excluded.</small>
+            <small v-if="createFieldErrors.provisioningProfileId" class="field-error">{{ createFieldErrors.provisioningProfileId }}</small>
           </label>
 
           <div v-if="createMode === 'apply_profile' && applyProfileOptions.length" class="preview-callout">
@@ -3827,7 +3890,6 @@ onBeforeUnmount(() => {
 
           <section v-if="createMode === 'apply_profile'" class="preview-section">
             <h3>Provisioning inputs</h3>
-            <small>These values are used only when the selected profile maps them into application tables or LDAP. Oracle account fields above stay unchanged.</small>
             <div class="connection-form-row">
               <label>Employee ID (Optional)<input class="utility-search-input" v-model="createForm.employeeId" maxlength="100" autocomplete="off" /></label>
               <label>First name (Optional)<input class="utility-search-input" v-model="createForm.firstName" maxlength="100" autocomplete="off" /></label>
@@ -3859,9 +3921,14 @@ onBeforeUnmount(() => {
           </label>
 
           <label :class="{ 'field-invalid': createFieldErrors.referenceUsername }">
-            Reference user (Optional)
+            <span class="field-label">
+              Reference user
+              <span v-if="singleFieldRequired('reference_user')" class="required-mark" aria-hidden="true">*</span>
+              <small v-else>optional</small>
+            </span>
             <input
               v-model="createForm.referenceUsername"
+              :required="singleFieldRequired('reference_user')"
               name="same_access"
               maxlength="30"
               autocomplete="on"
@@ -3934,13 +4001,24 @@ onBeforeUnmount(() => {
           </template>
           <div v-else class="preview-callout">
             <strong>Oracle account preserved</strong>
-            <span>Password, default tablespace, temporary tablespace, Oracle profile and account status will not be changed.</span>
           </div>
           <div class="connection-form-row">
-            <label>Requestor (Optional)<input class="utility-search-input" v-model="createForm.requestorName" name="requestor" maxlength="200" autocomplete="on" placeholder="Requestor full name" /></label>
-            <label>Request / ticket reference (Optional)<input class="utility-search-input" v-model="createForm.requestReference" maxlength="100" placeholder="REQ-12345" /></label>
+            <label :class="{ 'field-invalid': createFieldErrors.requestorName }">
+              <span class="field-label">Requestor <span v-if="singleFieldRequired('requestor')" class="required-mark" aria-hidden="true">*</span><small v-else>optional</small></span>
+              <input class="utility-search-input" v-model="createForm.requestorName" :required="singleFieldRequired('requestor')" name="requestor" maxlength="200" autocomplete="on" placeholder="Requestor full name" @input="setCreateFieldError('requestorName', null)" />
+              <small v-if="createFieldErrors.requestorName" class="field-error">{{ createFieldErrors.requestorName }}</small>
+            </label>
+            <label :class="{ 'field-invalid': createFieldErrors.requestReference }">
+              <span class="field-label">Request / ticket <span v-if="singleFieldRequired('request_reference')" class="required-mark" aria-hidden="true">*</span><small v-else>optional</small></span>
+              <input class="utility-search-input" v-model="createForm.requestReference" :required="singleFieldRequired('request_reference')" maxlength="100" placeholder="REQ-12345" @input="setCreateFieldError('requestReference', null)" />
+              <small v-if="createFieldErrors.requestReference" class="field-error">{{ createFieldErrors.requestReference }}</small>
+            </label>
           </div>
-          <label>Remarks (Optional)<textarea v-model="createForm.remarks" name="remarks" rows="3" maxlength="1000" autocomplete="on" placeholder="Reason, access note, or provisioning remarks"></textarea></label>
+          <label :class="{ 'field-invalid': createFieldErrors.remarks }">
+            <span class="field-label">Remarks <span v-if="singleFieldRequired('remarks')" class="required-mark" aria-hidden="true">*</span><small v-else>optional</small></span>
+            <textarea v-model="createForm.remarks" :required="singleFieldRequired('remarks')" name="remarks" rows="3" maxlength="1000" autocomplete="on" placeholder="Reason, access note, or provisioning remarks" @input="setCreateFieldError('remarks', null)"></textarea>
+            <small v-if="createFieldErrors.remarks" class="field-error">{{ createFieldErrors.remarks }}</small>
+          </label>
 
           <p v-if="createError" class="login-error">{{ createError }}</p>
           <div class="connection-form-actions">

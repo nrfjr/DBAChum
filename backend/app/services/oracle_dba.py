@@ -42,7 +42,11 @@ from app.services.ldap_ldif import (
     normalize_person_name,
     render_ldif,
 )
-from app.services.provisioning import get_ldap_profile_document
+from app.services.provisioning import (
+    get_ldap_profile_document,
+    get_provisioning_form_requirements,
+    validate_provisioning_form_requirements,
+)
 from app.services.oracle_user_list_columns import enrich_oracle_user_list
 
 
@@ -176,6 +180,18 @@ async def provision_oracle_user(
     operator: UserResponse,
     requester_ip: str | None = None,
 ):
+    requirements = await get_provisioning_form_requirements(database)
+    validate_provisioning_form_requirements(
+        requirements,
+        "single_user",
+        middle_name=data.middle_name,
+        reference_user=data.reference_username,
+        requestor=data.requestor_name,
+        request_reference=data.request_reference,
+        remarks=data.remarks,
+        provisioning_profile=None,
+    )
+
     connection = await get_oracle_target(
         database,
         connection_id,

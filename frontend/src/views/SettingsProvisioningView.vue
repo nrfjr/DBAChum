@@ -10,6 +10,8 @@ import {
   type OracleMetadataSequence,
   type OracleMetadataTable,
   type ProvisioningColumnMapping,
+  type ProvisioningFormRequirement,
+  type ProvisioningFormRequirementSet,
   type ProvisioningProfile,
   type ProvisioningProfileInput,
   type ProvisioningValueKind,
@@ -38,6 +40,9 @@ const provisioningStore = useProvisioningStore()
 const authStore = useAuthStore()
 
 const formOpen = ref(false)
+const requirementsOpen = ref(false)
+const requirementsSaving = ref(false)
+const requirementsError = ref<string | null>(null)
 const editingId = ref<string | null>(null)
 const formError = ref<string | null>(null)
 const stepMetadata = ref<StepMetadata[]>([])
@@ -68,6 +73,83 @@ const availableLdapProfiles = computed(() =>
 const ldapAvailable = computed(() => availableLdapProfiles.value.length > 0)
 
 const sourceOptions = computed(() => provisioningStore.sources)
+
+
+const requirementFields: Array<{ key: keyof ProvisioningFormRequirementSet; label: string }> = [
+  { key: 'middle_name', label: 'Middle name' },
+  { key: 'reference_user', label: 'Reference user' },
+  { key: 'requestor', label: 'Requestor' },
+  { key: 'request_reference', label: 'Request / ticket' },
+  { key: 'remarks', label: 'Remarks' },
+  { key: 'provisioning_profile', label: 'Provisioning profile' },
+]
+
+function defaultRequirementSet(): ProvisioningFormRequirementSet {
+  return {
+    middle_name: 'optional',
+    reference_user: 'optional',
+    requestor: 'optional',
+    request_reference: 'optional',
+    remarks: 'optional',
+    provisioning_profile: 'optional',
+  }
+}
+
+const requirementForm = reactive<{
+  single_user: ProvisioningFormRequirementSet
+  batch_user: ProvisioningFormRequirementSet
+}>({
+  single_user: defaultRequirementSet(),
+  batch_user: defaultRequirementSet(),
+})
+
+function setRequirementForm() {
+  const current = provisioningStore.formRequirements
+  Object.assign(requirementForm.single_user, current?.single_user ?? defaultRequirementSet())
+  Object.assign(requirementForm.batch_user, current?.batch_user ?? defaultRequirementSet())
+}
+
+async function openRequirements() {
+  requirementsError.value = null
+  requirementsOpen.value = true
+  try {
+    if (!provisioningStore.formRequirements) {
+      await provisioningStore.loadFormRequirements()
+    }
+    setRequirementForm()
+  } catch (error) {
+    requirementsError.value = error instanceof Error ? error.message : 'Unable to load form requirements.'
+  }
+}
+
+function closeRequirements() {
+  if (requirementsSaving.value) return
+  requirementsOpen.value = false
+  requirementsError.value = null
+}
+
+async function saveRequirements() {
+  requirementsSaving.value = true
+  requirementsError.value = null
+  try {
+    await provisioningStore.saveFormRequirements({
+      single_user: { ...requirementForm.single_user },
+      batch_user: { ...requirementForm.batch_user },
+    })
+    requirementsOpen.value = false
+    showToast({ title: 'Form requirements saved', tone: 'success' })
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unable to save form requirements.'
+    requirementsError.value = message
+    showToast({ title: 'Unable to save form requirements', message, tone: 'danger' })
+  } finally {
+    requirementsSaving.value = false
+  }
+}
+
+function requirementOptions(): ProvisioningFormRequirement[] {
+  return ['required', 'optional']
+}
 
 const canManageConnections = computed(
   () =>
@@ -496,6 +578,7 @@ onMounted(async () => {
   await Promise.all([
     connectionsStore.load(),
     provisioningStore.loadProfiles(),
+    provisioningStore.loadFormRequirements(),
     provisioningStore.loadSources(),
     provisioningStore.loadLdapProfiles(),
   ])
@@ -511,9 +594,14 @@ onMounted(async () => {
           <h2>Provisioning profiles</h2>
         </div>
 
-        <button class="primary-button" type="button" @click="openAdd">
-          Add profile
-        </button>
+        <div class="provisioning-header-actions">
+          <button class="secondary-button" type="button" @click="openRequirements">
+            Form requirements
+          </button>
+          <button class="primary-button" type="button" @click="openAdd">
+            Add profile
+          </button>
+        </div>
       </div>
 
       <div v-if="parentOracleConnections.length === 0" class="provisioning-warning">
@@ -559,6 +647,65 @@ onMounted(async () => {
         </article>
       </div>
     </section>
+
+    <div v-if="requirementsOpen" class="modal-backdrop" @click.self="closeRequirements">
+      <section
+        class="modal-panel provisioning-requirements-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Provisioning form requirements"
+      >
+        <div class="modal-header">
+          <div>
+            <h2>Provisioning form requirements</h2>
+          </div>
+          <button class="modal-close" type="button" aria-label="Close" :disabled="requirementsSaving" @click="closeRequirements">×</button>
+        </div>
+
+        <div class="requirements-fixed-note">
+          <strong>Always required</strong>
+        </div>
+
+        <div class="provisioning-requirements-grid">
+          <section class="provisioning-requirement-card">
+            <div>
+              <h3>Single User Creation</h3>
+            </div>
+            <label v-for="field in requirementFields" :key="`single-${field.key}`" class="provisioning-requirement-row">
+              <span>{{ field.label }}</span>
+              <select v-model="requirementForm.single_user[field.key]">
+                <option v-for="option in requirementOptions()" :key="option" :value="option">
+                  {{ option === 'required' ? 'Required' : 'Optional' }}
+                </option>
+              </select>
+            </label>
+          </section>
+
+          <section class="provisioning-requirement-card">
+            <div>
+              <h3>Batch User Creation</h3>
+            </div>
+            <label v-for="field in requirementFields" :key="`batch-${field.key}`" class="provisioning-requirement-row">
+              <span>{{ field.label }}</span>
+              <select v-model="requirementForm.batch_user[field.key]">
+                <option v-for="option in requirementOptions()" :key="option" :value="option">
+                  {{ option === 'required' ? 'Required' : 'Optional' }}
+                </option>
+              </select>
+            </label>
+          </section>
+        </div>
+
+        <p v-if="requirementsError" class="login-error">{{ requirementsError }}</p>
+
+        <div class="connection-form-actions provisioning-requirements-actions">
+          <button class="secondary-button" type="button" :disabled="requirementsSaving" @click="closeRequirements">Cancel</button>
+          <button class="primary-button" type="button" :disabled="requirementsSaving" @click="saveRequirements">
+            {{ requirementsSaving ? 'Saving...' : 'Save requirements' }}
+          </button>
+        </div>
+      </section>
+    </div>
 
     <div v-if="formOpen" class="modal-backdrop" @click.self="closeForm">
       <section
@@ -825,3 +972,24 @@ onMounted(async () => {
   </div>
     
 </template>
+<style scoped>
+.provisioning-header-actions { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; }
+.provisioning-requirements-modal { width: min(860px, calc(100vw - 2rem)); max-height: calc(100vh - 2rem); overflow-y: auto; }
+.requirements-fixed-note { display: grid; gap: .2rem; padding: .8rem .9rem; margin-bottom: 1rem; border: 1px solid var(--border-color); border-radius: .7rem; background: var(--color-surface-secondary); }
+.requirements-fixed-note span { opacity: .75; font-size: .82rem; }
+.provisioning-requirements-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .9rem; }
+.provisioning-requirement-card { display: grid; gap: .7rem; min-width: 0; padding: .9rem; border: 1px solid var(--border-color); border-radius: .75rem; }
+.provisioning-requirement-card h3 { margin: 0; }
+.provisioning-requirement-card small { display: block; margin-top: .2rem; opacity: .7; }
+.provisioning-requirement-row { display: grid; grid-template-columns: minmax(0, 1fr) 9rem; align-items: center; gap: .75rem; }
+.provisioning-requirement-row select { width: 100%; }
+.provisioning-requirements-actions { justify-content: flex-end; margin-top: 1rem; }
+@media (max-width: 760px) {
+  .provisioning-requirements-grid { grid-template-columns: 1fr; }
+}
+@media (max-width: 520px) {
+  .provisioning-requirement-row { grid-template-columns: 1fr; gap: .35rem; }
+  .provisioning-requirements-actions { flex-direction: column-reverse; }
+  .provisioning-requirements-actions button { width: 100%; }
+}
+</style>
