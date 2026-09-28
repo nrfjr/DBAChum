@@ -36,6 +36,7 @@ from app.services.oracle_dba import get_oracle_target, provision_oracle_user
 from app.services.provisioning import (
     get_provisioning_form_requirements,
     get_provisioning_profile,
+    profile_requires_password,
     validate_provisioning_form_requirements,
 )
 from app.services.provisioning_execution import execute_provisioning_profile
@@ -458,6 +459,7 @@ async def preview_bulk_provisioning(
 
     target = await get_oracle_target(database, connection_id)
     profile_name = None
+    selected_profile_requires_password = False
     if data.profile_id:
         profile = await get_provisioning_profile(database, data.profile_id)
         if profile.get("schema_connection_id") != connection_id:
@@ -467,6 +469,7 @@ async def preview_bulk_provisioning(
                 status_code=400,
             )
         profile_name = profile.get("name")
+        selected_profile_requires_password = await profile_requires_password(database, profile)
 
     generated: list[str] = []
     row_usernames: dict[int, str] = {}
@@ -534,6 +537,17 @@ async def preview_bulk_provisioning(
             if not errors:
                 errors["row"] = exc.message
 
+        if (
+            not errors
+            and batch_action == "apply_profile"
+            and selected_profile_requires_password
+            and row.password_mode != "provided"
+        ):
+            errors["password"] = (
+                "The selected provisioning profile requires a password for existing Oracle users. "
+                "Provide a password in this spreadsheet row."
+            )
+
         roles: list[str] = []
         provisioning = None
         if not errors and batch_action != "already_active":
@@ -546,7 +560,11 @@ async def preview_bulk_provisioning(
                         ProvisioningPreviewRequest(
                             account_mode="preserve_existing" if preserve_existing else "create_or_reconcile",
                             username=username,
-                            password=None if preserve_existing else row.password,
+                            password=(
+                                row.password
+                                if not preserve_existing or selected_profile_requires_password
+                                else None
+                            ),
                             first_name=row.first_name,
                             middle_name=row.middle_name,
                             last_name=row.last_name,
@@ -645,7 +663,11 @@ async def execute_bulk_provisioning(
                     ProvisioningExecuteRequest(
                         account_mode="preserve_existing" if preserve_existing else "create_or_reconcile",
                         username=preview.username,
-                        password=None if preserve_existing else row.password,
+                        password=(
+                            row.password
+                            if not preserve_existing or p.account_action == "alter"
+                            else None
+                        ),
                         first_name=row.first_name,
                         middle_name=row.middle_name,
                         last_name=row.last_name,

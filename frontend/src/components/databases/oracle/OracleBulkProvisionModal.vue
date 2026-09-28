@@ -39,8 +39,13 @@ const templateDownloadOpen = ref(false)
 const resultDownloadOpen = ref(false)
 
 const profiles = computed(() => provisioningStore.profilesByConnection[props.connectionId] ?? [])
+const selectedProfile = computed(() => profiles.value.find((profile) => profile.id === profileId.value) ?? null)
+const selectedProfileRequiresPassword = computed(() => Boolean(selectedProfile.value?.requires_password))
 const canContinueImport = computed(() => Boolean(importResult.value && importResult.value.invalid_count === 0))
 const existingImportCount = computed(() => importResult.value?.rows.filter((row) => row.account_exists).length ?? 0)
+const existingRowsMissingProvidedPassword = computed(() =>
+  importResult.value?.rows.filter((row) => row.account_exists && row.password_mode !== 'provided').length ?? 0,
+)
 
 const defaultBatchFormRequirements: ProvisioningFormRequirementSet = {
   middle_name: 'optional',
@@ -201,6 +206,10 @@ function validateAccessRequirements() {
       error.value = 'Reference user is required for every row. Provide it in the spreadsheet or enable the common reference user.'
       return false
     }
+  }
+  if (selectedProfileRequiresPassword.value && existingRowsMissingProvidedPassword.value > 0) {
+    error.value = `${existingRowsMissingProvidedPassword.value} existing Oracle account${existingRowsMissingProvidedPassword.value === 1 ? '' : 's'} require a provided password in the spreadsheet for this provisioning profile.`
+    return false
   }
   return true
 }
@@ -476,7 +485,7 @@ onMounted(() => {
                   <td :class="{ 'bulk-cell-invalid': row.errors.username }">{{ row.username || '—' }}</td>
                   <td>{{ row.account_exists ? 'EXISTING' : 'NEW' }}</td>
                   <td :class="{ 'bulk-cell-invalid': row.errors.reference_user }">{{ row.reference_user || '—' }}</td>
-                  <td :class="{ 'bulk-cell-invalid': row.errors.password }">{{ row.account_exists ? 'PRESERVE' : row.password_mode.toUpperCase() }}</td>
+                  <td :class="{ 'bulk-cell-invalid': row.errors.password }">{{ row.account_exists ? (row.password_mode === 'provided' ? 'PROVIDED' : 'NOT PROVIDED') : row.password_mode.toUpperCase() }}</td>
                   <td><span class="provisioning-status" :data-status="row.valid ? 'succeeded' : 'failed'">{{ row.valid ? 'VALID' : 'INVALID' }}</span><small v-if="!row.valid" class="field-error bulk-row-error">{{ rowError(row) }}</small></td>
                 </tr>
           </ScrollableDataTable>
@@ -498,11 +507,15 @@ onMounted(() => {
               <option v-else value="" disabled>Select a provisioning profile</option>
               <option v-for="profile in profiles" :key="profile.id" :value="profile.id" :disabled="!profile.ready">{{ profile.name }}{{ profile.ready ? '' : ' · Needs attention' }}</option>
             </select>
-            <small v-if="existingImportCount">{{ existingImportCount }} existing Oracle account{{ existingImportCount === 1 ? '' : 's' }} will be preserved and receive only the selected provisioning profile.</small>
+            <small v-if="existingImportCount && !selectedProfileRequiresPassword">{{ existingImportCount }} existing Oracle account{{ existingImportCount === 1 ? '' : 's' }} will be preserved and receive only the selected provisioning profile.</small>
+            <small v-else-if="existingImportCount && selectedProfileRequiresPassword">The selected profile requires a password. Existing Oracle accounts will be reset to the password provided in each spreadsheet row.</small>
           </label>
 
           <div v-if="existingImportCount && !profileId" class="utility-warning">
-            This batch contains existing Oracle users. Select a provisioning profile to continue without recreating or changing their Oracle accounts.
+            This batch contains existing Oracle users. Select a provisioning profile to continue without recreating their Oracle accounts.
+          </div>
+          <div v-else-if="existingImportCount && selectedProfileRequiresPassword" class="utility-warning">
+            This profile requires a password. Every existing Oracle user must have a provided password in the spreadsheet; generated fallback passwords are not used for existing accounts.
           </div>
 
           <label class="bulk-common-reference">

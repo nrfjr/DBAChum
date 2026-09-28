@@ -380,8 +380,31 @@ async def validate_profile_dependencies(database, profile: dict) -> list[str]:
     return issues
 
 
+def _profile_table_uses_password(profile: dict) -> bool:
+    return any(
+        mapping.get("value_kind") == "generated"
+        and mapping.get("value_key") == "password"
+        for step in (profile.get("table_steps") or [])
+        for mapping in (step.get("mappings") or [])
+    )
+
+
+async def profile_requires_password(database, profile: dict) -> bool:
+    if _profile_table_uses_password(profile):
+        return True
+    if not profile.get("ldap_enabled"):
+        return False
+    ldap_profile_id = profile.get("ldap_profile_id")
+    if not ldap_profile_id:
+        return False
+    ldap = await get_ldap_profile_document(database, ldap_profile_id)
+    template = ldap.get("ldif_template") or DEFAULT_LDIF_TEMPLATE
+    return "<PASSWORD>" in template
+
+
 async def profile_to_response(database, document: dict) -> ProvisioningProfileResponse:
     issues = await validate_profile_dependencies(database, document)
+    requires_password = await profile_requires_password(database, document) if not issues else False
     return ProvisioningProfileResponse(
         id=str(document["_id"]),
         name=document["name"],
@@ -392,6 +415,7 @@ async def profile_to_response(database, document: dict) -> ProvisioningProfileRe
         enabled=document.get("enabled", True),
         table_steps=document.get("table_steps", []),
         ready=len(issues) == 0,
+        requires_password=requires_password,
         issues=issues,
         created_at=document["created_at"],
         updated_at=document["updated_at"],

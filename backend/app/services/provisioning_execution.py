@@ -12,7 +12,10 @@ from app.connectors.oracle_provisioning import (
     reconcile_oracle_user,
     upsert_oracle_provisioning_row,
 )
-from app.connectors.oracle_user_lifecycle import get_oracle_user_lifecycle_state
+from app.connectors.oracle_user_lifecycle import (
+    get_oracle_user_lifecycle_state,
+    reset_oracle_user_password,
+)
 from app.core.exceptions import AppError
 from app.schemas.database_action import (
     DatabaseActionRisk,
@@ -378,6 +381,7 @@ async def execute_provisioning_profile(
             "selected_roles": selected_roles,
             "account_mode": data.account_mode,
             "password_stored_in_audit": False,
+            "password_changed": preserve_existing and bool(data.password),
         },
     )
 
@@ -396,17 +400,26 @@ async def execute_provisioning_profile(
     try:
         if preserve_existing:
             state = await get_oracle_user_lifecycle_state(parent_connection, username)
+            password_changed = bool(data.password)
+            if data.password:
+                await reset_oracle_user_password(
+                    parent_connection,
+                    username=username,
+                    password=data.password,
+                    expire_after_reset=False,
+                )
+                mutated = True
+            account = ProvisioningExecutionAccount(
+                action="altered" if password_changed else "unchanged",
+                password_applied=password_changed,
+                default_tablespace=state.get("default_tablespace"),
+                temporary_tablespace=state.get("temporary_tablespace"),
+                oracle_profile=state.get("profile"),
+            )
             role_raw = await reconcile_oracle_roles(
                 parent_connection,
                 username=username,
                 roles=selected_roles,
-            )
-            account = ProvisioningExecutionAccount(
-                action="unchanged",
-                password_applied=False,
-                default_tablespace=state.get("default_tablespace"),
-                temporary_tablespace=state.get("temporary_tablespace"),
-                oracle_profile=state.get("profile"),
             )
             role_results = [
                 ProvisioningExecutionRole(name=role, action="granted")
@@ -415,7 +428,7 @@ async def execute_provisioning_profile(
                 ProvisioningExecutionRole(name=role, action="already_present")
                 for role in role_raw.get("roles_already_present", [])
             ]
-            mutated = bool(role_raw.get("roles_added"))
+            mutated = mutated or bool(role_raw.get("roles_added"))
         else:
             try:
                 account_raw = await reconcile_oracle_user(
@@ -673,6 +686,7 @@ async def execute_provisioning_profile(
                 "profile_id": profile_id,
                 "profile_name": profile.get("name"),
                 "password_stored_in_audit": False,
+            "password_changed": preserve_existing and bool(data.password),
             },
         )
         return ProvisioningExecutionResponse(
@@ -724,6 +738,7 @@ async def execute_provisioning_profile(
             "employee_id": employee_id,
             "requester_ip": requester_ip,
             "password_stored_in_audit": False,
+            "password_changed": preserve_existing and bool(data.password),
         },
     )
 

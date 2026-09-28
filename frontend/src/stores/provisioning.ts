@@ -57,6 +57,7 @@ export interface ProvisioningProfileInput {
 export interface ProvisioningProfile extends ProvisioningProfileInput {
   id: string
   ready: boolean
+  requires_password: boolean
   issues: string[]
   created_at: string
   updated_at: string

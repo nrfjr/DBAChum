@@ -36,6 +36,7 @@ from app.services.provisioning import (
     get_ldap_profile_document,
     get_provisioning_form_requirements,
     get_provisioning_profile,
+    profile_requires_password,
     validate_profile_dependencies,
     validate_provisioning_form_requirements,
 )
@@ -83,15 +84,6 @@ def _display_value(value) -> str | None:
     if isinstance(value, datetime):
         return value.isoformat()
     return str(value)
-
-
-def _profile_uses_generated_password(profile: dict) -> bool:
-    return any(
-        mapping.get("value_kind") == "generated"
-        and mapping.get("value_key") == "password"
-        for step in (profile.get("table_steps") or [])
-        for mapping in (step.get("mappings") or [])
-    )
 
 
 async def build_provisioning_preview(
@@ -181,11 +173,12 @@ async def build_provisioning_preview(
                 code="PROVISIONING_EXISTING_ACCOUNT_REQUIRED",
                 status_code=409,
             )
-        if _profile_uses_generated_password(profile):
+        requires_password = await profile_requires_password(database, profile)
+        if requires_password and not data.password:
             raise AppError(
-                "This provisioning profile writes the generated password to an application table. DBAChum cannot safely apply it to an existing account without resetting the Oracle password.",
-                code="PROVISIONING_EXISTING_ACCOUNT_PASSWORD_MAPPING",
-                status_code=409,
+                "This provisioning profile requires a password. Enter a password to reset the existing Oracle account and use the same value for password-dependent provisioning steps.",
+                code="PROVISIONING_EXISTING_ACCOUNT_PASSWORD_REQUIRED",
+                status_code=400,
             )
         existing_state = await get_oracle_user_lifecycle_state(schema_connection, username)
     elif not data.password:
@@ -405,9 +398,14 @@ async def build_provisioning_preview(
         )
 
     if preserve_existing:
-        warnings.append(
-            "Existing Oracle account settings and password will be preserved. Only selected role grants, application-table upserts and eligible LDAP work are included."
-        )
+        if data.password:
+            warnings.append(
+                "Existing Oracle username, tablespaces, profile and account status will be preserved. The Oracle password will be reset to the supplied value and the same value will be used by password-dependent provisioning steps."
+            )
+        else:
+            warnings.append(
+                "Existing Oracle account settings and password will be preserved. Only selected role grants, application-table upserts and eligible LDAP work are included."
+            )
 
     ldap_preview = ProvisioningPreviewLdap(enabled=False)
     if profile.get("ldap_enabled"):
@@ -415,12 +413,6 @@ async def build_provisioning_preview(
             database, profile["ldap_profile_id"]
         )
         ldap_template = ldap_profile.get("ldif_template") or DEFAULT_LDIF_TEMPLATE
-        if preserve_existing and "<PASSWORD>" in ldap_template:
-            raise AppError(
-                "This provisioning profile's LDAP template requires <PASSWORD>. DBAChum cannot safely apply it to an existing Oracle account without resetting the password.",
-                code="PROVISIONING_EXISTING_ACCOUNT_LDAP_PASSWORD",
-                status_code=409,
-            )
         render_ldif(
             ldap_template,
             username=username,
@@ -451,7 +443,7 @@ async def build_provisioning_preview(
         username=username,
         account_exists=account_exists,
         account_action=(
-            "preserve"
+            ("alter" if data.password else "preserve")
             if preserve_existing
             else ("alter" if account_exists else "create")
         ),

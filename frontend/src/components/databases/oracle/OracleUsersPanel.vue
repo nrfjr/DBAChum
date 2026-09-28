@@ -1254,6 +1254,18 @@ const selectedProvisioningProfile = computed(() =>
   ) ?? null,
 )
 
+const applyProfilePasswordRequired = computed(() =>
+  createMode.value === 'apply_profile' && Boolean(selectedProvisioningProfile.value?.requires_password),
+)
+
+function provisioningProfileChanged() {
+  setCreateFieldError('provisioningProfileId', null)
+  setCreateFieldError('password', null)
+  if (createMode.value === 'apply_profile' && !applyProfilePasswordRequired.value) {
+    createForm.password = ''
+  }
+}
+
 const defaultSingleFormRequirements: ProvisioningFormRequirementSet = {
   middle_name: 'optional',
   reference_user: 'optional',
@@ -1894,7 +1906,12 @@ async function reviewCreate() {
     return
   }
 
-  if (createMode.value === 'create') {
+  if (createMode.value === 'apply_profile' && !createForm.provisioningProfileId) {
+    createError.value = 'Select a provisioning profile to apply to this existing Oracle account.'
+    return
+  }
+
+  if (createMode.value === 'create' || applyProfilePasswordRequired.value) {
     if (createForm.password.length < 8) {
       setCreateFieldError('password', 'Password must contain at least 8 characters.')
       return
@@ -1904,9 +1921,8 @@ async function reviewCreate() {
       return
     }
     setCreateFieldError('password', null)
-  } else if (!createForm.provisioningProfileId) {
-    createError.value = 'Select a provisioning profile to apply to this existing Oracle account.'
-    return
+  } else {
+    setCreateFieldError('password', null)
   }
 
   createForm.firstName = normalizePersonName(createForm.firstName)
@@ -1938,7 +1954,7 @@ async function reviewCreate() {
         {
           account_mode: createMode.value === 'apply_profile' ? 'preserve_existing' : 'create_or_reconcile',
           username: createForm.username,
-          password: createMode.value === 'apply_profile' ? null : createForm.password,
+          password: createMode.value === 'apply_profile' ? (applyProfilePasswordRequired.value ? createForm.password : null) : createForm.password,
           first_name: createForm.firstName || null,
           middle_name: createForm.middleName || null,
           last_name: createForm.lastName || null,
@@ -2045,7 +2061,7 @@ async function executeProvisioning() {
       {
         account_mode: createMode.value === 'apply_profile' ? 'preserve_existing' : 'create_or_reconcile',
         username: createForm.username,
-        password: createMode.value === 'apply_profile' ? null : createForm.password,
+        password: createMode.value === 'apply_profile' ? (applyProfilePasswordRequired.value ? createForm.password : null) : createForm.password,
         first_name: createForm.firstName || null,
         middle_name: createForm.middleName || null,
         last_name: createForm.lastName || null,
@@ -3858,7 +3874,7 @@ onBeforeUnmount(() => {
             <select
               v-model="createForm.provisioningProfileId"
               :disabled="applyProfileLoading"
-              @change="setCreateFieldError('provisioningProfileId', null)"
+              @change="provisioningProfileChanged"
             >
               <option v-if="createMode === 'create' && !singleFieldRequired('provisioning_profile')" value="">No provisioning — schema/user only</option>
               <option v-else value="" disabled>Select a provisioning profile</option>
@@ -3900,8 +3916,8 @@ onBeforeUnmount(() => {
             </div>
           </section>
 
-          <label v-if="createMode === 'create'" :class="{ 'field-invalid': createFieldErrors.password }">
-            <span class="field-label">Initial password <span class="required-mark" aria-hidden="true">*</span></span>
+          <label v-if="createMode === 'create' || applyProfilePasswordRequired" :class="{ 'field-invalid': createFieldErrors.password }">
+            <span class="field-label">{{ createMode === 'create' ? 'Initial password' : 'Password' }} <span class="required-mark" aria-hidden="true">*</span></span>
             <input
               v-model="createForm.password"
               required
@@ -3914,6 +3930,7 @@ onBeforeUnmount(() => {
               class="utility-search-input"
             />
             <small v-if="createFieldErrors.password" class="field-error">{{ createFieldErrors.password }}</small>
+            <small v-if="createMode === 'apply_profile'">The Oracle password will be reset to this value and the same value will be used by password-dependent provisioning steps.</small>
             <span class="oracle-password-actions">
               <button type="button" class="secondary-button" @click="generatePassword">Generate password</button>
               <button type="button" class="secondary-button" @click="showPassword = !showPassword">{{ showPassword ? 'Hide password' : 'Show password' }}</button>
@@ -4000,7 +4017,9 @@ onBeforeUnmount(() => {
             <label>Profile (Optional)<input class="utility-search-input" v-model="createForm.profile" maxlength="30" placeholder="Uses reference/default when blank" /></label>
           </template>
           <div v-else class="preview-callout">
-            <strong>Oracle account preserved</strong>
+            <strong>Oracle account settings preserved</strong>
+            <span v-if="applyProfilePasswordRequired">Username, default tablespace, temporary tablespace, Oracle profile and account status will be preserved. Password will be reset to the supplied value.</span>
+            <span v-else>Password, default tablespace, temporary tablespace, Oracle profile and account status will not be changed.</span>
           </div>
           <div class="connection-form-row">
             <label :class="{ 'field-invalid': createFieldErrors.requestorName }">

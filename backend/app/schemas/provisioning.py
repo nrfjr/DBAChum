@@ -166,6 +166,7 @@ class ProvisioningProfileUpdate(ProvisioningProfileBase):
 class ProvisioningProfileResponse(ProvisioningProfileBase):
     id: str
     ready: bool
+    requires_password: bool = False
     issues: list[str] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime
